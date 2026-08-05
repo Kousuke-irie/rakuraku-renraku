@@ -1,6 +1,6 @@
 // B-2/B-3基盤: message:send の処理本体。
 // 保存処理はREST(routes/messages.js)と共有し、ロジックの重複を避ける。
-import db from '../../db/db.js';
+import db from '../../db/index.js';
 import { assertRoomMember, RoomAccessDeniedError } from '../../services/roomAuth.js';
 import { insertMessage } from '../../routes/messages.js';
 

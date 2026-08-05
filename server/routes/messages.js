@@ -1,8 +1,8 @@
 // B-2/B-3基盤: メッセージ履歴取得・送信(RESTフォールバック)。
 // 送信取消(DELETE /messages/:id)は対象外。
 import { Router } from 'express';
-import db from '../db/db.js';
-import { tempAuth } from '../middleware/tempAuth.js';
+import db from '../db/index.js';
+import { requireAuth } from '../middleware/auth.js';
 import { assertRoomMember, RoomAccessDeniedError } from '../services/roomAuth.js';
 import { MESSAGE_TYPE } from '../../shared/constants.js';
 
@@ -23,7 +23,7 @@ function requireRoomMember(req, res, roomId) {
   }
 }
 
-router.get('/rooms/:id/messages', tempAuth, (req, res) => {
+router.get('/rooms/:id/messages', requireAuth, (req, res) => {
   const roomId = Number(req.params.id);
   if (!requireRoomMember(req, res, roomId)) return;
 
@@ -51,7 +51,7 @@ router.get('/rooms/:id/messages', tempAuth, (req, res) => {
   res.json({ messages: rows });
 });
 
-router.post('/rooms/:id/messages', tempAuth, (req, res) => {
+router.post('/rooms/:id/messages', requireAuth, (req, res) => {
   const roomId = Number(req.params.id);
   if (!requireRoomMember(req, res, roomId)) return;
 

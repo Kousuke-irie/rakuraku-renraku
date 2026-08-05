@@ -1,32 +1,47 @@
-// Socket.IO の登録口。
-// 接続時のJWT認証（担当①のA-4）が完了するまでは、handshake.auth.userIdを暫定的に信用する。
-// A-4完了後はここをCookieのJWT検証に差し替える。
-import db from '../db/db.js';
+// Socket.IO の登録口（A-4）。
+// 接続時にhttpOnly CookieのJWTを検証し、自分の所属する全ルームへ一括joinする。
+// 機能別ハンドラ（message等）は server/sockets/handlers/ に分割し、ここから registerXxxHandlers(io, socket) を呼び出す。
+import { verifyToken } from '../middleware/auth.js';
+import { listMemberRoomIds } from '../services/roomAuth.js';
+import db from '../db/index.js';
 import { ROLE } from '../../shared/constants.js';
 import { registerMessageHandlers } from './handlers/message.js';
 
-function resolveTempUser(socket) {
-  const userId = Number(socket.handshake.auth?.userId);
-  if (!userId) return null;
-  return db.prepare('SELECT id, role FROM users WHERE id = ?').get(userId) || null;
+// Cookieヘッダから指定した名前の値だけを取り出す（依存追加を避けた最小実装）。
+function readCookie(cookieHeader, name) {
+  if (!cookieHeader) return null;
+  const target = cookieHeader
+    .split(';')
+    .map((pair) => pair.trim())
+    .find((pair) => pair.startsWith(`${name}=`));
+  if (!target) return null;
+  return decodeURIComponent(target.slice(name.length + 1));
+}
+
+function authenticateSocket(socket) {
+  const token = readCookie(socket.handshake.headers.cookie, 'token');
+  return verifyToken(token);
 }
 
 export function registerSocketHandlers(io) {
-  io.on('connection', (socket) => {
-    const user = resolveTempUser(socket);
-
+  // ハンドシェイク時に認証する。失敗時はクライアント側で connect_error として受け取れる。
+  io.use((socket, next) => {
+    const user = authenticateSocket(socket);
     if (!user) {
-      socket.emit('error', { code: 'unauthorized', message: 'invalid or missing userId' });
-      socket.disconnect(true);
-      return;
+      return next(new Error('unauthorized'));
     }
+    socket.data.user = user;
+    next();
+  });
 
-    socket.data.user = { id: user.id, role: user.role };
+  io.on('connection', (socket) => {
+    const { user } = socket.data;
 
-    const roomIds = db.prepare('SELECT room_id FROM room_members WHERE user_id = ?').all(user.id);
-    roomIds.forEach(({ room_id }) => socket.join(`room:${room_id}`));
+    listMemberRoomIds(db, user.id).forEach((roomId) => {
+      socket.join(`room:${roomId}`);
+    });
 
-    if (user.role === ROLE.HR) {
+    if (user.role === ROLE.HR || user.role === ROLE.ADMIN) {
       socket.join('hr');
     }
 

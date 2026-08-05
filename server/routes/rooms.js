@@ -1,8 +1,8 @@
 // P1-1: 受信箱一覧・ルーム詳細。
 // フィルタ・ステータス変更・既読(PATCH/read)はP1-7/P1-2/P2-7スコープのため対象外。
 import { Router } from 'express';
-import db from '../db/db.js';
-import { tempAuth } from '../middleware/tempAuth.js';
+import db from '../db/index.js';
+import { requireAuth } from '../middleware/auth.js';
 import { assertRoomMember, RoomAccessDeniedError } from '../services/roomAuth.js';
 
 const router = Router();
@@ -78,12 +78,12 @@ function toRoomListItem(row) {
   };
 }
 
-router.get('/', tempAuth, (req, res) => {
+router.get('/', requireAuth, (req, res) => {
   const rows = db.prepare(ROOM_LIST_SQL + ROOM_LIST_ORDER_SQL).all(req.user.id);
   res.json({ rooms: rows.map(toRoomListItem) });
 });
 
-router.get('/:id', tempAuth, (req, res) => {
+router.get('/:id', requireAuth, (req, res) => {
   const roomId = Number(req.params.id);
 
   try {

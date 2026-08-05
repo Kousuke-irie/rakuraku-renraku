@@ -17,9 +17,13 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "bcrypt": "^6.0.0",
     "better-sqlite3": "^11.3.0",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "express": "^4.21.0",
+    "express-rate-limit": "^8.6.2",
+    "jsonwebtoken": "^9.0.3",
     "socket.io": "^4.5.3",
     "socket.io-client": "^4.5.3",
     "vue": "^3.2.45",
