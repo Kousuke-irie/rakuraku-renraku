@@ -24,3 +24,6 @@ dist-ssr
 *.sw?
 
 .env
+
+# SQLite データベースファイル（DATABASE_PATH の既定出力先）
+/data/
