@@ -1,0 +1,282 @@
+[
+  {
+    "id": 101,
+    "student": {
+      "userId": 11,
+      "displayName": "山田 太郎",
+      "university": "東京大学",
+      "selectionStatus": "interview_3",
+      "avatarColor": "#E5789C",
+      "nextInterviewAt": "2026-08-10T05:00:00Z",
+      "nextInterviewRoom": "会議室A-301",
+      "interviewer": "鈴木部長",
+      "scheduleState": "interviewer_check"
+    },
+    "handlingStatus": "needs_reply",
+    "urgency": "high",
+    "topicTag": "absence_late",
+    "isPinned": true,
+    "assignee": { "id": 1, "displayName": "田中" },
+    "unreadCount": 2,
+    "lastMessage": {
+      "id": 1103,
+      "body": "明日の面接、体調不良のため欠席させてください。誠に申し訳ございません。",
+      "createdAt": "2026-08-04T09:42:00Z",
+      "senderId": 11
+    },
+    "lastStudentMessageAt": "2026-08-04T09:42:00Z",
+    "elapsedHours": 26.3
+  },
+  {
+    "id": 102,
+    "student": {
+      "userId": 12,
+      "displayName": "佐藤 花子",
+      "university": "早稲田大学",
+      "selectionStatus": "interview_1",
+      "avatarColor": "#7CBFA0",
+      "nextInterviewAt": null,
+      "nextInterviewRoom": null,
+      "interviewer": null,
+      "scheduleState": "proposed"
+    },
+    "handlingStatus": "in_progress",
+    "urgency": "high",
+    "topicTag": "scheduling",
+    "isPinned": false,
+    "assignee": null,
+    "unreadCount": 1,
+    "lastMessage": {
+      "id": 1202,
+      "body": "日程を変更したいのですが、来週以降で候補日はございますか？",
+      "createdAt": "2026-08-04T22:54:00Z",
+      "senderId": 12
+    },
+    "lastStudentMessageAt": "2026-08-04T22:54:00Z",
+    "elapsedHours": 13.1
+  },
+  {
+    "id": 103,
+    "student": {
+      "userId": 13,
+      "displayName": "鈴木 一郎",
+      "university": "慶應義塾大学",
+      "selectionStatus": "document",
+      "avatarColor": "#C9A7E5",
+      "nextInterviewAt": null,
+      "nextInterviewRoom": null,
+      "interviewer": null,
+      "scheduleState": "none"
+    },
+    "handlingStatus": "needs_reply",
+    "urgency": "normal",
+    "topicTag": "other",
+    "isPinned": false,
+    "assignee": { "id": 1, "displayName": "田中" },
+    "unreadCount": 1,
+    "lastMessage": {
+      "id": 1302,
+      "body": "資料の提出方法について教えていただけますでしょうか。",
+      "createdAt": "2026-08-05T10:00:00Z",
+      "senderId": 13
+    },
+    "lastStudentMessageAt": "2026-08-05T10:00:00Z",
+    "elapsedHours": 2.0
+  },
+  {
+    "id": 104,
+    "student": {
+      "userId": 14,
+      "displayName": "高橋 美咲",
+      "university": "明治大学",
+      "selectionStatus": "aptitude",
+      "avatarColor": "#E5B37C",
+      "nextInterviewAt": null,
+      "nextInterviewRoom": null,
+      "interviewer": null,
+      "scheduleState": "none"
+    },
+    "handlingStatus": "needs_reply",
+    "urgency": "normal",
+    "topicTag": "aptitude_test",
+    "isPinned": false,
+    "assignee": { "id": 2, "displayName": "鈴木" },
+    "unreadCount": 1,
+    "lastMessage": {
+      "id": 1401,
+      "body": "適性検査（SPI）の受検期限を教えてください。",
+      "createdAt": "2026-08-05T10:30:00Z",
+      "senderId": 14
+    },
+    "lastStudentMessageAt": "2026-08-05T10:30:00Z",
+    "elapsedHours": 1.5
+  },
+  {
+    "id": 105,
+    "student": {
+      "userId": 15,
+      "displayName": "田村 健太",
+      "university": "立教大学",
+      "selectionStatus": "interview_2",
+      "avatarColor": "#7CA7E5",
+      "nextInterviewAt": "2026-08-08T02:00:00Z",
+      "nextInterviewRoom": "会議室B-201",
+      "interviewer": "高木課長",
+      "scheduleState": "confirmed"
+    },
+    "handlingStatus": "waiting_student",
+    "urgency": "low",
+    "topicTag": "question",
+    "isPinned": false,
+    "assignee": { "id": 1, "displayName": "田中" },
+    "unreadCount": 0,
+    "lastMessage": {
+      "id": 1502,
+      "body": "私服で問題ございません。ご安心ください。",
+      "createdAt": "2026-08-05T03:15:00Z",
+      "senderId": 1
+    },
+    "lastStudentMessageAt": "2026-08-05T02:00:00Z",
+    "elapsedHours": 9.0
+  },
+  {
+    "id": 106,
+    "student": {
+      "userId": 16,
+      "displayName": "伊藤 さくら",
+      "university": "上智大学",
+      "selectionStatus": "interview_4",
+      "avatarColor": "#E57C9E",
+      "nextInterviewAt": null,
+      "nextInterviewRoom": null,
+      "interviewer": null,
+      "scheduleState": "none"
+    },
+    "handlingStatus": "done",
+    "urgency": "low",
+    "topicTag": "result_waiting",
+    "isPinned": false,
+    "assignee": { "id": 1, "displayName": "田中" },
+    "unreadCount": 0,
+    "lastMessage": {
+      "id": 1603,
+      "body": "田中が対応ステータスを「完了」に変更しました",
+      "createdAt": "2026-08-03T15:05:00Z",
+      "senderId": 1
+    },
+    "lastStudentMessageAt": "2026-08-03T12:00:00Z",
+    "elapsedHours": 48.0
+  },
+  {
+    "id": 107,
+    "student": {
+      "userId": 17,
+      "displayName": "渡辺 翔太",
+      "university": "中央大学",
+      "selectionStatus": "entry",
+      "avatarColor": "#A0E57C",
+      "nextInterviewAt": null,
+      "nextInterviewRoom": null,
+      "interviewer": null,
+      "scheduleState": "none"
+    },
+    "handlingStatus": "on_hold",
+    "urgency": "low",
+    "topicTag": "other",
+    "isPinned": false,
+    "assignee": { "id": 2, "displayName": "鈴木" },
+    "unreadCount": 0,
+    "lastMessage": {
+      "id": 1702,
+      "body": "鈴木が対応ステータスを「保留」に変更しました",
+      "createdAt": "2026-08-02T13:00:00Z",
+      "senderId": 2
+    },
+    "lastStudentMessageAt": "2026-08-02T12:00:00Z",
+    "elapsedHours": 72.0
+  },
+  {
+    "id": 108,
+    "student": {
+      "userId": 18,
+      "displayName": "中村 愛",
+      "university": "青山学院大学",
+      "selectionStatus": "interview_5",
+      "avatarColor": "#E5C97C",
+      "nextInterviewAt": null,
+      "nextInterviewRoom": null,
+      "interviewer": null,
+      "scheduleState": "none"
+    },
+    "handlingStatus": "needs_reply",
+    "urgency": "high",
+    "topicTag": "result_waiting",
+    "isPinned": false,
+    "assignee": { "id": 2, "displayName": "鈴木" },
+    "unreadCount": 1,
+    "lastMessage": {
+      "id": 1802,
+      "body": "ありがとうございました。選考結果はいつ頃になりますでしょうか。",
+      "createdAt": "2026-08-04T21:00:00Z",
+      "senderId": 18
+    },
+    "lastStudentMessageAt": "2026-08-04T21:00:00Z",
+    "elapsedHours": 15.0
+  },
+  {
+    "id": 109,
+    "student": {
+      "userId": 19,
+      "displayName": "小林 大輔",
+      "university": "同志社大学",
+      "selectionStatus": "offer",
+      "avatarColor": "#7CE5D4",
+      "nextInterviewAt": null,
+      "nextInterviewRoom": null,
+      "interviewer": null,
+      "scheduleState": "none"
+    },
+    "handlingStatus": "done",
+    "urgency": "low",
+    "topicTag": "other",
+    "isPinned": false,
+    "assignee": { "id": 1, "displayName": "田中" },
+    "unreadCount": 0,
+    "lastMessage": {
+      "id": 1905,
+      "body": "内定承諾書（訂正版）を提出しました。",
+      "createdAt": "2026-08-01T08:07:00Z",
+      "senderId": 19
+    },
+    "lastStudentMessageAt": "2026-08-01T08:00:00Z",
+    "elapsedHours": 100.0
+  },
+  {
+    "id": 110,
+    "student": {
+      "userId": 20,
+      "displayName": "加藤 桃子",
+      "university": "関西学院大学",
+      "selectionStatus": "declined",
+      "avatarColor": "#C97CE5",
+      "nextInterviewAt": null,
+      "nextInterviewRoom": null,
+      "interviewer": null,
+      "scheduleState": "none"
+    },
+    "handlingStatus": "on_hold",
+    "urgency": "low",
+    "topicTag": "other",
+    "isPinned": false,
+    "assignee": { "id": 1, "displayName": "田中" },
+    "unreadCount": 0,
+    "lastMessage": {
+      "id": 2002,
+      "body": "田中が対応ステータスを「保留」に変更しました",
+      "createdAt": "2026-07-28T13:00:00Z",
+      "senderId": 1
+    },
+    "lastStudentMessageAt": "2026-07-28T12:00:00Z",
+    "elapsedHours": 200.0
+  }
+]

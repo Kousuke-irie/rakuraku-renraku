@@ -1,0 +1,33 @@
+{
+  "101": [
+    {
+      "id": 1,
+      "roomId": 101,
+      "author": { "id": 1, "displayName": "田中" },
+      "body": "欠席理由は体調不良。来週で日程を再調整予定。",
+      "scope": "shared",
+      "createdAt": "2026-08-04T09:50:00Z",
+      "updatedAt": "2026-08-04T09:50:00Z"
+    },
+    {
+      "id": 2,
+      "roomId": 101,
+      "author": { "id": 1, "displayName": "田中" },
+      "body": "（個人メモ）保護者からの問い合わせにも注意。",
+      "scope": "private",
+      "createdAt": "2026-08-04T09:52:00Z",
+      "updatedAt": "2026-08-04T09:52:00Z"
+    }
+  ],
+  "108": [
+    {
+      "id": 3,
+      "roomId": 108,
+      "author": { "id": 2, "displayName": "鈴木" },
+      "body": "五次面接の評価は良好。内定候補として来週の会議で報告予定。",
+      "scope": "shared",
+      "createdAt": "2026-08-04T21:10:00Z",
+      "updatedAt": "2026-08-04T21:10:00Z"
+    }
+  ]
+}
