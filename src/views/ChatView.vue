@@ -119,18 +119,22 @@ const onExit = async () => {
 
 <template>
   <div class="chat">
-    <header class="chat__header">
-      <h1 class="chat__title">
-        採用担当とのチャット
-      </h1>
-      <div class="chat__meta">
-        <span>ログインユーザ：{{ userName }} さん</span>
-        <!-- 接続状態は色だけでなくテキストで示す -->
-        <span
-          v-if="ui.isOffline"
-          class="chat__offline"
-          role="status"
-        >未接続（再接続中）</span>
+    <div class="chat__card">
+      <header class="chat__header">
+        <div>
+          <h1 class="chat__title">
+            採用担当とのチャット
+          </h1>
+          <p class="chat__meta">
+            <span>{{ userName }} さん</span>
+            <!-- 接続状態は色だけでなくテキストで示す -->
+            <span
+              v-if="ui.isOffline"
+              class="chat__offline"
+              role="status"
+            >未接続（再接続中）</span>
+          </p>
+        </div>
         <button
           type="button"
           class="button-normal chat__logout"
@@ -138,122 +142,173 @@ const onExit = async () => {
         >
           ログアウト
         </button>
-      </div>
-    </header>
+      </header>
 
-    <p
-      v-if="!roomId"
-      class="chat__empty"
-    >
-      担当者とのルームがまだありません。採用担当からの連絡をお待ちください。
-    </p>
+      <p
+        v-if="!roomId"
+        class="chat__empty"
+      >
+        担当者とのルームがまだありません。採用担当からの連絡をお待ちください。
+      </p>
 
-    <MessageList
-      v-else
-      :room-id="roomId"
-      :senders="senders"
-      :default-sender-name="DEFAULT_PARTNER_NAME"
-    />
-
-    <p
-      v-if="messages.error"
-      class="chat__error"
-      role="alert"
-    >
-      {{ messages.error }}
-    </p>
-
-    <form
-      class="chat__form"
-      @submit.prevent="onPublish"
-    >
-      <textarea
-        v-model="draft"
-        class="chat__input"
-        rows="3"
-        placeholder="メッセージを入力（⌘／Ctrl + Enter で送信）"
-        :disabled="!roomId"
-        @keydown.enter.meta.exact.prevent="onPublish"
-        @keydown.enter.ctrl.exact.prevent="onPublish"
+      <MessageList
+        v-else
+        :room-id="roomId"
+        :senders="senders"
+        :default-sender-name="DEFAULT_PARTNER_NAME"
       />
-      <div class="chat__actions">
-        <button
-          type="submit"
-          class="button-normal"
-          :disabled="!canSend"
-        >
-          送信
-        </button>
-      </div>
-    </form>
+
+      <p
+        v-if="messages.error"
+        class="chat__error"
+        role="alert"
+      >
+        {{ messages.error }}
+      </p>
+
+      <form
+        class="composer"
+        @submit.prevent="onPublish"
+      >
+        <div class="composer__box">
+          <textarea
+            v-model="draft"
+            class="composer__input"
+            rows="3"
+            placeholder="メッセージを入力"
+            :disabled="!roomId"
+            @keydown.enter.meta.exact.prevent="onPublish"
+            @keydown.enter.ctrl.exact.prevent="onPublish"
+          />
+          <div class="composer__actions">
+            <p class="composer__hint">
+              ⌘ / Ctrl + Enter で送信
+            </p>
+            <button
+              type="submit"
+              class="button-primary"
+              :disabled="!canSend"
+            >
+              送信
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .chat {
+  max-width: 860px;
+  height: 100vh;
+  margin: 0 auto;
+  padding: var(--space-lg) var(--space-md);
+}
+
+/* 人事側のトークペインと同じ「白カード」の作りに揃える */
+.chat__card {
   display: flex;
   flex-direction: column;
-  max-width: 720px;
-  height: 100vh;
   min-height: 0;
-  margin: 0 auto;
-  padding: 24px 16px;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-xl);
+  background-color: var(--color-canvas);
+  box-shadow: var(--shadow-1);
 }
 
 .chat__header {
+  display: flex;
   flex: none;
+  gap: var(--space-md);
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-md) var(--space-xxl);
+  border-bottom: 1px solid var(--color-hairline);
 }
 
 .chat__title {
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 600;
+  letter-spacing: -0.02px;
 }
 
 .chat__meta {
   display: flex;
-  gap: 12px;
+  gap: var(--space-md);
   align-items: center;
-  margin-top: 8px;
-  font-size: 14px;
+  color: var(--color-ink-mute);
+  font-size: 12px;
 }
 
 .chat__logout {
-  margin-left: auto;
+  padding: 6px 16px;
+  font-size: 12px;
 }
 
 .chat__offline {
-  color: #e5484d;
+  color: var(--color-sla-alert);
 }
 
 .chat__empty {
-  margin-top: 24px;
-  font-size: 14px;
+  padding: var(--space-xxl);
+  color: var(--color-ink-mute);
+  font-size: 13px;
+  text-align: center;
 }
 
 .chat__error {
   flex: none;
-  color: #e5484d;
+  padding: var(--space-sm) var(--space-xxl) 0;
+  color: var(--color-error);
   font-size: 12px;
 }
 
-.chat__form {
+.composer {
   flex: none;
-  margin-top: 8px;
+  padding: var(--space-md) var(--space-xxl) var(--space-lg);
 }
 
-.chat__input {
+.composer__box {
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-lg);
+  background-color: var(--color-canvas);
+  transition: border-color 120ms ease;
+}
+
+.composer__box:focus-within {
+  border-color: color-mix(in srgb, var(--color-ink) 24%, var(--color-hairline));
+  box-shadow: var(--shadow-1);
+}
+
+.composer__input {
+  display: block;
   width: 100%;
-  padding: 8px 12px;
-  border: 1px solid #e6e6e6;
-  border-radius: 8px;
-  font-size: 14px;
-  line-height: 1.55;
-  resize: vertical;
+  padding: var(--space-md) var(--space-lg) 0;
+  border: 0;
+  background: none;
+  color: var(--color-ink);
+  font-size: 15px;
+  line-height: 1.6;
+  resize: none;
 }
 
-.chat__actions {
+.composer__input:focus-visible {
+  outline: none;
+}
+
+.composer__actions {
   display: flex;
-  justify-content: flex-end;
-  margin-top: 8px;
+  gap: var(--space-md);
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-sm) var(--space-md) var(--space-md) var(--space-lg);
+}
+
+.composer__hint {
+  color: var(--color-ink-mute);
+  font-size: 11px;
 }
 </style>

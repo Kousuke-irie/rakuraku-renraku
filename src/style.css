@@ -1,7 +1,126 @@
-/* 受信箱（S-04）は3ペインを画面高いっぱいに敷くため、body 側の余白は持たせない。
-   余白が必要な画面（ログイン等）は各ビューの scoped CSS で付ける。 */
+/* ===========================================================================
+   デザイントークン
+   ---------------------------------------------------------------------------
+   ブランド系（面・文字色・角丸・余白・影・タイポ）は DESIGN.md の frontmatter が
+   単一の情報源。**コンポーネントに値を直書きせず、必ずこの変数を参照する。**
+
+   意味を持つ色（対応ステータス・緊急度・SLA・自分／相手の吹き出し）は
+   shared/constants.js と .claude/frontend.md が情報源であり、ブランド色とは別系統。
+   DESIGN.md のオレンジは CTA とアクティブ状態にだけ使う（"Keep orange scarce"）。
+   =========================================================================== */
+
+:root {
+  /* --- ブランド色（DESIGN.md colors） --- */
+  --color-primary: #ff5c00;
+  --color-primary-press: #ff7a1f;
+  --color-on-primary: #ffffff;
+  --color-ink: #1d1d1d;
+  --color-ink-mute: #696969;
+  --color-link: #1264a3;
+  --color-link-hover: #3860be;
+  --color-canvas: #ffffff;
+  --color-canvas-cream: #f4ede4;
+  --color-canvas-lavender: #f9f0ff;
+  --color-hairline: #e6e6e6;
+  --color-error: #cc4117;
+
+  /* --- 意味色（frontend.md §7 / constants.md） --- */
+  --color-bubble-mine: #3ea76b;
+  --color-sla-alert: #e5484d;
+
+  /* --- 角丸（DESIGN.md rounded） --- */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 90px;
+
+  /* --- 余白（DESIGN.md spacing） --- */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 20px;
+  --space-xxl: 24px;
+  --space-huge: 28px;
+
+  /* --- 影（DESIGN.md Elevation） --- */
+  --shadow-1: 0 5px 20px rgb(0 0 0 / 10%);
+  --shadow-2: 0 0 32px rgb(0 0 0 / 10%);
+  --shadow-3: 0 1px 10px rgb(0 0 0 / 20%);
+
+  /* --- タイポ ---
+     DESIGN.md の proprietary な2書体は入手できないため、指定どおり
+     system-ui 系へフォールバックする。日本語は明朝に落ちないよう明示する。 */
+  --font-sans:
+    system-ui, -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN",
+    "Noto Sans JP", "Yu Gothic UI", sans-serif;
+}
+
 body {
+  /* 受信箱（S-04）は3ペインを画面高いっぱいに敷くため、body 側の余白は持たせない。
+     余白が必要な画面（ログイン等）は各ビューの scoped CSS で付ける。 */
   margin: 0;
+  background-color: var(--color-canvas-cream);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+textarea,
+select {
+  font-family: inherit;
+}
+
+/* Vuetify のタイポ用ユーティリティ（text-h4 / text-body-2 など）は
+   `font-family: Roboto, sans-serif !important` を当てる。Roboto には日本語字形が無く
+   フォールバックで明朝になってしまうため、ここで一括して上書きする。 */
+[class*="text-h"],
+[class*="text-body"],
+[class*="text-subtitle"],
+[class*="text-caption"],
+[class*="text-button"],
+[class*="text-overline"] {
+  font-family: var(--font-sans) !important;
+}
+
+/* インラインリンクは link-on-light（オレンジ以外の唯一のアクセント） */
+a {
+  color: var(--color-link);
+}
+
+a:hover {
+  color: var(--color-link-hover);
+}
+
+button:not(:disabled) {
+  cursor: pointer;
+}
+
+/* フォーカスリングはブランド色で統一する（DESIGN.md Elevation 4 の思想） */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+/* 細身のスクロールバー。ペイン内スクロールが主役の画面なので主張させない */
+* {
+  scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-thumb {
+  border-radius: var(--radius-pill);
+  background-color: color-mix(in srgb, var(--color-ink) 18%, transparent);
 }
 
 /* スクリーンリーダー専用テキスト（色や記号だけで情報を伝えないための補助・CLAUDE.md §6-13） */
@@ -17,9 +136,68 @@ body {
   border: 0;
 }
 
+/* ===========================================================================
+   ボタン（DESIGN.md：全ボタンをピル形状にする。角丸長方形は使わない）
+   =========================================================================== */
+
+/* button-primary-pill：塗りのCTA。**1画面に1つだけ**（"Keep orange scarce"） */
+.button-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 28px;
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-pill);
+  background-color: var(--color-primary);
+  color: var(--color-on-primary);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.button-primary:hover:not(:disabled) {
+  border-color: var(--color-primary-press);
+  background-color: var(--color-primary-press);
+}
+
+.button-primary:disabled {
+  border-color: var(--color-hairline);
+  background-color: var(--color-hairline);
+  color: var(--color-ink-mute);
+}
+
+/* button-secondary-pill：淡いラベンダー面の副アクション */
 .button-normal {
-  border: 1px solid #555;
-  background-color: #eee;
-  border-radius: 4px;
-  padding: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 20px;
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-pill);
+  background-color: var(--color-canvas-lavender);
+  color: var(--color-ink);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.button-normal:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--color-ink) 20%, var(--color-hairline));
+}
+
+.button-normal:disabled {
+  background-color: var(--color-canvas);
+  color: var(--color-ink-mute);
+}
+
+/* テキストリンク（link-on-light）。オレンジ以外の唯一のアクセント */
+.link-text {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--color-link);
+  text-decoration: underline;
+}
+
+.link-text:hover {
+  color: var(--color-link-hover);
 }

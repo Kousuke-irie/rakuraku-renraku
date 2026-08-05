@@ -241,13 +241,13 @@ const onDelete = (messageId) => messages.deleteMessage(messageId)
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  padding: 16px 24px;
+  padding: var(--space-lg) var(--space-xxl);
 }
 
 .list__loading,
 .list__empty {
-  padding: 8px 0;
-  color: #8b8d98;
+  padding: var(--space-sm) 0;
+  color: var(--color-ink-mute);
   font-size: 12px;
   text-align: center;
 }
@@ -259,20 +259,28 @@ const onDelete = (messageId) => messages.deleteMessage(messageId)
 .separator {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin: 16px 0 12px;
-  color: #696969;
-  font-size: 12px;
+  gap: var(--space-md);
+  margin: var(--space-xl) 0 var(--space-lg);
 }
 
 .separator::before,
 .separator::after {
   content: "";
   flex: 1 1 auto;
-  border-top: 1px solid #e6e6e6;
+  border-top: 1px solid var(--color-hairline);
 }
 
+/* pill-cap-shade：cream のピルに micro-cap のトラッキングを効かせる */
 .separator__label {
   flex: none;
+  padding: var(--space-xs) var(--space-md);
+  border-radius: var(--radius-pill);
+  background-color: var(--color-canvas-cream);
+  color: var(--color-ink-mute);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  line-height: 1;
+  white-space: nowrap;
 }
 </style>

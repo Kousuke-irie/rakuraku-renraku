@@ -6,6 +6,9 @@
 // - 送信時刻・送信状態は吹き出しの外側に出す
 // - 送信状態は色ではなくテキストラベルで示す（CLAUDE.md §6-13）
 // - 本文はテキスト補間で描画する。v-html は使わない（CLAUDE.md §6-10）
+//
+// 配色は「自他の区別＝意味色」なので frontend.md §7 に従い、面・角丸・余白は
+// DESIGN.md のトークン（style.css の CSS 変数）を参照する。
 import { computed } from "vue"
 import {
   DELETED_MESSAGE_TEXT,
@@ -38,7 +41,7 @@ const props = defineProps({
 const emit = defineEmits(["retry", "delete"])
 
 // #region computed
-// ステータス変更などの自動投稿（constants.md §7）。吹き出しにせず中央に薄く出す
+// ステータス変更などの自動投稿（constants.md §7）。吹き出しにせず中央のピルで出す
 const isSystem = computed(() => props.message.type === MESSAGE_TYPE.SYSTEM)
 
 const isDeleted = computed(() => Boolean(props.message.deletedAt))
@@ -138,11 +141,14 @@ const deletable = computed(() => {
           aria-hidden="true"
         >🕐</span>
         <span>{{ time }}</span>
-        <span v-if="sendStatusLabel">{{ sendStatusLabel }}</span>
+        <span
+          v-if="sendStatusLabel"
+          :class="{ 'meta--failed': isFailed }"
+        >{{ sendStatusLabel }}</span>
         <button
           v-if="isFailed"
           type="button"
-          class="meta__action"
+          class="link-text meta__action"
           @click="emit('retry', message.clientMsgId)"
         >
           再送する
@@ -150,7 +156,7 @@ const deletable = computed(() => {
         <button
           v-if="deletable"
           type="button"
-          class="meta__action meta__action--cancel"
+          class="link-text meta__action meta__action--cancel"
           @click="emit('delete', message.id)"
         >
           送信を取り消す
@@ -163,9 +169,9 @@ const deletable = computed(() => {
 <style scoped>
 .row {
   display: flex;
-  gap: 8px;
+  gap: var(--space-sm);
   align-items: flex-start;
-  margin-bottom: 12px;
+  margin-bottom: var(--space-lg);
 }
 
 .row--mine {
@@ -174,11 +180,16 @@ const deletable = computed(() => {
 
 .row--system {
   justify-content: center;
+  margin: var(--space-lg) 0;
 }
 
+/* システムメッセージは pill-cap-shade（cream のピル）で会話から浮かせる */
 .system {
   max-width: 70%;
-  color: #8b8d98;
+  padding: var(--space-xs) var(--space-md);
+  border-radius: var(--radius-pill);
+  background-color: var(--color-canvas-cream);
+  color: var(--color-ink-mute);
   font-size: 12px;
   text-align: center;
 }
@@ -192,7 +203,8 @@ const deletable = computed(() => {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  max-width: 70%;
+  /* 長文でも1行が読みやすい幅で打ち止める */
+  max-width: min(620px, 74%);
 }
 
 .row--mine .row__main {
@@ -200,48 +212,49 @@ const deletable = computed(() => {
 }
 
 .row__name {
-  margin-bottom: 2px;
-  color: #696969;
+  margin-bottom: var(--space-xs);
+  color: var(--color-ink-mute);
   font-size: 12px;
+  line-height: 1;
 }
 
 .bubble {
-  padding: 8px 12px;
-  border: 1px solid #e6e6e6;
-  border-radius: 12px;
-  border-top-left-radius: 2px;
-  background-color: #fff;
+  padding: 10px 14px;
+  border: 1px solid var(--color-hairline);
+  /* 発言者側の角だけ絞って吹き出しの向きを示す */
+  border-radius: var(--radius-lg) var(--radius-lg) var(--radius-lg) var(--radius-sm);
+  background-color: var(--color-canvas);
 }
 
 .bubble--mine {
-  border-color: #3ea76b;
-  border-radius: 12px;
-  border-top-right-radius: 2px;
-  background-color: #3ea76b;
-  color: #fff;
+  border-color: var(--color-bubble-mine);
+  border-radius: var(--radius-lg) var(--radius-sm) var(--radius-lg) var(--radius-lg);
+  background-color: var(--color-bubble-mine);
+  color: var(--color-on-primary);
 }
 
 /* 送信中は薄字にする（frontend.md §7）。確定したら通常表示に戻る */
 .bubble--sending {
-  opacity: 0.6;
+  opacity: 0.55;
 }
 
 .bubble--failed {
-  border-color: #e5484d;
+  border-color: var(--color-error);
 }
 
 .bubble--deleted {
-  border-color: #e6e6e6;
-  background-color: #f5f5f5;
-  color: #8b8d98;
+  border-style: dashed;
+  border-color: var(--color-hairline);
+  background-color: var(--color-canvas-cream);
+  color: var(--color-ink-mute);
 }
 
 .bubble__body {
   /* 改行と長い URL を崩さずに折り返す */
   white-space: pre-wrap;
   word-break: break-word;
-  font-size: 14px;
-  line-height: 1.55;
+  font-size: 15px;
+  line-height: 1.6;
 }
 
 .bubble__deleted {
@@ -251,18 +264,21 @@ const deletable = computed(() => {
 
 .meta {
   display: flex;
-  gap: 6px;
+  gap: var(--space-xs);
   align-items: center;
-  margin-top: 2px;
-  color: #8b8d98;
+  margin-top: var(--space-xs);
+  color: var(--color-ink-mute);
   font-size: 11px;
   line-height: 1;
 }
 
+.meta--failed {
+  color: var(--color-error);
+  font-weight: 700;
+}
+
 .meta__action {
-  color: #1264a3;
   font-size: 11px;
-  text-decoration: underline;
 }
 
 /* 取消はめったに使わないので、行にカーソル／フォーカスが来たときだけ出す */

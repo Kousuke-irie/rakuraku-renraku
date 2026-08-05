@@ -1,23 +1,36 @@
 <script setup>
-// S-03/S-04 受信箱の3ペインレイアウト枠（P1-1・frontend.md §5）
-// 左ペイン（ルーム一覧・P1-1）と右ペイン（ProfilePanel・P2-4）は別タスクで実装する。
+// S-03/S-04 受信箱（P1-1・frontend.md §5）
+//
+// 3ペイン（一覧 360px／トーク 可変／詳細 320px）を cream の面に白カードとして並べる。
+// 左右ペインは**表示専用のガワ**（InboxSidebar / InboxDetailPane）で、
+// P1-1・P1-7・P1-8・P2-4 で各コンポーネントに置き換える。
 //
 // このビューの責務は URL の :roomId と選択状態の同期のみ。
 // トークペインの中身は ChatPanel（B-2/B-3）が持つ。
 import { computed, onMounted, watch } from "vue"
+import { useRouter } from "vue-router"
+import { useAuthStore } from "../stores/auth.js"
 import { useMessagesStore } from "../stores/messages.js"
 import { useRoomsStore } from "../stores/rooms.js"
 import { useUiStore } from "../stores/ui.js"
 import ChatPanel from "../components/ChatPanel.vue"
+import InboxDetailPane from "../components/InboxDetailPane.vue"
+import InboxSidebar from "../components/InboxSidebar.vue"
+import UserAvatar from "../components/UserAvatar.vue"
 
 const props = defineProps({
   roomId: { type: String, default: null },
 })
 
 // #region global state
+const auth = useAuthStore()
 const messages = useMessagesStore()
 const rooms = useRoomsStore()
 const ui = useUiStore()
+// #endregion
+
+// #region local variable
+const router = useRouter()
 // #endregion
 
 // #region computed
@@ -45,65 +58,143 @@ onMounted(async () => {
 
 watch(() => props.roomId, syncSelectedRoom)
 // #endregion
+
+// #region browser event handler
+const onLogout = async () => {
+  await auth.logout()
+  router.push({ name: "login" })
+}
+// #endregion
 </script>
 
 <template>
   <div class="inbox">
-    <aside class="inbox__rooms">
-      <!-- ルーム一覧（P1-1）: RoomListItem を並べる -->
-    </aside>
-
-    <section class="inbox__chat">
-      <ChatPanel
-        v-if="selectedRoom"
-        :key="selectedRoom.id"
-        :room="selectedRoom"
-      />
-      <p
-        v-else
-        class="inbox__placeholder"
-      >
-        左の一覧から学生を選んでください。
+    <header class="topbar">
+      <p class="topbar__brand">
+        Sentry
       </p>
-    </section>
+      <p class="topbar__tagline">
+        採用コミュニケーション管理
+      </p>
 
-    <aside class="inbox__profile">
-      <!-- 学生プロフィールパネル（P2-4） -->
-    </aside>
+      <div class="topbar__user">
+        <UserAvatar
+          :display-name="auth.user?.displayName ?? ''"
+          :color="auth.user?.avatarColor ?? ''"
+          size="sm"
+        />
+        <span class="topbar__name">{{ auth.user?.displayName }}</span>
+        <button
+          type="button"
+          class="button-normal topbar__logout"
+          @click="onLogout"
+        >
+          ログアウト
+        </button>
+      </div>
+    </header>
+
+    <div class="panes">
+      <div class="pane pane--rooms">
+        <InboxSidebar />
+      </div>
+
+      <div class="pane pane--chat">
+        <ChatPanel
+          v-if="selectedRoom"
+          :key="selectedRoom.id"
+          :room="selectedRoom"
+        />
+        <p
+          v-else
+          class="pane__placeholder"
+        >
+          左の一覧から学生を選んでください。
+        </p>
+      </div>
+
+      <div class="pane pane--detail">
+        <InboxDetailPane :room="selectedRoom" />
+      </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .inbox {
-  display: flex;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: var(--space-md);
   height: 100vh;
+  padding: var(--space-md);
+}
+
+.topbar {
+  display: flex;
+  gap: var(--space-md);
+  align-items: center;
+  padding: var(--space-md) var(--space-xl);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-xl);
+  background-color: var(--color-canvas);
+}
+
+/* ワードマークだけはブランド色を使う（DESIGN.md：orange は面・CTA・ロゴ） */
+.topbar__brand {
+  color: var(--color-primary);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+}
+
+.topbar__tagline {
+  padding-left: var(--space-md);
+  border-left: 1px solid var(--color-hairline);
+  color: var(--color-ink-mute);
+  font-size: 12px;
+}
+
+.topbar__user {
+  display: flex;
+  gap: var(--space-sm);
+  align-items: center;
+  margin-left: auto;
+}
+
+.topbar__name {
+  font-size: 13px;
+}
+
+.topbar__logout {
+  padding: 6px 16px;
+  font-size: 12px;
+}
+
+.panes {
+  display: grid;
+  grid-template-columns: 360px minmax(0, 1fr) 320px;
+  gap: var(--space-md);
   min-height: 0;
 }
 
-.inbox__rooms {
-  flex: 0 0 360px;
-  width: 360px;
-  overflow-y: auto;
-  border-right: 1px solid #e6e6e6;
-}
-
-.inbox__chat {
-  flex: 1 1 auto;
-  min-width: 0;
+.pane {
   display: flex;
   flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-xl);
+  background-color: var(--color-canvas);
+  box-shadow: var(--shadow-1);
 }
 
-.inbox__placeholder {
-  margin: auto;
-  color: #8b8d98;
+.pane--chat {
+  justify-content: center;
+}
+
+.pane__placeholder {
+  color: var(--color-ink-mute);
   font-size: 14px;
-}
-
-.inbox__profile {
-  flex: 0 0 280px;
-  width: 280px;
-  overflow-y: auto;
-  border-left: 1px solid #e6e6e6;
+  text-align: center;
 }
 </style>

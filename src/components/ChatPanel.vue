@@ -4,7 +4,8 @@
 // ヘッダ（相手の識別情報）＋ MessageList ＋ 入力欄をまとめる。
 // InboxView 側の差分を小さく保つために切り出している（一覧 P1-1・プロフィール P2-4 は別コンポーネント）。
 //
-// - 対応ステータスの変更（P1-2）・定型文パレット（P2-1）はこのコンポーネントの責務ではない
+// - ヘッダのステータスチップは**表示のみ**。1クリック変更（P1-2）は RoomListItem の責務
+// - 定型文パレット（P2-1）はこのコンポーネントの責務ではない
 // - socket の購読は composables/useSocket.js に集約されている（CLAUDE.md §6-12）
 import { computed, watch } from "vue"
 import { SELECTION_STATUS_META } from "../constants/index.js"
@@ -12,6 +13,7 @@ import { useAuthStore } from "../stores/auth.js"
 import { useMessagesStore } from "../stores/messages.js"
 import { useUiStore } from "../stores/ui.js"
 import MessageList from "./MessageList.vue"
+import StatusChip, { CHIP_KIND } from "./StatusChip.vue"
 import UserAvatar from "./UserAvatar.vue"
 
 const props = defineProps({
@@ -108,17 +110,30 @@ const onSubmit = async () => {
         </p>
         <p class="panel__sub">
           <span v-if="student.university">{{ student.university }}</span>
+          <span
+            v-if="selectionStatusLabel"
+            class="panel__dot"
+            aria-hidden="true"
+          >・</span>
           <span v-if="selectionStatusLabel">{{ selectionStatusLabel }}</span>
         </p>
       </div>
-      <!-- 接続状態は色だけでなくテキストで示す（CLAUDE.md §6-13） -->
-      <p
-        v-if="ui.isOffline"
-        class="panel__offline"
-        role="status"
-      >
-        未接続（再接続中）
-      </p>
+
+      <div class="panel__status">
+        <StatusChip
+          :kind="CHIP_KIND.HANDLING"
+          :value="room.handlingStatus"
+          size="md"
+        />
+        <!-- 接続状態は色だけでなくテキストで示す（CLAUDE.md §6-13） -->
+        <p
+          v-if="ui.isOffline"
+          class="panel__offline"
+          role="status"
+        >
+          未接続（再接続中）
+        </p>
+      </div>
     </header>
 
     <MessageList
@@ -138,22 +153,27 @@ const onSubmit = async () => {
       class="composer"
       @submit.prevent="onSubmit"
     >
-      <textarea
-        v-model="draft"
-        class="composer__input"
-        rows="3"
-        placeholder="メッセージを入力（⌘／Ctrl + Enter で送信）"
-        @keydown.enter.meta.exact.prevent="onSubmit"
-        @keydown.enter.ctrl.exact.prevent="onSubmit"
-      />
-      <div class="composer__actions">
-        <button
-          type="submit"
-          class="composer__send"
-          :disabled="!canSend"
-        >
-          送信
-        </button>
+      <div class="composer__box">
+        <textarea
+          v-model="draft"
+          class="composer__input"
+          rows="3"
+          placeholder="メッセージを入力"
+          @keydown.enter.meta.exact.prevent="onSubmit"
+          @keydown.enter.ctrl.exact.prevent="onSubmit"
+        />
+        <div class="composer__actions">
+          <p class="composer__hint">
+            ⌘ / Ctrl + Enter で送信
+          </p>
+          <button
+            type="submit"
+            class="button-primary"
+            :disabled="!canSend"
+          >
+            送信
+          </button>
+        </div>
       </div>
     </form>
   </div>
@@ -165,15 +185,16 @@ const onSubmit = async () => {
   flex-direction: column;
   min-height: 0;
   height: 100%;
+  background-color: var(--color-canvas);
 }
 
 .panel__header {
   display: flex;
   flex: none;
-  gap: 12px;
+  gap: var(--space-md);
   align-items: center;
-  padding: 12px 24px;
-  border-bottom: 1px solid #e6e6e6;
+  padding: var(--space-md) var(--space-xxl);
+  border-bottom: 1px solid var(--color-hairline);
 }
 
 .panel__identity {
@@ -183,63 +204,83 @@ const onSubmit = async () => {
 .panel__name {
   font-size: 18px;
   font-weight: 600;
+  letter-spacing: -0.02px;
 }
 
 .panel__sub {
   display: flex;
-  gap: 8px;
-  color: #696969;
+  gap: 2px;
+  color: var(--color-ink-mute);
   font-size: 12px;
 }
 
-.panel__offline {
+.panel__dot {
+  color: var(--color-hairline);
+}
+
+.panel__status {
+  display: flex;
+  gap: var(--space-md);
+  align-items: center;
   margin-left: auto;
-  color: #e5484d;
+}
+
+.panel__offline {
+  color: var(--color-sla-alert);
   font-size: 12px;
 }
 
 .panel__error {
   flex: none;
-  padding: 6px 24px;
-  color: #e5484d;
+  padding: var(--space-sm) var(--space-xxl) 0;
+  color: var(--color-error);
   font-size: 12px;
 }
 
 .composer {
   flex: none;
-  padding: 12px 24px 16px;
-  border-top: 1px solid #e6e6e6;
+  padding: var(--space-md) var(--space-xxl) var(--space-lg);
+}
+
+/* 入力欄はカードとして扱い、枠の中にアクション行まで収める（添付レイアウト準拠） */
+.composer__box {
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-lg);
+  background-color: var(--color-canvas);
+  transition: border-color 120ms ease;
+}
+
+.composer__box:focus-within {
+  border-color: color-mix(in srgb, var(--color-ink) 24%, var(--color-hairline));
+  box-shadow: var(--shadow-1);
 }
 
 .composer__input {
+  display: block;
   width: 100%;
-  padding: 8px 12px;
-  border: 1px solid #e6e6e6;
-  border-radius: 8px;
-  font-size: 14px;
-  line-height: 1.55;
-  resize: vertical;
+  padding: var(--space-md) var(--space-lg) 0;
+  border: 0;
+  background: none;
+  color: var(--color-ink);
+  font-size: 15px;
+  line-height: 1.6;
+  resize: none;
+}
+
+.composer__input:focus-visible {
+  outline: none;
 }
 
 .composer__actions {
   display: flex;
-  justify-content: flex-end;
-  margin-top: 8px;
+  gap: var(--space-md);
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-sm) var(--space-md) var(--space-md) var(--space-lg);
 }
 
-.composer__send {
-  padding: 6px 20px;
-  border: 1px solid #3ea76b;
-  border-radius: 999px;
-  background-color: #3ea76b;
-  color: #fff;
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.composer__send:disabled {
-  border-color: #e6e6e6;
-  background-color: #f5f5f5;
-  color: #8b8d98;
+.composer__hint {
+  color: var(--color-ink-mute);
+  font-size: 11px;
 }
 </style>
