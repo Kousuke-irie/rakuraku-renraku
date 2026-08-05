@@ -126,4 +126,130 @@ export const MEMO_SCOPE = Object.freeze({
   SHARED: 'shared',
 });
 
+export const MEMO_SCOPE_META = Object.freeze({
+  [MEMO_SCOPE.PRIVATE]: { label: '個人メモ' },
+  [MEMO_SCOPE.SHARED]: { label: '共有メモ' },
+});
+
 export const MEMO_SCOPE_VALUES = Object.values(MEMO_SCOPE);
+
+// ---------------------------------------------------------------------------
+// 一覧の並び順（P1-7 / business-logic.md §6）
+// ---------------------------------------------------------------------------
+
+export const SORT_KEY = Object.freeze({
+  // 既定：is_pinned DESC → urgency → last_student_message_at ASC
+  DEFAULT: 'default',
+  // 最終メッセージ時刻の新しい順
+  LAST_MESSAGE: 'last_message',
+  // 経過時間の長い順
+  ELAPSED: 'elapsed',
+});
+
+export const SORT_KEY_META = Object.freeze({
+  [SORT_KEY.DEFAULT]: { label: '緊急度順' },
+  [SORT_KEY.LAST_MESSAGE]: { label: '最終メッセージ順' },
+  [SORT_KEY.ELAPSED]: { label: '経過時間順' },
+});
+
+export const SORT_KEY_VALUES = Object.values(SORT_KEY);
+
+export const DEFAULT_SORT_KEY = SORT_KEY.DEFAULT;
+
+// 緊急度のソート順（小さいほど上位）。比較のたびに配列を組み立てないためのマップ。
+export const URGENCY_ORDER = Object.freeze({
+  [URGENCY.HIGH]: 0,
+  [URGENCY.NORMAL]: 1,
+  [URGENCY.LOW]: 2,
+});
+
+// ---------------------------------------------------------------------------
+// 送信状態（B-3 / frontend.md §7）※クライアント内部の状態。DB には保存しない
+// ---------------------------------------------------------------------------
+
+export const SEND_STATUS = Object.freeze({
+  SENDING: 'sending',
+  SENT: 'sent',
+  READ: 'read',
+  FAILED: 'failed',
+});
+
+export const SEND_STATUS_META = Object.freeze({
+  [SEND_STATUS.SENDING]: { label: '送信中' },
+  [SEND_STATUS.SENT]: { label: '送信済' },
+  [SEND_STATUS.READ]: { label: '既読' },
+  [SEND_STATUS.FAILED]: { label: '送信失敗' },
+});
+
+export const SEND_STATUS_VALUES = Object.values(SEND_STATUS);
+
+// ---------------------------------------------------------------------------
+// 初期値
+// ---------------------------------------------------------------------------
+
+export const DEFAULT_HANDLING_STATUS = HANDLING_STATUS.NEEDS_REPLY;
+export const DEFAULT_SELECTION_STATUS = SELECTION_STATUS.ENTRY;
+export const DEFAULT_TOPIC_TAG = TOPIC_TAG.OTHER;
+export const DEFAULT_URGENCY = URGENCY.NORMAL;
+export const DEFAULT_SCHEDULE_STATE = SCHEDULE_STATE.NONE;
+export const DEFAULT_MEMO_SCOPE = MEMO_SCOPE.PRIVATE;
+
+// ---------------------------------------------------------------------------
+// SLA 閾値（P1-4 / business-logic.md §3）
+// サーバは環境変数 SLA_WARN_HOURS / SLA_ALERT_HOURS で上書きする。ここは既定値。
+// ---------------------------------------------------------------------------
+
+export const SLA_WARN_HOURS = 12;
+export const SLA_ALERT_HOURS = 24;
+
+// 経過時間バッジを表示しない対応ステータス（返信済み・完了は SLA の対象外）
+export const ELAPSED_BADGE_HIDDEN_STATUSES = Object.freeze([
+  HANDLING_STATUS.WAITING_STUDENT,
+  HANDLING_STATUS.DONE,
+]);
+
+// ---------------------------------------------------------------------------
+// Socket.IO イベント名（api.md §3）
+// client / server の双方がここから import する。文字列を直書きしないこと。
+// ---------------------------------------------------------------------------
+
+// Client → Server
+export const SOCKET_EMIT = Object.freeze({
+  ROOM_JOIN: 'room:join',
+  ROOM_LEAVE: 'room:leave',
+  MESSAGE_SEND: 'message:send',
+  MESSAGE_READ: 'message:read',
+  ROOM_STATUS_UPDATE: 'room:status_update',
+});
+
+// Server → Client
+export const SOCKET_ON = Object.freeze({
+  MESSAGE_NEW: 'message:new',
+  MESSAGE_SENT: 'message:sent',
+  MESSAGE_DELETED: 'message:deleted',
+  READ_UPDATED: 'read:updated',
+  ROOM_UPDATED: 'room:updated',
+  MEMO_UPDATED: 'memo:updated',
+  SUMMARY_UPDATED: 'summary:updated',
+  ERROR: 'error',
+});
+
+// ---------------------------------------------------------------------------
+// 動作パラメータ
+// ---------------------------------------------------------------------------
+
+// 履歴取得の1ページ件数（api.md：GET /rooms/:id/messages の limit 既定値）
+export const MESSAGE_PAGE_SIZE = 50;
+// message:sent の ack をこの時間待って来なければ送信失敗扱い（frontend.md §7）
+export const SEND_ACK_TIMEOUT_MS = 5000;
+// 送信取消が可能な時間（B-3）
+export const MESSAGE_DELETE_WINDOW_HOURS = 24;
+// 経過時間バッジの再計算間隔（useElapsedTime）
+export const ELAPSED_REFRESH_INTERVAL_MS = 60_000;
+// 一覧に出す最終メッセージ抜粋の文字数（frontend.md §5）
+export const LAST_MESSAGE_PREVIEW_LENGTH = 40;
+// 送信取消したメッセージの表示文言
+export const DELETED_MESSAGE_TEXT = 'メッセージの送信を取り消しました';
+// 未設定変数のプレースホルダ（P2-2 / business-logic.md §5）例：【未設定：面接日時】
+export const UNSET_VARIABLE_PREFIX = '【未設定：';
+export const UNSET_VARIABLE_SUFFIX = '】';
