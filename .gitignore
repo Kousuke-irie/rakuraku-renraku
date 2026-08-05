@@ -25,5 +25,5 @@ dist-ssr
 
 .env
 
-package-lock.json
-package.json
+# SQLite データベースファイル（DATABASE_PATH の既定出力先）
+/data/
