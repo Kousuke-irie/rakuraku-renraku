@@ -1,5 +1,9 @@
-/* eslint-disable no-unused-vars -- 空実装のため引数が未使用。実装時にこの行を消すこと */
+import { io } from 'socket.io-client'
 import { SOCKET_EMIT, SOCKET_ON } from '../constants/index.js'
+import { useAuthStore } from '../stores/auth.js'
+import { useRoomsStore } from '../stores/rooms.js'
+import { useMessagesStore } from '../stores/messages.js'
+import { useUiStore } from '../stores/ui.js'
 
 /**
  * Socket.IO イベントの唯一の入口（frontend.md §4）。
@@ -54,25 +58,62 @@ let socket = null
 /**
  * 認証後に一度だけ呼び、socket を接続してハンドラを登録する。
  * `io(BASE_URL, { withCredentials: true })` で httpOnly Cookie の JWT を送る。
+ * 既に接続済みなら何もしない（多重接続防止）。
  */
-export function connectSocket() {}
+export function connectSocket() {
+  if (socket) return
+
+  // 同一オリジンに接続する（本番は server が静的配信、devは /socket.io の proxy 経由。api.md §3）
+  socket = io({ withCredentials: true })
+  registerHandlers()
+}
 
 /** ログアウト時に切断してハンドラを解除する */
-export function disconnectSocket() {}
+export function disconnectSocket() {
+  if (!socket) return
+
+  socket.removeAllListeners()
+  socket.disconnect()
+  socket = null
+}
 
 /**
  * Server → Client のハンドラを登録する。**追加するイベントはすべてここに書く。**
  * 各ハンドラの中身はストアの action を呼ぶだけにし、ロジックを書かない。
  */
 function registerHandlers() {
-  // socket.on(SOCKET_ON.MESSAGE_NEW,     ({ message, room }) => {...})
-  // socket.on(SOCKET_ON.MESSAGE_SENT,    ({ clientMsgId, message }) => {...})
-  // socket.on(SOCKET_ON.MESSAGE_DELETED, (payload) => {...})
-  // socket.on(SOCKET_ON.READ_UPDATED,    (payload) => {...})
-  // socket.on(SOCKET_ON.ROOM_UPDATED,    ({ room }) => {...})
-  // socket.on(SOCKET_ON.MEMO_UPDATED,    ({ roomId, memo }) => {...})
-  // socket.on(SOCKET_ON.SUMMARY_UPDATED, (payload) => {...})
-  // socket.on(SOCKET_ON.ERROR,           (payload) => {...})
+  const auth = useAuthStore()
+  const rooms = useRoomsStore()
+  const messages = useMessagesStore()
+  const ui = useUiStore()
+
+  // socket.io-client 標準イベント。再接続は socket.io の既定の指数バックオフに任せる
+  socket.on('connect', () => {
+    ui.setConnectionState('connected')
+    rooms.fetchRooms()
+    if (ui.selectedRoomId) messages.resync(ui.selectedRoomId)
+  })
+  socket.on('disconnect', () => ui.setConnectionState('disconnected'))
+  socket.on('connect_error', () => ui.setConnectionState('disconnected'))
+
+  socket.on(SOCKET_ON.MESSAGE_NEW, ({ message, room }) => {
+    messages.appendMessage(message)
+    rooms.upsertRoom(room)
+    if (ui.selectedRoomId === room.id) {
+      messages.sendRead(room.id, message.id)
+      rooms.markRead(room.id, message.id)
+    }
+  })
+  socket.on(SOCKET_ON.MESSAGE_SENT, ({ clientMsgId, message }) => messages.markSent(clientMsgId, message))
+  socket.on(SOCKET_ON.MESSAGE_DELETED, (payload) => messages.markDeleted(payload))
+  socket.on(SOCKET_ON.READ_UPDATED, (payload) => messages.updateReadState(payload))
+  socket.on(SOCKET_ON.ROOM_UPDATED, ({ room }) => rooms.upsertRoom(room))
+  socket.on(SOCKET_ON.MEMO_UPDATED, ({ roomId, memo }) => rooms.upsertMemo(roomId, memo))
+  socket.on(SOCKET_ON.SUMMARY_UPDATED, (payload) => rooms.setSummary(payload))
+  socket.on(SOCKET_ON.ERROR, ({ code, message }) => {
+    ui.pushToast({ type: 'error', message })
+    if (code === 'unauthorized') auth.reset()
+  })
 }
 
 /**
@@ -83,7 +124,10 @@ function registerHandlers() {
  * @returns {boolean} 送信できたか
  */
 export function emitSocket(event, payload) {
-  return false
+  if (!socket?.connected) return false
+
+  socket.emit(event, payload)
+  return true
 }
 
 /**
