@@ -48,6 +48,18 @@ Windows は WSL2 上の Ubuntu、Mac はネイティブ環境で実行します�
 
 > HTTPSで動作させたい場合は `.env.sample` のコメントを参照して `.env` を作成すること。EC2運用時の `/etc/ssl/*` を読み込んでいた挙動は廃止し、`HTTPS=true` 指定時のみ証明書パスを読み込むようにした。
 
+## シードデータ
+
+DB本体（`data/`配下のSQLiteファイル）は`.gitignore`対象。`server/db/seed.js`（git管理下）を各自のローカルで実行してデモデータを投入する。
+
+```bash
+npm run db:migrate   # スキーマ適用
+npm run db:seed      # デモデータ投入
+```
+
+- ログインID：`hr1` / `hr2` / `admin1`（人事）、`student1`〜`student10`（学生）。パスワードは全員共通で `password123`
+- `db:seed` は**既存データを全削除してから入れ直す**（再実行可能）。手動で追加したテストデータは消えるので注意
+
 ## 機能
 
 ### 基本要件
