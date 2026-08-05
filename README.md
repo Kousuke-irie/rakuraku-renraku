@@ -24,8 +24,7 @@ Windows は WSL2 上の Ubuntu、Mac はネイティブ環境で実行します�
 ## 起動手順
 
 1. VS Codeでリポジトリを開く
-   - Windows は Remote - WSL で Ubuntu 側のフォルダを開く
-   - Mac は通常どおりフォルダを開く
+   
 2. 初回セットアップの確認を行う
 
    ```bash
@@ -38,17 +37,39 @@ Windows は WSL2 上の Ubuntu、Mac はネイティブ環境で実行します�
    npm install
    ```
 
-4. アプリを起動する
+4. `.env` を作成する（初回のみ）
 
    ```bash
-   npm start
+   cp .env.example .env
    ```
 
-5. ブラウザで `http://localhost:3000/` を開く
+   `JWT_SECRET` は空だとサーバが起動時にエラーで停止する。次のコマンドで値を生成して `.env` に記入する。
+
+   ```bash
+   node -e "console.log(require('node:crypto').randomBytes(48).toString('base64url'))"
+   ```
+
+5. DBを初期化する（初回のみ）
+
+   ```bash
+   npm run db:migrate   # スキーマ適用
+   npm run db:seed      # デモデータ投入
+   ```
+
+6. アプリを起動する
+
+   | コマンド | 起動するもの |
+   | --- | --- |
+   | `npm run dev` | 両方（通常はこれを使う） |
+   | `npm run dev:server` | APIサーバ + Socket.IO（`localhost:3000`）のみ |
+   | `npm run dev:client` / `npm start` | Vite（`localhost:5173`）のみ |
+
+7. ブラウザで `http://localhost:5173/` を開く
+
+   ログインIDとパスワードは[シードデータ](#シードデータ)を参照。
 
 講師のリファレンス環境では、lockfile通りに再現できることを `npm ci` で確認します。
 
-> HTTPSで動作させたい場合は `.env.sample` のコメントを参照して `.env` を作成すること。EC2運用時の `/etc/ssl/*` を読み込んでいた挙動は廃止し、`HTTPS=true` 指定時のみ証明書パスを読み込むようにした。
 
 ## シードデータ
 
