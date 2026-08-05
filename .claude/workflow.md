@@ -5,7 +5,7 @@
 ## 1. ブランチ運用
 
 ```
-main            # 常にデモ可能な状態を保つ
+master            # 常にデモ可能な状態を保つ
  └ feat/P1-6-urgency-calculator
  └ feat/P2-1-snippet-command
  └ fix/P1-4-elapsed-badge-timezone
@@ -13,16 +13,16 @@ main            # 常にデモ可能な状態を保つ
 
 - **ブランチ名には必ず要件IDを含める**：`feat/{要件ID}-{英語の短い説明}`
 - 1ブランチ＝1要件。複数要件をまとめない
-- `main` に直接 push しない
+- `master` に直接 push しない
 
 ## 2. コミットメッセージ
 
 ```
-{type}({要件ID}): {日本語で要約}
+{type}: {日本語で要約}
 
-feat(P1-6): 緊急度算出サービスを追加
-fix(P1-4): 経過時間バッジが done でも表示される不具合を修正
-refactor(A-5): メッセージキャッシュを Pinia ストアへ移行
+feat: 緊急度算出サービスを追加
+fix: 経過時間バッジが done でも表示される不具合を修正
+refactor: メッセージキャッシュを Pinia ストアへ移行
 docs: CLAUDE.md に定型文の仕様を追記
 ```
 
