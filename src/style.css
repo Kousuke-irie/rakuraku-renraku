@@ -151,8 +151,13 @@ button:not(:disabled) {
    ボタン（DESIGN.md：全ボタンをピル形状にする。角丸長方形は使わない）
    =========================================================================== */
 
-/* button-primary-pill：塗りのCTA。**1画面に1つだけ**（"Keep orange scarce"） */
-.button-primary {
+/* button-primary-pill：塗りのCTA。**1画面に1つだけ**（"Keep orange scarce"）
+
+   クラスを2回書いて詳細度を (0,2,0) に上げている。Vuetify のリセットが
+   `[type="submit"] { color: inherit }` を (0,1,0) で当てており、
+   main.js の読み込み順（style.css → vuetify/styles）では後者が勝つため、
+   単一クラスだと文字色が body の ink を継承してオレンジ地に黒文字になる。 */
+.button-primary.button-primary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
