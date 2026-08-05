@@ -15,6 +15,8 @@ export default [
         clearInterval: 'readonly',
         setTimeout: 'readonly',
         clearTimeout: 'readonly',
+        // crypto.randomUUID()（clientMsgId の生成）。Node 20+ とブラウザの両方で使える
+        crypto: 'readonly',
       },
     },
   },

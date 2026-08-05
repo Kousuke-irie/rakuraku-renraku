@@ -63,6 +63,7 @@ let socket = null
 export function connectSocket() {
   if (socket) return
 
+  useUiStore().setConnectionState('connecting')
   // 同一オリジンに接続する（本番は server が静的配信、devは /socket.io の proxy 経由。api.md §3）
   socket = io({ withCredentials: true })
   registerHandlers()
@@ -78,11 +79,28 @@ export function disconnectSocket() {
 }
 
 /**
+ * ハンドシェイクの認証失敗（セッション切れ・Cookie 破棄）の共通処理。
+ * 再接続しても回復しないので指数バックオフを止め、ログイン画面へ退避する。
+ * ルーターは動的 import で読み込み、router → views → useSocket の循環を避ける。
+ */
+async function handleUnauthorized() {
+  disconnectSocket()
+  useAuthStore().reset()
+
+  const { default: router } = await import('../router/index.js')
+  if (router.currentRoute.value.name !== 'login') {
+    router.replace({
+      name: 'login',
+      query: { redirect: router.currentRoute.value.fullPath },
+    })
+  }
+}
+
+/**
  * Server → Client のハンドラを登録する。**追加するイベントはすべてここに書く。**
  * 各ハンドラの中身はストアの action を呼ぶだけにし、ロジックを書かない。
  */
 function registerHandlers() {
-  const auth = useAuthStore()
   const rooms = useRoomsStore()
   const messages = useMessagesStore()
   const ui = useUiStore()
@@ -94,7 +112,14 @@ function registerHandlers() {
     if (ui.selectedRoomId) messages.resync(ui.selectedRoomId)
   })
   socket.on('disconnect', () => ui.setConnectionState('disconnected'))
-  socket.on('connect_error', () => ui.setConnectionState('disconnected'))
+  socket.on('connect_error', (error) => {
+    ui.setConnectionState('disconnected')
+    // ハンドシェイクで JWT 検証に失敗した場合（server/sockets/index.js が code を渡す）。
+    // ここで止めないと、セッション切れのまま無限に再接続を繰り返す。
+    if (error?.data?.code === 'unauthorized' || error?.message === 'unauthorized') {
+      handleUnauthorized()
+    }
+  })
 
   socket.on(SOCKET_ON.MESSAGE_NEW, ({ message, room }) => {
     messages.appendMessage(message)
@@ -112,7 +137,7 @@ function registerHandlers() {
   socket.on(SOCKET_ON.SUMMARY_UPDATED, (payload) => rooms.setSummary(payload))
   socket.on(SOCKET_ON.ERROR, ({ code, message }) => {
     ui.pushToast({ type: 'error', message })
-    if (code === 'unauthorized') auth.reset()
+    if (code === 'unauthorized') handleUnauthorized()
   })
 }
 

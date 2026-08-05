@@ -1,6 +1,7 @@
 /* eslint-disable no-unused-vars -- 空実装のため引数が未使用。実装時にこの行を消すこと */
 import { defineStore } from 'pinia'
 import { DEFAULT_SORT_KEY } from '../constants/index.js'
+import { roomsApi, toErrorMessage } from '../api/index.js'
 
 /**
  * 受信箱ストア（P1-1 / P1-7 / P1-8・frontend.md §3）
@@ -81,7 +82,7 @@ export const useRoomsStore = defineStore('rooms', {
 
   getters: {
     /** @returns {(roomId: number) => object|undefined} */
-    roomById: (s) => (roomId) => undefined,
+    roomById: (s) => (roomId) => s.rooms.find((room) => room.id === Number(roomId)),
 
     /** filters を適用した結果（並べ替え前） */
     filteredRooms: (s) => [],
@@ -109,7 +110,18 @@ export const useRoomsStore = defineStore('rooms', {
     // ---- 取得系（REST） ---------------------------------------------------
 
     /** GET /api/rooms。初回ロード時と socket 再接続時に呼ぶ */
-    async fetchRooms() {},
+    async fetchRooms() {
+      this.loading = true
+      this.error = null
+      try {
+        const { data } = await roomsApi.list()
+        this.rooms = data.rooms ?? []
+      } catch (error) {
+        this.error = toErrorMessage(error, 'ルーム一覧の取得に失敗しました')
+      } finally {
+        this.loading = false
+      }
+    },
 
     /** GET /api/rooms/:id（学生プロフィール込み）→ upsertRoom */
     async fetchRoom(roomId) {},
@@ -127,7 +139,18 @@ export const useRoomsStore = defineStore('rooms', {
      * 既存があれば浅くマージし、無ければ追加する。
      * @param {object} room
      */
-    upsertRoom(room) {},
+    upsertRoom(room) {
+      if (!room?.id) return
+
+      const index = this.rooms.findIndex((existing) => existing.id === room.id)
+      if (index === -1) {
+        this.rooms.push(room)
+        return
+      }
+      // socket の message:new は { id } だけのこともあるので浅くマージする
+      // （既存の student / assignee などを消さない）。
+      this.rooms[index] = { ...this.rooms[index], ...room }
+    },
 
     /**
      * サマリーを差し替える（summary:updated）。
@@ -192,6 +215,13 @@ export const useRoomsStore = defineStore('rooms', {
     /** 「自分の担当のみ」トグル */
     toggleOnlyMine() {},
 
-    reset() {},
+    reset() {
+      this.rooms = []
+      this.summary = { needsReply: 0, urgent: 0, overdue24h: 0, unassigned: 0 }
+      this.memosByRoomId = {}
+      this.assignableUsers = []
+      this.loading = false
+      this.error = null
+    },
   },
 })

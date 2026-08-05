@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ROLE } from '../constants/index.js'
 import { authApi, toErrorMessage, usersApi } from '../api/index.js'
-import { disconnectSocket } from '../composables/useSocket.js'
+import { connectSocket, disconnectSocket } from '../composables/useSocket.js'
 import { useRoomsStore } from './rooms.js'
 import { useMessagesStore } from './messages.js'
 import { useUiStore } from './ui.js'
@@ -64,6 +64,8 @@ export const useAuthStore = defineStore('auth', {
         try {
           const { data } = await authApi.me()
           this.user = data.user ?? null
+          // リロード時もここが唯一の復元経路なので、socket 接続もここで張る
+          if (this.user) connectSocket()
         } catch {
           // 401（未ログイン）もサーバ未起動も同じ「未認証」として扱う。
           // ここで throw するとガードが解決できず画面が固まる。
@@ -89,6 +91,8 @@ export const useAuthStore = defineStore('auth', {
         const { data } = await authApi.login(credentials)
         this.user = data.user ?? null
         this.initialized = true
+        // Cookie が発行された直後に接続する（ハンドシェイクで JWT を検証させる）
+        if (this.user) connectSocket()
         return this.user !== null
       } catch (error) {
         this.user = null
@@ -111,6 +115,7 @@ export const useAuthStore = defineStore('auth', {
         const { data } = await authApi.register(payload)
         this.user = data.user ?? null
         this.initialized = true
+        if (this.user) connectSocket()
         return this.user !== null
       } catch (error) {
         this.user = null
@@ -163,6 +168,9 @@ export const useAuthStore = defineStore('auth', {
     /** ストアを初期状態へ戻す（logout / 401 検知時） */
     reset() {
       mePromise = null
+      // REST の 401 検知（api/client.js）からも呼ばれる。
+      // 認証が切れた socket を張ったままにしない。
+      disconnectSocket()
       this.user = null
       // セッションが無いことは確定しているので initialized は true のまま保つ。
       // false に戻すと次のガードで /auth/me を無駄に叩く。

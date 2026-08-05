@@ -2,6 +2,9 @@
 import { defineStore } from 'pinia'
 import { MEMO_SCOPE } from '../constants/index.js'
 
+/** トーストの連番。Date.now() だと同時 push で衝突する */
+let toastSeq = 0
+
 /**
  * UI状態ストア（frontend.md §3）
  *
@@ -54,7 +57,9 @@ export const useUiStore = defineStore('ui', {
 
   actions: {
     /** ルーム選択（行クリック）。ルーターの /inbox/:roomId とセットで使う */
-    selectRoom(roomId) {},
+    selectRoom(roomId) {
+      this.selectedRoomId = roomId === null ? null : Number(roomId)
+    },
 
     toggleProfilePanel() {},
     toggleMemoPanel() {},
@@ -78,11 +83,27 @@ export const useUiStore = defineStore('ui', {
     closeStatusMenu() {},
 
     /** @param {'connected'|'connecting'|'disconnected'} state */
-    setConnectionState(state) {},
+    setConnectionState(state) {
+      this.connectionState = state
+    },
 
-    pushToast({ type, message }) {},
-    dismissToast(id) {},
+    pushToast({ type, message }) {
+      this.toasts.push({ id: ++toastSeq, type, message })
+    },
 
-    reset() {},
+    dismissToast(id) {
+      this.toasts = this.toasts.filter((toast) => toast.id !== id)
+    },
+
+    reset() {
+      this.selectedRoomId = null
+      this.snippetPaletteOpen = false
+      this.snippetQuery = ''
+      this.snippetHighlightIndex = 0
+      this.snippets = []
+      this.statusMenuRoomId = null
+      this.connectionState = 'connecting'
+      this.toasts = []
+    },
   },
 })
