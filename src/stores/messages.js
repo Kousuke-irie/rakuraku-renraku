@@ -1,4 +1,3 @@
-/* eslint-disable no-unused-vars -- 未実装のアクションが残っているため。すべて実装したらこの行を消すこと */
 import { defineStore } from 'pinia'
 import {
   MESSAGE_PAGE_SIZE,
@@ -103,6 +102,18 @@ export const useMessagesStore = defineStore('messages', {
     /** @returns {(roomId: number) => boolean} 送信失敗のメッセージが残っているか */
     hasFailed: (s) => (roomId) =>
       (s.byRoomId[roomId] ?? []).some((message) => message.sendStatus === SEND_STATUS.FAILED),
+
+    /**
+     * 自分以外のメンバーが読み終えた最終メッセージID（B-3 の既読表示）。
+     * 自分の吹き出しは `message.id <= ここの値` で「既読」になる。
+     * @returns {(roomId: number, myUserId: number) => number} 既読情報が無ければ 0
+     */
+    lastReadByOthers: (s) => (roomId, myUserId) =>
+      Object.entries(s.readStateByRoomId[roomId] ?? {}).reduce(
+        (latest, [userId, lastReadMessageId]) =>
+          Number(userId) === Number(myUserId) ? latest : Math.max(latest, lastReadMessageId ?? 0),
+        0,
+      ),
   },
 
   actions: {
@@ -286,24 +297,55 @@ export const useMessagesStore = defineStore('messages', {
      * 相手の lastReadMessageId 以下の自分のメッセージは sendStatus='read' 相当で表示する。
      * @param {{ roomId: number, userId: number, lastReadMessageId: number }} payload
      */
-    updateReadState(payload) {},
+    updateReadState({ roomId, userId, lastReadMessageId }) {
+      if (!roomId || !userId || !lastReadMessageId) return
+
+      const current = this.readStateByRoomId[roomId] ?? {}
+      // 既読位置は巻き戻さない（複数タブ・再接続で古い値が後から届くことがある）
+      if ((current[userId] ?? 0) >= lastReadMessageId) return
+
+      this.readStateByRoomId[roomId] = { ...current, [userId]: lastReadMessageId }
+    },
 
     /**
      * 自分がルームを開いた／新着を見たときに socket `message:read` を送る（P2-7）。
      * rooms ストアの unreadCount リセットは roomsStore.markRead() が担当する。
      */
-    async sendRead(roomId, lastReadMessageId) {},
+    async sendRead(roomId, lastReadMessageId) {
+      if (!roomId || !lastReadMessageId) return
+
+      // 自分の既読位置は read:updated を待たずに反映する（相手の既読判定からは除外される）
+      this.updateReadState({ roomId, userId: useAuthStore().currentUserId, lastReadMessageId })
+      emitSocket(SOCKET_EMIT.MESSAGE_READ, { roomId, lastReadMessageId })
+    },
 
     /**
      * 送信取消（B-3。24h以内・自分のみ）。DELETE /api/messages/:id
+     * 表示の確定は message:deleted → markDeleted() で行い、他メンバーと同じ経路を通す。
      */
-    async deleteMessage(messageId) {},
+    async deleteMessage(messageId) {
+      if (!messageId) return
+
+      this.error = null
+      try {
+        await messagesApi.remove(messageId)
+      } catch (error) {
+        this.error = toErrorMessage(error, 'メッセージの取消に失敗しました')
+      }
+    },
 
     /**
      * 取消を反映する（message:deleted）。物理削除せず deletedAt を立てる。
      * @param {{ roomId: number, messageId: number }} payload
      */
-    markDeleted(payload) {},
+    markDeleted({ roomId, messageId }) {
+      const target = (this.byRoomId[roomId] ?? []).find((message) => message.id === messageId)
+      if (!target) return
+
+      target.deletedAt = new Date().toISOString()
+      // 取消後の本文は誰にも見せない（画面にも残さない）
+      target.body = ''
+    },
 
     /** 入力欄の下書き保存 */
     setDraft(roomId, body) {
