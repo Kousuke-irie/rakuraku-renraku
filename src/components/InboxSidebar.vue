@@ -20,6 +20,7 @@ import {
 import { useRoomsStore } from "../stores/rooms.js"
 import { useUiStore } from "../stores/ui.js"
 import ElapsedBadge from "./ElapsedBadge.vue"
+import PanelIcon from "./PanelIcon.vue"
 import StatusChip, { CHIP_KIND } from "./StatusChip.vue"
 import UnreadBadge from "./UnreadBadge.vue"
 import UrgencyBar from "./UrgencyBar.vue"
@@ -102,7 +103,7 @@ const sortLabel = computed(() => SORT_KEY_META[rooms.sortKey]?.label ?? "")
           受信箱
         </h2>
         <span class="sidebar__count">{{ roomList.length }}件</span>
-        <!-- 最小化。復帰用のボタンはトークカードのヘッダ側に出る -->
+        <!-- 最小化。復帰用のボタンは畳んだ跡に残る細いカードに出る -->
         <button
           type="button"
           class="icon-button sidebar__collapse"
@@ -110,7 +111,10 @@ const sortLabel = computed(() => SORT_KEY_META[rooms.sortKey]?.label ?? "")
           aria-label="一覧を最小化する"
           @click="ui.toggleRoomList()"
         >
-          <span aria-hidden="true">«</span>
+          <PanelIcon
+            side="left"
+            direction="left"
+          />
         </button>
       </div>
 

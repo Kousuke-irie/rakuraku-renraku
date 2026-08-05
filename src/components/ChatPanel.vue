@@ -99,18 +99,6 @@ const onSubmit = async () => {
 <template>
   <div class="panel">
     <header class="panel__header">
-      <!-- 最小化したペインの復帰。畳んだ側のカード端に矢印を出す -->
-      <button
-        v-if="!ui.roomListOpen"
-        type="button"
-        class="icon-button panel__restore panel__restore--left"
-        title="一覧を表示する"
-        aria-label="一覧を表示する"
-        @click="ui.toggleRoomList()"
-      >
-        <span aria-hidden="true">»</span>
-      </button>
-
       <UserAvatar
         :display-name="student.displayName"
         :color="student.avatarColor"
@@ -146,17 +134,6 @@ const onSubmit = async () => {
           未接続（再接続中）
         </p>
       </div>
-
-      <button
-        v-if="!ui.profilePanelOpen"
-        type="button"
-        class="icon-button panel__restore panel__restore--right"
-        title="詳細を表示する"
-        aria-label="詳細を表示する"
-        @click="ui.toggleProfilePanel()"
-      >
-        <span aria-hidden="true">«</span>
-      </button>
     </header>
 
     <MessageList
@@ -219,12 +196,6 @@ const onSubmit = async () => {
   /* 罫線はカード幅いっぱいに残したまま、内容だけメッセージ列と同じ幅に揃える */
   padding: var(--space-md) max(var(--space-xxl), calc((100% - var(--chat-column-max)) / 2));
   border-bottom: 1px solid var(--color-hairline);
-}
-
-/* 復帰ボタンは畳んだペインがあった側の端に置く。カードが狭いときに
-   アバターやステータスチップと重ならないよう、絶対配置にはしない */
-.panel__restore--right {
-  margin-left: var(--space-xs);
 }
 
 .panel__identity {

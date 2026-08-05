@@ -15,6 +15,7 @@ import {
   SELECTION_STATUS_META,
 } from "../constants/index.js"
 import { useUiStore } from "../stores/ui.js"
+import PanelIcon from "./PanelIcon.vue"
 import StatusChip, { CHIP_KIND } from "./StatusChip.vue"
 import UserAvatar from "./UserAvatar.vue"
 
@@ -60,7 +61,7 @@ const detailRows = computed(() => [
       <h2 class="detail__title">
         詳細
       </h2>
-      <!-- 最小化。復帰用のボタンはトークカードのヘッダ側に出る -->
+      <!-- 最小化。復帰用のボタンは畳んだ跡に残る細いカードに出る -->
       <button
         type="button"
         class="icon-button"
@@ -68,7 +69,10 @@ const detailRows = computed(() => [
         aria-label="詳細を最小化する"
         @click="ui.toggleProfilePanel()"
       >
-        <span aria-hidden="true">»</span>
+        <PanelIcon
+          side="right"
+          direction="right"
+        />
       </button>
     </div>
 

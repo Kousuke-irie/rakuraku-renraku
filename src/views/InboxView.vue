@@ -16,6 +16,7 @@ import { useUiStore } from "../stores/ui.js"
 import ChatPanel from "../components/ChatPanel.vue"
 import InboxDetailPane from "../components/InboxDetailPane.vue"
 import InboxSidebar from "../components/InboxSidebar.vue"
+import PanelIcon from "../components/PanelIcon.vue"
 import UserAvatar from "../components/UserAvatar.vue"
 
 const props = defineProps({
@@ -114,6 +115,24 @@ const onLogout = async () => {
       >
         <InboxSidebar />
       </div>
+      <!-- 最小化中はアイコン幅の細いカードだけ残し、そこから復帰させる -->
+      <div
+        v-else
+        class="pane pane--rail"
+      >
+        <button
+          type="button"
+          class="icon-button"
+          title="一覧を表示する"
+          aria-label="一覧を表示する"
+          @click="ui.toggleRoomList()"
+        >
+          <PanelIcon
+            side="left"
+            direction="right"
+          />
+        </button>
+      </div>
 
       <div class="pane pane--chat">
         <ChatPanel
@@ -121,31 +140,12 @@ const onLogout = async () => {
           :key="selectedRoom.id"
           :room="selectedRoom"
         />
-        <!-- ルーム未選択のときは ChatPanel が出ないので、復帰ボタンをここにも置く -->
-        <div
+        <p
           v-else
           class="pane__placeholder"
         >
-          <p>{{ placeholderText }}</p>
-          <div class="pane__restore">
-            <button
-              v-if="!ui.roomListOpen"
-              type="button"
-              class="button-normal"
-              @click="ui.toggleRoomList()"
-            >
-              <span aria-hidden="true">»</span> 一覧を表示する
-            </button>
-            <button
-              v-if="!ui.profilePanelOpen"
-              type="button"
-              class="button-normal"
-              @click="ui.toggleProfilePanel()"
-            >
-              詳細を表示する <span aria-hidden="true">«</span>
-            </button>
-          </div>
-        </div>
+          {{ placeholderText }}
+        </p>
       </div>
 
       <div
@@ -153,6 +153,23 @@ const onLogout = async () => {
         class="pane pane--detail"
       >
         <InboxDetailPane :room="selectedRoom" />
+      </div>
+      <div
+        v-else
+        class="pane pane--rail"
+      >
+        <button
+          type="button"
+          class="icon-button"
+          title="詳細を表示する"
+          aria-label="詳細を表示する"
+          @click="ui.toggleProfilePanel()"
+        >
+          <PanelIcon
+            side="right"
+            direction="left"
+          />
+        </button>
       </div>
     </div>
   </div>
@@ -214,6 +231,9 @@ const onLogout = async () => {
 }
 
 .panes {
+  /* 最小化した側に残すレールの幅（アイコンボタン 28px ＋ 左右 8px） */
+  --rail-width: 44px;
+
   display: grid;
   grid-template-columns: 360px minmax(0, 1fr) 320px;
   /* 暗黙の行は auto だと中身（一覧の全行）より縮まないため、明示的に minmax(0,1fr) にする。
@@ -223,17 +243,23 @@ const onLogout = async () => {
   min-height: 0;
 }
 
-/* 最小化したペインは列そのものを畳み、トークカードが余った幅を受け取る */
+/* 最小化した側はアイコン幅のレールだけ残し、余った幅はトークカードが受け取る */
 .panes--no-rooms {
-  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-columns: var(--rail-width) minmax(0, 1fr) 320px;
 }
 
 .panes--no-detail {
-  grid-template-columns: 360px minmax(0, 1fr);
+  grid-template-columns: 360px minmax(0, 1fr) var(--rail-width);
 }
 
 .panes--no-rooms.panes--no-detail {
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: var(--rail-width) minmax(0, 1fr) var(--rail-width);
+}
+
+/* レールはアイコンボタン（28px）＋左右の余白ぶんの幅しか持たない */
+.pane--rail {
+  align-items: center;
+  padding-top: var(--space-md);
 }
 
 .pane {
@@ -252,17 +278,8 @@ const onLogout = async () => {
 }
 
 .pane__placeholder {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-lg);
-  align-items: center;
   color: var(--color-ink-mute);
   font-size: 14px;
   text-align: center;
-}
-
-.pane__restore {
-  display: flex;
-  gap: var(--space-sm);
 }
 </style>
