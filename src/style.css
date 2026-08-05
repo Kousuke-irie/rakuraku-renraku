@@ -51,6 +51,11 @@
   --space-xxl: 24px;
   --space-huge: 28px;
 
+  /* --- レイアウト ---
+     左右ペインを最小化してトークカードが広がっても、会話が横に散らばらない上限幅。
+     メッセージ列・入力欄・トークヘッダの内容をこの幅で揃える。 */
+  --chat-column-max: 1040px;
+
   /* --- 影（DESIGN.md Elevation） --- */
   --shadow-1: 0 5px 20px rgb(0 0 0 / 10%);
   --shadow-2: 0 0 32px rgb(0 0 0 / 10%);
@@ -175,6 +180,8 @@ button:not(:disabled) {
 /* button-secondary-pill：淡いラベンダー面の副アクション */
 .button-normal {
   display: inline-flex;
+  /* アイコン＋ラベルの並びでも間隔が出るようにする（flex では空白文字が消えるため） */
+  gap: var(--space-xs);
   align-items: center;
   justify-content: center;
   padding: 8px 20px;
@@ -193,6 +200,31 @@ button:not(:disabled) {
 .button-normal:disabled {
   background-color: var(--color-canvas);
   color: var(--color-ink-mute);
+}
+
+/* アイコンのみの丸ボタン（ペインの最小化・復帰などの補助操作）。
+   ラベルが見えないので、使う側で aria-label と title を必ず付ける */
+.icon-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-pill);
+  background-color: var(--color-canvas);
+  color: var(--color-ink-mute);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.icon-button:hover {
+  border-color: color-mix(in srgb, var(--color-ink) 20%, var(--color-hairline));
+  background-color: var(--color-orange-soft);
+  color: var(--color-ink);
 }
 
 /* テキストリンク（link-on-light）。オレンジ以外の唯一のアクセント */

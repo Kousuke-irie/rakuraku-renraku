@@ -19,6 +19,9 @@ export const useUiStore = defineStore('ui', {
     /** @type {number|null} 受信箱で選択中のルームID（/inbox/:roomId と同期） */
     selectedRoomId: null,
 
+    /** 左側のルーム一覧ペイン。閉じるとトークカードが横に広がる */
+    roomListOpen: true,
+
     /** 右側の学生プロフィールパネル（P2-4）。既定は開く */
     profilePanelOpen: true,
 
@@ -61,7 +64,15 @@ export const useUiStore = defineStore('ui', {
       this.selectedRoomId = roomId === null ? null : Number(roomId)
     },
 
-    toggleProfilePanel() {},
+    /** 左右のペインは最小化できる（トークに集中したいときのため） */
+    toggleRoomList() {
+      this.roomListOpen = !this.roomListOpen
+    },
+
+    toggleProfilePanel() {
+      this.profilePanelOpen = !this.profilePanelOpen
+    },
+
     toggleMemoPanel() {},
 
     /** @param {string} scope MEMO_SCOPE のいずれか */

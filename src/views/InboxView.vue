@@ -37,6 +37,13 @@ const router = useRouter()
 const selectedRoom = computed(() =>
   ui.selectedRoomId === null ? null : (rooms.roomById(ui.selectedRoomId) ?? null)
 )
+
+/** ルーム未選択時の案内。一覧を閉じているときは開き方を案内する */
+const placeholderText = computed(() =>
+  ui.roomListOpen
+    ? "左の一覧から学生を選んでください。"
+    : "一覧を表示して学生を選んでください。"
+)
 // #endregion
 
 // #region local methods
@@ -94,8 +101,17 @@ const onLogout = async () => {
       </div>
     </header>
 
-    <div class="panes">
-      <div class="pane pane--rooms">
+    <div
+      class="panes"
+      :class="{
+        'panes--no-rooms': !ui.roomListOpen,
+        'panes--no-detail': !ui.profilePanelOpen,
+      }"
+    >
+      <div
+        v-if="ui.roomListOpen"
+        class="pane pane--rooms"
+      >
         <InboxSidebar />
       </div>
 
@@ -105,15 +121,37 @@ const onLogout = async () => {
           :key="selectedRoom.id"
           :room="selectedRoom"
         />
-        <p
+        <!-- ルーム未選択のときは ChatPanel が出ないので、復帰ボタンをここにも置く -->
+        <div
           v-else
           class="pane__placeholder"
         >
-          左の一覧から学生を選んでください。
-        </p>
+          <p>{{ placeholderText }}</p>
+          <div class="pane__restore">
+            <button
+              v-if="!ui.roomListOpen"
+              type="button"
+              class="button-normal"
+              @click="ui.toggleRoomList()"
+            >
+              <span aria-hidden="true">»</span> 一覧を表示する
+            </button>
+            <button
+              v-if="!ui.profilePanelOpen"
+              type="button"
+              class="button-normal"
+              @click="ui.toggleProfilePanel()"
+            >
+              詳細を表示する <span aria-hidden="true">«</span>
+            </button>
+          </div>
+        </div>
       </div>
 
-      <div class="pane pane--detail">
+      <div
+        v-if="ui.profilePanelOpen"
+        class="pane pane--detail"
+      >
         <InboxDetailPane :room="selectedRoom" />
       </div>
     </div>
@@ -185,6 +223,19 @@ const onLogout = async () => {
   min-height: 0;
 }
 
+/* 最小化したペインは列そのものを畳み、トークカードが余った幅を受け取る */
+.panes--no-rooms {
+  grid-template-columns: minmax(0, 1fr) 320px;
+}
+
+.panes--no-detail {
+  grid-template-columns: 360px minmax(0, 1fr);
+}
+
+.panes--no-rooms.panes--no-detail {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .pane {
   display: flex;
   flex-direction: column;
@@ -201,8 +252,17 @@ const onLogout = async () => {
 }
 
 .pane__placeholder {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  align-items: center;
   color: var(--color-ink-mute);
   font-size: 14px;
   text-align: center;
+}
+
+.pane__restore {
+  display: flex;
+  gap: var(--space-sm);
 }
 </style>

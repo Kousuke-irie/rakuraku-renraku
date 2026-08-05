@@ -102,6 +102,16 @@ const sortLabel = computed(() => SORT_KEY_META[rooms.sortKey]?.label ?? "")
           受信箱
         </h2>
         <span class="sidebar__count">{{ roomList.length }}件</span>
+        <!-- 最小化。復帰用のボタンはトークカードのヘッダ側に出る -->
+        <button
+          type="button"
+          class="icon-button sidebar__collapse"
+          title="一覧を最小化する"
+          aria-label="一覧を最小化する"
+          @click="ui.toggleRoomList()"
+        >
+          <span aria-hidden="true">«</span>
+        </button>
       </div>
 
       <input
@@ -255,6 +265,11 @@ const sortLabel = computed(() => SORT_KEY_META[rooms.sortKey]?.label ?? "")
 .sidebar__count {
   color: var(--color-ink-mute);
   font-size: 12px;
+}
+
+.sidebar__collapse {
+  align-self: center;
+  margin-left: auto;
 }
 
 .sidebar__search {

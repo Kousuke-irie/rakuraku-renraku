@@ -252,7 +252,10 @@ const onDelete = (messageId) => messages.deleteMessage(messageId)
   text-align: center;
 }
 
+/* ペインを最小化してカードが広がっても、会話が横に散らばらない幅で止める */
 .list__items {
+  max-width: var(--chat-column-max);
+  margin: 0 auto;
   list-style: none;
 }
 

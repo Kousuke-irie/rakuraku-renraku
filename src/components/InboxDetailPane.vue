@@ -14,6 +14,7 @@ import {
   SCHEDULE_STATE_META,
   SELECTION_STATUS_META,
 } from "../constants/index.js"
+import { useUiStore } from "../stores/ui.js"
 import StatusChip, { CHIP_KIND } from "./StatusChip.vue"
 import UserAvatar from "./UserAvatar.vue"
 
@@ -26,6 +27,10 @@ const props = defineProps({
   /** rooms ストアの room。null なら空状態を出す */
   room: { type: Object, default: null },
 })
+
+// #region global state
+const ui = useUiStore()
+// #endregion
 
 // #region computed
 const student = computed(() => props.room?.student ?? {})
@@ -55,6 +60,16 @@ const detailRows = computed(() => [
       <h2 class="detail__title">
         詳細
       </h2>
+      <!-- 最小化。復帰用のボタンはトークカードのヘッダ側に出る -->
+      <button
+        type="button"
+        class="icon-button"
+        title="詳細を最小化する"
+        aria-label="詳細を最小化する"
+        @click="ui.toggleProfilePanel()"
+      >
+        <span aria-hidden="true">»</span>
+      </button>
     </div>
 
     <p
@@ -137,8 +152,12 @@ const detailRows = computed(() => [
 }
 
 .detail__head {
+  display: flex;
   flex: none;
-  padding: var(--space-lg);
+  gap: var(--space-sm);
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-md) var(--space-lg);
   border-bottom: 1px solid var(--color-hairline);
 }
 
