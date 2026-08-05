@@ -1,13 +1,5 @@
 <script setup>
-import { provide, ref } from "vue"
-
-// #region reactive state
-const userName = ref("")
-// #endregion
-
-// #region global variable
-provide("userName", userName)
-// #endregion
+// 状態は Pinia に集約する。provide/inject のバケツリレーは使わない（frontend.md §10-2）
 </script>
 
 <template>
