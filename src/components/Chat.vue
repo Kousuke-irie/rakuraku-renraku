@@ -24,21 +24,34 @@ onMounted(() => {
 // #region browser event handler
 // 投稿メッセージをサーバに送信する
 const onPublish = () => {
+  const content = chatContent.value.trim()
 
+  if (!content) return
+
+  socket.emit("publishEvent", {
+    userName: userName.value,
+    content,
+  })
   // 入力欄を初期化
+  chatContent.value = ""
 
 }
 
 // 退室メッセージをサーバに送信する
 const onExit = () => {
-
+  socket.emit("exitEvent", { userName: userName.value })
 }
 
 // メモを画面上に表示する
 const onMemo = () => {
   // メモの内容を表示
+  const content = chatContent.value.trim()
 
+  if (!content) return
+
+  chatList.unshift(`${userName.value} さんのメモ：${content}`)
   // 入力欄を初期化
+  chatContent.value = ""
 
 }
 // #endregion
@@ -46,17 +59,17 @@ const onMemo = () => {
 // #region socket event handler
 // サーバから受信した入室メッセージ画面上に表示する
 const onReceiveEnter = (data) => {
-  chatList.push()
+  chatList.unshift(`${data.userName} さんが入室しました`)
 }
 
 // サーバから受信した退室メッセージを受け取り画面上に表示する
 const onReceiveExit = (data) => {
-  chatList.push()
+      chatList.push(`${data.userName} さんが退室しました`)
 }
 
 // サーバから受信した投稿メッセージを画面上に表示する
 const onReceivePublish = (data) => {
-  chatList.push()
+  chatList.unshift(`${data.userName} さん：${data.content}`)
 }
 // #endregion
 
@@ -64,19 +77,13 @@ const onReceivePublish = (data) => {
 // イベント登録をまとめる
 const registerSocketEvent = () => {
   // 入室イベントを受け取ったら実行
-  socket.on("enterEvent", (data) => {
-
-  })
+  socket.on("enterEvent", onReceiveEnter)
 
   // 退室イベントを受け取ったら実行
-  socket.on("exitEvent", (data) => {
-
-  })
+  socket.on("exitEvent", onReceiveExit)
 
   // 投稿イベントを受け取ったら実行
-  socket.on("publishEvent", (data) => {
-
-  })
+  socket.on("publishEvent", onReceivePublish)
 }
 // #endregion
 </script>
@@ -86,10 +93,11 @@ const registerSocketEvent = () => {
     <h1 class="text-h3 font-weight-medium">Vue.js Chat チャットルーム</h1>
     <div class="mt-10">
       <p>ログインユーザ：{{ userName }}さん</p>
-      <textarea variant="outlined" placeholder="投稿文を入力してください" rows="4" class="area"></textarea>
+      <textarea 
+        v-model="chatContent"variant="outlined" placeholder="投稿文を入力してください" rows="4" class="area"></textarea>
       <div class="mt-5">
-        <button class="button-normal">投稿</button>
-        <button class="button-normal util-ml-8px">メモ</button>
+        <button class="button-normal" @click="onPublish">投稿</button>
+        <button class="button-normal util-ml-8px"@click="onMemo">メモ</button>
       </div>
       <div class="mt-5" v-if="chatList.length !== 0">
         <ul>
