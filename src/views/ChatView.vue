@@ -1,12 +1,16 @@
 <script setup>
-import { inject, ref, reactive, onMounted } from "vue"
+import { computed, ref, reactive, onMounted } from "vue"
+import { useRouter } from "vue-router"
 import socketManager from '../socketManager.js'
+import { useAuthStore } from '../stores/auth.js'
 
 // #region global state
-const userName = inject("userName")
+const auth = useAuthStore()
+const userName = computed(() => auth.user?.displayName ?? "")
 // #endregion
 
 // #region local variable
+const router = useRouter()
 const socket = socketManager.getInstance()
 // #endregion
 
@@ -37,9 +41,11 @@ const onPublish = () => {
 
 }
 
-// 退室メッセージをサーバに送信する
-const onExit = () => {
+// 退室メッセージをサーバに送信し、ログアウトする
+const onExit = async () => {
   socket.emit("exitEvent", { userName: userName.value })
+  await auth.logout()
+  router.push({ name: "login" })
 }
 
 // メモを画面上に表示する
@@ -94,10 +100,10 @@ const registerSocketEvent = () => {
     <div class="mt-10">
       <p>ログインユーザ：{{ userName }}さん</p>
       <textarea 
-        v-model="chatContent"variant="outlined" placeholder="投稿文を入力してください" rows="4" class="area"></textarea>
+        v-model="chatContent" variant="outlined" placeholder="投稿文を入力してください" rows="4" class="area"></textarea>
       <div class="mt-5">
         <button class="button-normal" @click="onPublish">投稿</button>
-        <button class="button-normal util-ml-8px"@click="onMemo">メモ</button>
+        <button class="button-normal util-ml-8px" @click="onMemo">メモ</button>
       </div>
       <div class="mt-5" v-if="chatList.length !== 0">
         <ul>
@@ -105,17 +111,11 @@ const registerSocketEvent = () => {
         </ul>
       </div>
     </div>
-    <router-link to="/" class="link">
-      <button type="button" class="button-normal button-exit" @click="onExit">退室する</button>
-    </router-link>
+    <button type="button" class="button-normal button-exit" @click="onExit">退室する</button>
   </div>
 </template>
 
 <style scoped>
-.link {
-  text-decoration: none;
-}
-
 .area {
   width: 500px;
   border: 1px solid #000;
