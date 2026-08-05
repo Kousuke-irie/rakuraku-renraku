@@ -199,10 +199,14 @@ const onExit = async () => {
 </template>
 
 <style scoped>
+/* 人事側と同じく固定レイヤにして、ページ自体はスクロールさせない
+   （inset: 0 ＋ margin: 0 auto で中央寄せになる） */
 .chat {
+  position: fixed;
+  inset: 0;
   max-width: 860px;
-  height: 100vh;
   margin: 0 auto;
+  overflow: hidden;
   padding: var(--space-lg) var(--space-md);
 }
 

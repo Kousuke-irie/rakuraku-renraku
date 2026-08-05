@@ -21,6 +21,12 @@
   --color-canvas: #ffffff;
   --color-canvas-cream: #f4ede4;
   --color-canvas-lavender: #f9f0ff;
+
+  /* DESIGN.md に「薄いオレンジの面」のトークンは無いので、primary を canvas に混ぜた
+     2段の面をここで定義する。ブランドの統一感を優先し、業務画面では cream ではなく
+     こちらを使う（ページ面＝primary 10%／ピル・タイル面＝primary 6%）。 */
+  --color-canvas-orange: #ffeee5;
+  --color-orange-soft: #fff4ec;
   --color-hairline: #e6e6e6;
   --color-error: #cc4117;
 
@@ -62,7 +68,7 @@ body {
   /* 受信箱（S-04）は3ペインを画面高いっぱいに敷くため、body 側の余白は持たせない。
      余白が必要な画面（ログイン等）は各ビューの scoped CSS で付ける。 */
   margin: 0;
-  background-color: var(--color-canvas-cream);
+  background-color: var(--color-canvas-orange);
   color: var(--color-ink);
   font-family: var(--font-sans);
   font-size: 16px;

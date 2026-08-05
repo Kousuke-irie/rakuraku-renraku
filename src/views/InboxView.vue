@@ -1,7 +1,7 @@
 <script setup>
 // S-03/S-04 受信箱（P1-1・frontend.md §5）
 //
-// 3ペイン（一覧 360px／トーク 可変／詳細 320px）を cream の面に白カードとして並べる。
+// 3ペイン（一覧 360px／トーク 可変／詳細 320px）を薄いオレンジの面に白カードとして並べる。
 // 左右ペインは**表示専用のガワ**（InboxSidebar / InboxDetailPane）で、
 // P1-1・P1-7・P1-8・P2-4 で各コンポーネントに置き換える。
 //
@@ -71,7 +71,7 @@ const onLogout = async () => {
   <div class="inbox">
     <header class="topbar">
       <p class="topbar__brand">
-        Sentry
+        楽楽連ラク
       </p>
       <p class="topbar__tagline">
         採用コミュニケーション管理
@@ -121,11 +121,16 @@ const onLogout = async () => {
 </template>
 
 <style scoped>
+/* 画面全体を固定レイヤにして、ページ自体がスクロールしないようにする。
+   （内側の一覧・メッセージ列のスクロール量がドキュメント高さに伝播して
+   カードごと上へスクロールしてしまうのを防ぐ） */
 .inbox {
+  position: fixed;
+  inset: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   gap: var(--space-md);
-  height: 100vh;
+  overflow: hidden;
   padding: var(--space-md);
 }
 
@@ -173,6 +178,9 @@ const onLogout = async () => {
 .panes {
   display: grid;
   grid-template-columns: 360px minmax(0, 1fr) 320px;
+  /* 暗黙の行は auto だと中身（一覧の全行）より縮まないため、明示的に minmax(0,1fr) にする。
+     これが無いと一覧が長いときにカードごと画面下へはみ出す。 */
+  grid-template-rows: minmax(0, 1fr);
   gap: var(--space-md);
   min-height: 0;
 }

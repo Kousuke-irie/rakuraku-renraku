@@ -183,12 +183,12 @@ const deletable = computed(() => {
   margin: var(--space-lg) 0;
 }
 
-/* システムメッセージは pill-cap-shade（cream のピル）で会話から浮かせる */
+/* システムメッセージは pill-cap-shade（薄いオレンジ面のピル）で会話から浮かせる */
 .system {
   max-width: 70%;
   padding: var(--space-xs) var(--space-md);
   border-radius: var(--radius-pill);
-  background-color: var(--color-canvas-cream);
+  background-color: var(--color-orange-soft);
   color: var(--color-ink-mute);
   font-size: 12px;
   text-align: center;
@@ -245,7 +245,7 @@ const deletable = computed(() => {
 .bubble--deleted {
   border-style: dashed;
   border-color: var(--color-hairline);
-  background-color: var(--color-canvas-cream);
+  background-color: var(--color-orange-soft);
   color: var(--color-ink-mute);
 }
 

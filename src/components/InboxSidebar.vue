@@ -283,7 +283,7 @@ const sortLabel = computed(() => SORT_KEY_META[rooms.sortKey]?.label ?? "")
   justify-content: center;
   padding: var(--space-sm) var(--space-xs);
   border-radius: var(--radius-md);
-  background-color: var(--color-canvas-cream);
+  background-color: var(--color-orange-soft);
 }
 
 .summary__label {
@@ -348,7 +348,7 @@ const sortLabel = computed(() => SORT_KEY_META[rooms.sortKey]?.label ?? "")
 }
 
 .room__link:hover {
-  background-color: color-mix(in srgb, var(--color-canvas-cream) 45%, var(--color-canvas));
+  background-color: color-mix(in srgb, var(--color-primary) 4%, var(--color-canvas));
 }
 
 /* 選択中の行はブランド色で示す（DESIGN.md：オレンジは CTA とアクティブ状態のみ） */

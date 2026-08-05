@@ -270,12 +270,12 @@ const onDelete = (messageId) => messages.deleteMessage(messageId)
   border-top: 1px solid var(--color-hairline);
 }
 
-/* pill-cap-shade：cream のピルに micro-cap のトラッキングを効かせる */
+/* pill-cap-shade：薄いオレンジ面のピルに micro-cap のトラッキングを効かせる */
 .separator__label {
   flex: none;
   padding: var(--space-xs) var(--space-md);
   border-radius: var(--radius-pill);
-  background-color: var(--color-canvas-cream);
+  background-color: var(--color-orange-soft);
   color: var(--color-ink-mute);
   font-size: 11px;
   font-weight: 700;

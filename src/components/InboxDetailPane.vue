@@ -227,7 +227,7 @@ const detailRows = computed(() => [
   display: inline-flex;
   padding: var(--space-xs) var(--space-md);
   border-radius: var(--radius-pill);
-  background-color: var(--color-canvas-cream);
+  background-color: var(--color-orange-soft);
   font-size: 12px;
 }
 </style>
