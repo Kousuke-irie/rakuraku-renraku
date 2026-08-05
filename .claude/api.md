@@ -32,6 +32,9 @@
 | GET | `/auth/me` | - | `{user}` |
 
 - `register`：`login_id` の重複チェック → bcrypt(cost 10) でハッシュ化
+- `register` で作成できるのは **`student` のみ**。`hr` / `admin` は `403 { "error": "forbidden_role" }`
+  （hr は接続時に socket の `hr` ルームへ join し全ルームの `message:new` を受け取るため、
+  公開登録で hr を名乗れると全学生の会話が漏れる）。hr / admin はシードまたは管理者機能で作成する
 - `login`：JWT を httpOnly / SameSite=Lax Cookie で発行（有効期限7日、本番は Secure 付与）
 - ログイン試行は IP 単位で **10回/分** に制限
 
@@ -89,6 +92,10 @@
 
 - `GET` は降順で返し、**クライアント側で昇順に並べ替えて表示**する
 - `before` によるキーセットページネーション。`OFFSET` は使わない
+- message の形（REST・`message:new`・`message:sent` で共通）：
+  `{ id, roomId, senderId, type, body, topicTag, clientMsgId, createdAt, deletedAt }`。
+  クライアントは `roomId` でキャッシュを引き、`clientMsgId` で楽観描画を突き合わせるため、
+  **この2つを省略しないこと**
 
 ### 学生・ユーザー
 

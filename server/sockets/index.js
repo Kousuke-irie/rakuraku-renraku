@@ -28,7 +28,11 @@ export function registerSocketHandlers(io) {
   io.use((socket, next) => {
     const user = authenticateSocket(socket);
     if (!user) {
-      return next(new Error('unauthorized'));
+      // クライアントは connect_error でこのコードを見てログイン画面へ退避する
+      // （再接続を無限に繰り返さないため）。err.data がそのまま渡る。
+      const error = new Error('unauthorized');
+      error.data = { code: 'unauthorized', message: 'ログインが必要です' };
+      return next(error);
     }
     socket.data.user = user;
     next();

@@ -4,13 +4,18 @@ import jwt from 'jsonwebtoken';
 import { rateLimit } from 'express-rate-limit';
 import db from '../db/index.js';
 import { requireAuth } from '../middleware/auth.js';
-import { ROLE_VALUES } from '../../shared/constants.js';
+import { JWT_SECRET, JWT_EXPIRES_IN, IS_PRODUCTION } from '../config/env.js';
+import { ROLE, ROLE_VALUES } from '../../shared/constants.js';
 
 const router = Router();
 
-const JWT_SECRET = process.env.JWT_SECRET;
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 const BCRYPT_COST = 10;
+
+// 公開登録で作成できるロール。hr / admin を公開登録で作らせないこと。
+// hr は接続時に socket の `hr` ルームへ join し、全ルームの `message:new`
+// （本文込み）を受け取るため、誰でも hr を名乗れると全学生の会話が漏れる。
+// hr / admin はシード（server/db/seed.js）または管理者機能で作成する。
+const SELF_REGISTRABLE_ROLES = [ROLE.STUDENT];
 
 const loginRateLimit = rateLimit({
   windowMs: 60 * 1000,
@@ -30,17 +35,21 @@ function toPublicUser(row) {
   };
 }
 
+// clearCookie は発行時と同じ属性を渡さないと消えない場合がある（本番の Secure Cookie 等）。
+// 属性を1箇所にまとめ、発行と破棄で必ず同じ値を使う。
+const TOKEN_COOKIE_OPTIONS = Object.freeze({
+  httpOnly: true,
+  sameSite: 'lax',
+  secure: IS_PRODUCTION,
+  path: '/',
+});
+
 function issueTokenCookie(res, user) {
   const token = jwt.sign({ sub: user.id, role: user.role }, JWT_SECRET, {
     expiresIn: JWT_EXPIRES_IN,
   });
   const { exp, iat } = jwt.decode(token);
-  res.cookie('token', token, {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
-    maxAge: (exp - iat) * 1000,
-  });
+  res.cookie('token', token, { ...TOKEN_COOKIE_OPTIONS, maxAge: (exp - iat) * 1000 });
 }
 
 router.post('/register', async (req, res) => {
@@ -51,6 +60,11 @@ router.post('/register', async (req, res) => {
   }
   if (!ROLE_VALUES.includes(role)) {
     return res.status(400).json({ error: 'invalid_request', message: 'role が不正です' });
+  }
+  if (!SELF_REGISTRABLE_ROLES.includes(role)) {
+    return res
+      .status(403)
+      .json({ error: 'forbidden_role', message: 'このロールでは登録できません' });
   }
 
   const existing = db.prepare('SELECT id FROM users WHERE login_id = ?').get(loginId);
@@ -93,14 +107,16 @@ router.post('/login', loginRateLimit, async (req, res) => {
 });
 
 router.post('/logout', (req, res) => {
-  res.clearCookie('token');
+  res.clearCookie('token', TOKEN_COOKIE_OPTIONS);
   res.status(204).end();
 });
 
 router.get('/me', requireAuth, (req, res) => {
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
   if (!user) {
-    return res.status(401).json({ error: 'unauthorized' });
+    // トークンは有効でもユーザーが消えている（削除済み）ケース。Cookie も破棄する。
+    res.clearCookie('token', TOKEN_COOKIE_OPTIONS);
+    return res.status(401).json({ error: 'unauthorized', message: 'ログインが必要です' });
   }
   res.json({ user: toPublicUser(user) });
 });

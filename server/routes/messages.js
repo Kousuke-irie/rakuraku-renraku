@@ -3,29 +3,35 @@
 import { Router } from 'express';
 import db from '../db/index.js';
 import { requireAuth } from '../middleware/auth.js';
-import { assertRoomMember, RoomAccessDeniedError } from '../services/roomAuth.js';
-import { MESSAGE_TYPE } from '../../shared/constants.js';
+import { assertRoomMember } from '../services/roomAuth.js';
+import { MESSAGE_TYPE, ROLE } from '../../shared/constants.js';
 
 const router = Router();
 
 const DEFAULT_LIMIT = 50;
 
-function requireRoomMember(req, res, roomId) {
-  try {
-    assertRoomMember(db, req.user.id, roomId);
-    return true;
-  } catch (err) {
-    if (err instanceof RoomAccessDeniedError) {
-      res.status(err.statusCode).json({ success: false, error: err.message });
-      return false;
-    }
-    throw err;
-  }
+// クライアント（messages ストア）は roomId でキャッシュし clientMsgId で
+// 楽観描画を突き合わせる。SELECT する列は api.md の message の形と一致させること。
+const MESSAGE_COLUMNS = `
+  id,
+  room_id       AS roomId,
+  sender_id     AS senderId,
+  body,
+  type,
+  topic_tag     AS topicTag,
+  client_msg_id AS clientMsgId,
+  created_at    AS createdAt,
+  deleted_at    AS deletedAt
+`;
+
+export function findMessageByClientMsgId(clientMsgId) {
+  return db.prepare(`SELECT ${MESSAGE_COLUMNS} FROM messages WHERE client_msg_id = ?`).get(clientMsgId);
 }
 
 router.get('/rooms/:id/messages', requireAuth, (req, res) => {
   const roomId = Number(req.params.id);
-  if (!requireRoomMember(req, res, roomId)) return;
+  // RoomAccessDeniedError は errorHandler が 403 `{ error, message }` に変換する。
+  assertRoomMember(db, req.user.id, roomId);
 
   const limit = Math.min(Number(req.query.limit) || DEFAULT_LIMIT, DEFAULT_LIMIT);
   const before = req.query.before ? Number(req.query.before) : null;
@@ -33,7 +39,7 @@ router.get('/rooms/:id/messages', requireAuth, (req, res) => {
   const rows = before
     ? db
         .prepare(
-          `SELECT id, sender_id AS senderId, body, type, topic_tag AS topicTag, created_at AS createdAt
+          `SELECT ${MESSAGE_COLUMNS}
            FROM messages
            WHERE room_id = ? AND id < ? AND deleted_at IS NULL
            ORDER BY id DESC LIMIT ?`,
@@ -41,7 +47,7 @@ router.get('/rooms/:id/messages', requireAuth, (req, res) => {
         .all(roomId, before, limit)
     : db
         .prepare(
-          `SELECT id, sender_id AS senderId, body, type, topic_tag AS topicTag, created_at AS createdAt
+          `SELECT ${MESSAGE_COLUMNS}
            FROM messages
            WHERE room_id = ? AND deleted_at IS NULL
            ORDER BY id DESC LIMIT ?`,
@@ -53,23 +59,18 @@ router.get('/rooms/:id/messages', requireAuth, (req, res) => {
 
 router.post('/rooms/:id/messages', requireAuth, (req, res) => {
   const roomId = Number(req.params.id);
-  if (!requireRoomMember(req, res, roomId)) return;
+  assertRoomMember(db, req.user.id, roomId);
 
   const { body, clientMsgId } = req.body;
 
   if (typeof body !== 'string' || body.trim() === '') {
-    return res.status(400).json({ success: false, error: 'body is required' });
+    return res.status(400).json({ error: 'invalid_request', message: '本文が空です' });
   }
   if (typeof clientMsgId !== 'string' || clientMsgId === '') {
-    return res.status(400).json({ success: false, error: 'clientMsgId is required' });
+    return res.status(400).json({ error: 'invalid_request', message: 'clientMsgId が必要です' });
   }
 
-  const existing = db
-    .prepare(
-      `SELECT id, sender_id AS senderId, body, type, topic_tag AS topicTag, created_at AS createdAt
-       FROM messages WHERE client_msg_id = ?`,
-    )
-    .get(clientMsgId);
+  const existing = findMessageByClientMsgId(clientMsgId);
 
   if (existing) {
     return res.status(200).json({ message: existing });
@@ -96,7 +97,7 @@ export function insertMessage({ roomId, senderId, senderRole, body, clientMsgId 
     // TODO(P1-6): ここでurgencyCalculatorを呼び、rooms.urgencyを再計算する
     // TODO(P2-3): ここでstatusTransitionを呼び、rooms.handling_statusを自動遷移する
 
-    if (senderRole === 'student') {
+    if (senderRole === ROLE.STUDENT) {
       db.prepare(
         `UPDATE rooms SET last_message_id = ?, last_message_at = ?, last_student_message_at = ? WHERE id = ?`,
       ).run(messageId, now, now, roomId);
@@ -108,12 +109,7 @@ export function insertMessage({ roomId, senderId, senderRole, body, clientMsgId 
       );
     }
 
-    return db
-      .prepare(
-        `SELECT id, sender_id AS senderId, body, type, topic_tag AS topicTag, created_at AS createdAt
-         FROM messages WHERE id = ?`,
-      )
-      .get(messageId);
+    return db.prepare(`SELECT ${MESSAGE_COLUMNS} FROM messages WHERE id = ?`).get(messageId);
   });
 
   return run();

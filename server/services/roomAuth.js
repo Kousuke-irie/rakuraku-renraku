@@ -2,9 +2,12 @@
 // クライアントから送られたuserIdを信用せず、必ずroom_membersの実データで検証する。
 
 export class RoomAccessDeniedError extends Error {
-  constructor(message = 'not a member of this room') {
+  constructor(message = 'このルームにアクセスする権限がありません') {
     super(message);
     this.name = 'RoomAccessDeniedError';
+    // クライアントは `{ error: code, message: 説明 }` を前提に message を表示する（api.md §1）。
+    // error には表示用の文章ではなく機械可読なコードを入れること。
+    this.code = 'room_access_denied';
     this.statusCode = 403;
   }
 }

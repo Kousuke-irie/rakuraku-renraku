@@ -2,36 +2,30 @@
 // 保存処理はREST(routes/messages.js)と共有し、ロジックの重複を避ける。
 import db from '../../db/index.js';
 import { assertRoomMember, RoomAccessDeniedError } from '../../services/roomAuth.js';
-import { insertMessage } from '../../routes/messages.js';
+import { insertMessage, findMessageByClientMsgId } from '../../routes/messages.js';
+import { SOCKET_EMIT, SOCKET_ON } from '../../../shared/constants.js';
 
 export function registerMessageHandlers(io, socket) {
-  socket.on('message:send', ({ roomId, body, clientMsgId }) => {
+  socket.on(SOCKET_EMIT.MESSAGE_SEND, ({ roomId, body, clientMsgId }) => {
     const numericRoomId = Number(roomId);
 
     try {
       assertRoomMember(db, socket.data.user.id, numericRoomId);
     } catch (err) {
       if (err instanceof RoomAccessDeniedError) {
-        socket.emit('error', { code: 'room_access_denied', message: err.message });
+        socket.emit(SOCKET_ON.ERROR, { code: err.code, message: err.message });
         return;
       }
       throw err;
     }
 
     if (typeof body !== 'string' || body.trim() === '' || typeof clientMsgId !== 'string' || clientMsgId === '') {
-      socket.emit('error', { code: 'invalid_payload', message: 'body and clientMsgId are required' });
+      socket.emit(SOCKET_ON.ERROR, { code: 'invalid_payload', message: '本文と clientMsgId が必要です' });
       return;
     }
 
-    const existing = db
-      .prepare(
-        `SELECT id, sender_id AS senderId, body, type, topic_tag AS topicTag, created_at AS createdAt
-         FROM messages WHERE client_msg_id = ?`,
-      )
-      .get(clientMsgId);
-
     const message =
-      existing ||
+      findMessageByClientMsgId(clientMsgId) ||
       insertMessage({
         roomId: numericRoomId,
         senderId: socket.data.user.id,
@@ -40,7 +34,9 @@ export function registerMessageHandlers(io, socket) {
         clientMsgId,
       });
 
-    socket.emit('message:sent', { clientMsgId, message });
-    io.to(`room:${numericRoomId}`).to('hr').emit('message:new', { message, room: { id: numericRoomId } });
+    socket.emit(SOCKET_ON.MESSAGE_SENT, { clientMsgId, message });
+    io.to(`room:${numericRoomId}`)
+      .to('hr')
+      .emit(SOCKET_ON.MESSAGE_NEW, { message, room: { id: numericRoomId } });
   });
 }

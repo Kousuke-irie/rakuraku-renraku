@@ -3,7 +3,7 @@
 import { Router } from 'express';
 import db from '../db/index.js';
 import { requireAuth } from '../middleware/auth.js';
-import { assertRoomMember, RoomAccessDeniedError } from '../services/roomAuth.js';
+import { assertRoomMember } from '../services/roomAuth.js';
 
 const router = Router();
 
@@ -86,19 +86,13 @@ router.get('/', requireAuth, (req, res) => {
 router.get('/:id', requireAuth, (req, res) => {
   const roomId = Number(req.params.id);
 
-  try {
-    assertRoomMember(db, req.user.id, roomId);
-  } catch (err) {
-    if (err instanceof RoomAccessDeniedError) {
-      return res.status(err.statusCode).json({ success: false, error: err.message });
-    }
-    throw err;
-  }
+  // RoomAccessDeniedError は errorHandler が 403 `{ error, message }` に変換する。
+  assertRoomMember(db, req.user.id, roomId);
 
   const row = db.prepare(`${ROOM_LIST_SQL} WHERE r.id = ?`).get(req.user.id, roomId);
 
   if (!row) {
-    return res.status(404).json({ success: false, error: 'room not found' });
+    return res.status(404).json({ error: 'not_found', message: 'ルームが存在しません' });
   }
 
   res.json({ room: toRoomListItem(row) });
