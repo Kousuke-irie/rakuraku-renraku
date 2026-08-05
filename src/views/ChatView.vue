@@ -4,10 +4,12 @@
 // 吹き出し・日付セパレータ・無限スクロール・送信状態は人事側と同じ
 // MessageList / MessageBubble（B-2/B-3）に載せる。
 //
+// アカウント・ログアウトは全画面共通の AppNavRail（AppShell）が持つ。
+// 画面全体の固定レイヤも AppShell 側にあるので、このビューはセルを height:100% で埋めるだけ。
+//
 // socket の購読は composables/useSocket.js に集約されている（CLAUDE.md §6-12）。
 // このコンポーネントは Pinia ストアを読み書きするだけで socket.on() を書かない。
 import { computed, onMounted, watch } from "vue"
-import { useRouter } from "vue-router"
 import { useAuthStore } from "../stores/auth.js"
 import { useRoomsStore } from "../stores/rooms.js"
 import { useMessagesStore } from "../stores/messages.js"
@@ -24,10 +26,6 @@ const auth = useAuthStore()
 const rooms = useRoomsStore()
 const messages = useMessagesStore()
 const ui = useUiStore()
-// #endregion
-
-// #region local variable
-const router = useRouter()
 // #endregion
 
 // #region computed
@@ -109,11 +107,6 @@ const onPublish = async () => {
   if (!canSend.value) return
   await messages.sendMessage(roomId.value, draft.value)
 }
-
-const onExit = async () => {
-  await auth.logout()
-  router.push({ name: "login" })
-}
 // #endregion
 </script>
 
@@ -135,13 +128,6 @@ const onExit = async () => {
             >未接続（再接続中）</span>
           </p>
         </div>
-        <button
-          type="button"
-          class="button-normal chat__logout"
-          @click="onExit"
-        >
-          ログアウト
-        </button>
       </header>
 
       <p
@@ -199,15 +185,13 @@ const onExit = async () => {
 </template>
 
 <style scoped>
-/* 人事側と同じく固定レイヤにして、ページ自体はスクロールさせない
-   （inset: 0 ＋ margin: 0 auto で中央寄せになる） */
+/* 画面全体の固定レイヤは AppShell が持つ。ここはそのセルを埋めて中央寄せするだけ */
 .chat {
-  position: fixed;
-  inset: 0;
+  height: 100%;
   max-width: 860px;
   margin: 0 auto;
   overflow: hidden;
-  padding: var(--space-lg) var(--space-md);
+  padding: var(--space-xs) 0 var(--space-sm);
 }
 
 /* 人事側のトークペインと同じ「白カード」の作りに揃える */
@@ -244,11 +228,6 @@ const onExit = async () => {
   gap: var(--space-md);
   align-items: center;
   color: var(--color-ink-mute);
-  font-size: 12px;
-}
-
-.chat__logout {
-  padding: 6px 16px;
   font-size: 12px;
 }
 

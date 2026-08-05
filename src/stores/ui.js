@@ -28,6 +28,9 @@ export const useUiStore = defineStore('ui', {
     /** プロフィールパネル内の申し送りメモ（P2-5） */
     memoPanelOpen: true,
 
+    /** 自分のプロフィール編集ダイアログ（ナビレールのアイコンから開く。B-5） */
+    profileDialogOpen: false,
+
     /** @type {string} メモのタブ。MEMO_SCOPE のいずれか（P2-5） */
     memoScope: MEMO_SCOPE.PRIVATE,
 
@@ -75,6 +78,15 @@ export const useUiStore = defineStore('ui', {
 
     toggleMemoPanel() {},
 
+    /** 自分のプロフィール編集ダイアログ（B-5） */
+    openProfileDialog() {
+      this.profileDialogOpen = true
+    },
+
+    closeProfileDialog() {
+      this.profileDialogOpen = false
+    },
+
     /** @param {string} scope MEMO_SCOPE のいずれか */
     setMemoScope(scope) {},
 
@@ -108,6 +120,7 @@ export const useUiStore = defineStore('ui', {
 
     reset() {
       this.selectedRoomId = null
+      this.profileDialogOpen = false
       this.snippetPaletteOpen = false
       this.snippetQuery = ''
       this.snippetHighlightIndex = 0

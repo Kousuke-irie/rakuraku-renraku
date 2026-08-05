@@ -5,11 +5,12 @@
 // 左右ペインは**表示専用のガワ**（InboxSidebar / InboxDetailPane）で、
 // P1-1・P1-7・P1-8・P2-4 で各コンポーネントに置き換える。
 //
+// ワードマーク・アカウント・ログアウトは全画面共通の AppNavRail（AppShell）が持つ。
+// 画面全体の固定レイヤも AppShell 側にあるので、このビューはセルを height:100% で埋めるだけ。
+//
 // このビューの責務は URL の :roomId と選択状態の同期のみ。
 // トークペインの中身は ChatPanel（B-2/B-3）が持つ。
 import { computed, onMounted, watch } from "vue"
-import { useRouter } from "vue-router"
-import { useAuthStore } from "../stores/auth.js"
 import { useMessagesStore } from "../stores/messages.js"
 import { useRoomsStore } from "../stores/rooms.js"
 import { useUiStore } from "../stores/ui.js"
@@ -17,21 +18,15 @@ import ChatPanel from "../components/ChatPanel.vue"
 import InboxDetailPane from "../components/InboxDetailPane.vue"
 import InboxSidebar from "../components/InboxSidebar.vue"
 import PanelIcon from "../components/PanelIcon.vue"
-import UserAvatar from "../components/UserAvatar.vue"
 
 const props = defineProps({
   roomId: { type: String, default: null },
 })
 
 // #region global state
-const auth = useAuthStore()
 const messages = useMessagesStore()
 const rooms = useRoomsStore()
 const ui = useUiStore()
-// #endregion
-
-// #region local variable
-const router = useRouter()
 // #endregion
 
 // #region computed
@@ -66,175 +61,90 @@ onMounted(async () => {
 
 watch(() => props.roomId, syncSelectedRoom)
 // #endregion
-
-// #region browser event handler
-const onLogout = async () => {
-  await auth.logout()
-  router.push({ name: "login" })
-}
-// #endregion
 </script>
 
 <template>
-  <div class="inbox">
-    <header class="topbar">
-      <p class="topbar__brand">
-        楽楽連ラク
-      </p>
-      <p class="topbar__tagline">
-        採用コミュニケーション管理
-      </p>
-
-      <div class="topbar__user">
-        <UserAvatar
-          :display-name="auth.user?.displayName ?? ''"
-          :color="auth.user?.avatarColor ?? ''"
-          size="sm"
+  <div
+    class="panes"
+    :class="{
+      'panes--no-rooms': !ui.roomListOpen,
+      'panes--no-detail': !ui.profilePanelOpen,
+    }"
+  >
+    <div
+      v-if="ui.roomListOpen"
+      class="pane pane--rooms"
+    >
+      <InboxSidebar />
+    </div>
+    <!-- 最小化中はアイコン幅の細いカードだけ残し、そこから復帰させる -->
+    <div
+      v-else
+      class="pane pane--rail"
+    >
+      <button
+        type="button"
+        class="icon-button"
+        title="一覧を表示する"
+        aria-label="一覧を表示する"
+        @click="ui.toggleRoomList()"
+      >
+        <PanelIcon
+          side="left"
+          direction="right"
         />
-        <span class="topbar__name">{{ auth.user?.displayName }}</span>
-        <button
-          type="button"
-          class="button-normal topbar__logout"
-          @click="onLogout"
-        >
-          ログアウト
-        </button>
-      </div>
-    </header>
+      </button>
+    </div>
+
+    <div class="pane pane--chat">
+      <ChatPanel
+        v-if="selectedRoom"
+        :key="selectedRoom.id"
+        :room="selectedRoom"
+      />
+      <p
+        v-else
+        class="pane__placeholder"
+      >
+        {{ placeholderText }}
+      </p>
+    </div>
 
     <div
-      class="panes"
-      :class="{
-        'panes--no-rooms': !ui.roomListOpen,
-        'panes--no-detail': !ui.profilePanelOpen,
-      }"
+      v-if="ui.profilePanelOpen"
+      class="pane pane--detail"
     >
-      <div
-        v-if="ui.roomListOpen"
-        class="pane pane--rooms"
+      <InboxDetailPane :room="selectedRoom" />
+    </div>
+    <div
+      v-else
+      class="pane pane--rail"
+    >
+      <button
+        type="button"
+        class="icon-button"
+        title="詳細を表示する"
+        aria-label="詳細を表示する"
+        @click="ui.toggleProfilePanel()"
       >
-        <InboxSidebar />
-      </div>
-      <!-- 最小化中はアイコン幅の細いカードだけ残し、そこから復帰させる -->
-      <div
-        v-else
-        class="pane pane--rail"
-      >
-        <button
-          type="button"
-          class="icon-button"
-          title="一覧を表示する"
-          aria-label="一覧を表示する"
-          @click="ui.toggleRoomList()"
-        >
-          <PanelIcon
-            side="left"
-            direction="right"
-          />
-        </button>
-      </div>
-
-      <div class="pane pane--chat">
-        <ChatPanel
-          v-if="selectedRoom"
-          :key="selectedRoom.id"
-          :room="selectedRoom"
+        <PanelIcon
+          side="right"
+          direction="left"
         />
-        <p
-          v-else
-          class="pane__placeholder"
-        >
-          {{ placeholderText }}
-        </p>
-      </div>
-
-      <div
-        v-if="ui.profilePanelOpen"
-        class="pane pane--detail"
-      >
-        <InboxDetailPane :room="selectedRoom" />
-      </div>
-      <div
-        v-else
-        class="pane pane--rail"
-      >
-        <button
-          type="button"
-          class="icon-button"
-          title="詳細を表示する"
-          aria-label="詳細を表示する"
-          @click="ui.toggleProfilePanel()"
-        >
-          <PanelIcon
-            side="right"
-            direction="left"
-          />
-        </button>
-      </div>
+      </button>
     </div>
   </div>
 </template>
 
 <style scoped>
-/* 画面全体を固定レイヤにして、ページ自体がスクロールしないようにする。
-   （内側の一覧・メッセージ列のスクロール量がドキュメント高さに伝播して
-   カードごと上へスクロールしてしまうのを防ぐ） */
-.inbox {
-  position: fixed;
-  inset: 0;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  gap: var(--space-md);
-  overflow: hidden;
-  padding: var(--space-md);
-}
-
-.topbar {
-  display: flex;
-  gap: var(--space-md);
-  align-items: center;
-  padding: var(--space-md) var(--space-xl);
-  border: 1px solid var(--color-hairline);
-  border-radius: var(--radius-xl);
-  background-color: var(--color-canvas);
-}
-
-/* ワードマークだけはブランド色を使う（DESIGN.md：orange は面・CTA・ロゴ） */
-.topbar__brand {
-  color: var(--color-primary);
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: -0.3px;
-}
-
-.topbar__tagline {
-  padding-left: var(--space-md);
-  border-left: 1px solid var(--color-hairline);
-  color: var(--color-ink-mute);
-  font-size: 12px;
-}
-
-.topbar__user {
-  display: flex;
-  gap: var(--space-sm);
-  align-items: center;
-  margin-left: auto;
-}
-
-.topbar__name {
-  font-size: 13px;
-}
-
-.topbar__logout {
-  padding: 6px 16px;
-  font-size: 12px;
-}
-
+/* 画面全体の固定レイヤは AppShell が持つ。ここはそのセルを埋めるだけ */
 .panes {
-  /* 最小化した側に残すレールの幅（アイコンボタン 28px ＋ 左右 8px） */
-  --rail-width: 44px;
+  /* 最小化した側に残すレールの幅（アイコンボタン 28px ＋ 左右 8px）。
+     全画面共通のナビレール（--nav-rail-width）とは別物 */
+  --pane-rail-width: 44px;
 
   display: grid;
+  height: 100%;
   grid-template-columns: 360px minmax(0, 1fr) 320px;
   /* 暗黙の行は auto だと中身（一覧の全行）より縮まないため、明示的に minmax(0,1fr) にする。
      これが無いと一覧が長いときにカードごと画面下へはみ出す。 */
@@ -245,15 +155,15 @@ const onLogout = async () => {
 
 /* 最小化した側はアイコン幅のレールだけ残し、余った幅はトークカードが受け取る */
 .panes--no-rooms {
-  grid-template-columns: var(--rail-width) minmax(0, 1fr) 320px;
+  grid-template-columns: var(--pane-rail-width) minmax(0, 1fr) 320px;
 }
 
 .panes--no-detail {
-  grid-template-columns: 360px minmax(0, 1fr) var(--rail-width);
+  grid-template-columns: 360px minmax(0, 1fr) var(--pane-rail-width);
 }
 
 .panes--no-rooms.panes--no-detail {
-  grid-template-columns: var(--rail-width) minmax(0, 1fr) var(--rail-width);
+  grid-template-columns: var(--pane-rail-width) minmax(0, 1fr) var(--pane-rail-width);
 }
 
 /* レールはアイコンボタン（28px）＋左右の余白ぶんの幅しか持たない */

@@ -1,0 +1,89 @@
+<script setup>
+// ナビレール（AppNavRail）用のアイコン。
+//
+// アイコンライブラリは追加しない方針（CLAUDE.md §3）なので、PanelIcon と同じく
+// インライン SVG で描く。viewBox 24 系の stroke パスだけで構成し、塗りは使わない。
+// リンク／ボタン側に aria-label を付ける前提なので、この SVG は支援技術から隠す。
+import { computed } from "vue"
+
+// #region constants
+/**
+ * アイコン名 → stroke パスの配列。
+ * 丸いつまみ（settings）も circle 要素を混ぜずに済むよう円弧パスで描く。
+ */
+const PATHS = Object.freeze({
+  // 受信箱（人事のホーム）
+  inbox: [
+    "M3.5 13.5 L6 5.5 h12 l2.5 8",
+    "M3.5 13.5 h4.5 l1.5 2.5 h5 l1.5-2.5 h4.5 v4 a2 2 0 0 1-2 2 H5.5 a2 2 0 0 1-2-2 z",
+  ],
+  // 吹き出し（学生のホーム）
+  chat: [
+    "M4 7 A2.5 2.5 0 0 1 6.5 4.5 h11 A2.5 2.5 0 0 1 20 7 v6 a2.5 2.5 0 0 1-2.5 2.5 H10 L6 19.5 V15.5 A2.5 2.5 0 0 1 4 13 z",
+  ],
+  // ベル（アラート）
+  bell: [
+    "M12 3.5 A5.5 5.5 0 0 0 6.5 9 c0 3.8-1.5 5.5-1.5 5.5 h14 s-1.5-1.7-1.5-5.5 A5.5 5.5 0 0 0 12 3.5 z",
+    "M9.9 17.5 a2.2 2.2 0 0 0 4.2 0",
+  ],
+  // スライダー（設定）。歯車より線が少なく小さい寸法でも潰れない
+  settings: [
+    "M4 7.5 h9.5",
+    "M13.5 7.5 a2 2 0 1 0 4 0 a2 2 0 1 0-4 0",
+    "M17.5 7.5 h2.5",
+    "M4 16.5 h4.5",
+    "M8.5 16.5 a2 2 0 1 0 4 0 a2 2 0 1 0-4 0",
+    "M12.5 16.5 h7.5",
+  ],
+  // ドア＋外向き矢印（ログアウト）
+  logout: [
+    "M13.5 4.5 H6.5 a2 2 0 0 0-2 2 v11 a2 2 0 0 0 2 2 h7",
+    "M13 12 h7.5",
+    "M17.5 8.5 L21 12 l-3.5 3.5",
+  ],
+})
+// #endregion
+
+// defineProps の既定値・validator はコンパイル時に巻き上げられるため、
+// setup スコープの PATHS を参照できない。ここだけ名前をリテラルで書く。
+const props = defineProps({
+  /** "inbox" | "chat" | "bell" | "settings" | "logout" */
+  name: {
+    type: String,
+    required: true,
+    validator: (value) => ["inbox", "chat", "bell", "settings", "logout"].includes(value),
+  },
+})
+
+// #region computed
+const paths = computed(() => PATHS[props.name] ?? [])
+// #endregion
+</script>
+
+<template>
+  <svg
+    class="nav-icon"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.6"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+    focusable="false"
+  >
+    <path
+      v-for="(d, index) in paths"
+      :key="index"
+      :d="d"
+    />
+  </svg>
+</template>
+
+<style scoped>
+.nav-icon {
+  flex: none;
+  width: 20px;
+  height: 20px;
+}
+</style>
