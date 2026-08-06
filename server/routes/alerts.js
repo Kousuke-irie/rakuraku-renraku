@@ -4,7 +4,7 @@
 // （403 だと「その通知は存在する」ことが漏れる。CLAUDE.md §6-6）。
 import { Router } from 'express';
 import db from '../db/index.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireHr } from '../middleware/auth.js';
 import {
   countUnreadAlerts,
   listAlertsForUser,
@@ -16,7 +16,11 @@ const router = Router();
 
 const DEFAULT_LIMIT = 50;
 
-router.get('/', requireAuth, (req, res) => {
+// 通知の宛先は担当人事と上長だけ。学生に届く通知は存在しないので、
+// 存在しないものを問い合わせられる口を開けておかない（CLAUDE.md §6-6）。
+router.use(requireAuth, requireHr);
+
+router.get('/', (req, res) => {
   const limit = Math.min(Number(req.query.limit) || DEFAULT_LIMIT, DEFAULT_LIMIT);
 
   const alerts = listAlertsForUser(db, req.user.id, {
@@ -28,13 +32,13 @@ router.get('/', requireAuth, (req, res) => {
   res.json({ alerts, unreadCount: countUnreadAlerts(db, req.user.id) });
 });
 
-router.post('/read-all', requireAuth, (req, res) => {
+router.post('/read-all', (req, res) => {
   const updated = markAllAlertsRead(db, req.user.id);
   res.json({ updated, unreadCount: countUnreadAlerts(db, req.user.id) });
 });
 
 // '/read-all' より後に置くこと。先に置くと :id が 'read-all' を食う
-router.post('/:id/read', requireAuth, (req, res) => {
+router.post('/:id/read', (req, res) => {
   const alertId = Number(req.params.id);
 
   if (!Number.isInteger(alertId) || alertId <= 0) {

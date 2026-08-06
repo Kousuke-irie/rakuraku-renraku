@@ -27,8 +27,10 @@ import { useUiStore } from '../stores/ui.js'
  * | `memo:updated`    | `{ roomId, memo }`                           | `rooms.upsertMemo(roomId, memo)`                     |
  * | `summary:updated` | `{ needsReply, urgent, overdue24h }`         | `rooms.setSummary(payload)`                          |
  * | `ai:summary_updated` | `{ status, situation, todos, generatedAt }` | `rooms.setAiSummary(payload)`                     |
+ * | `alert:new`       | `{ alert }`                                  | `ui.receiveAlert(alert)`（宛先本人にのみ届く）        |
+ * | `alert:resolved`  | `{ alertIds, unreadCount }`                  | `ui.receiveAlertsResolved(payload)`                  |
  * | `error`           | `{ code, message }`                          | `ui.pushToast({ type:'error', message })`。`unauthorized` なら `auth.reset()` |
- * | `connect`         | -                                            | `ui.setConnectionState('connected')` → `rooms.fetchRooms()` + 開いているルームの `messages.resync()` |
+ * | `connect`         | -                                            | `ui.setConnectionState('connected')` → `rooms.fetchRooms()` + 開いているルームの `messages.resync()` + 人事なら `ui.fetchAlertCount()` |
  * | `disconnect`      | -                                            | `ui.setConnectionState('disconnected')`              |
  * | `connect_error`   | -                                            | `ui.setConnectionState('disconnected')`（指数バックオフで再接続） |
  *
@@ -102,6 +104,7 @@ async function handleUnauthorized() {
  * 各ハンドラの中身はストアの action を呼ぶだけにし、ロジックを書かない。
  */
 function registerHandlers() {
+  const auth = useAuthStore()
   const rooms = useRoomsStore()
   const messages = useMessagesStore()
   const ui = useUiStore()
@@ -111,6 +114,9 @@ function registerHandlers() {
     ui.setConnectionState('connected')
     rooms.fetchRooms()
     if (ui.selectedRoomId) messages.resync(ui.selectedRoomId)
+    // 切断中に作られた／解消された通知は alert:new / alert:resolved が届かない。
+    // 再接続のたびに数え直す（P4-1b）。学生には通知が無いので取りに行かない
+    if (auth.isHr) ui.fetchAlertCount()
   })
   socket.on('disconnect', () => ui.setConnectionState('disconnected'))
   socket.on('connect_error', (error) => {
@@ -139,6 +145,8 @@ function registerHandlers() {
   socket.on(SOCKET_ON.AI_SUMMARY_UPDATED, (payload) => rooms.setAiSummary(payload))
   // P4-1：SLA通知。宛先本人にだけ届く（サーバが user:{id} ルームへ配信）
   socket.on(SOCKET_ON.ALERT_NEW, ({ alert }) => ui.receiveAlert(alert))
+  // P4-1b：返信などで片付いた通知。一覧から消し、ベルの未読件数を差し替える
+  socket.on(SOCKET_ON.ALERT_RESOLVED, (payload) => ui.receiveAlertsResolved(payload))
   socket.on(SOCKET_ON.ERROR, ({ code, message }) => {
     ui.pushToast({ type: 'error', message })
     if (code === 'unauthorized') handleUnauthorized()

@@ -1,4 +1,5 @@
 import { MESSAGE_TYPE, ROLE, SOCKET_ON } from '../../shared/constants.js';
+import { countUnreadAlerts } from './alertView.js';
 import { findRoomForUser } from './roomView.js';
 import { getSummary } from './summary.js';
 
@@ -60,6 +61,33 @@ export function emitMemoUpdated(io, memo) {
 export function emitAlertNew(io, targetUserId, alert) {
   if (!io || !targetUserId || !alert) return;
   io.to(`user:${targetUserId}`).emit(SOCKET_ON.ALERT_NEW, { alert });
+}
+
+/**
+ * 通知が解消されたことを宛先本人へ配信する（P4-1b）。
+ *
+ * ★`unreadCount` を必ず添えること。通知一覧を一度も開いていない画面では
+ *   クライアントが未読件数を再計算できず、ベルの数字だけが減らないまま残る。
+ *
+ * @param {{id: number, targetUserId: number}[]} resolved 閉じた通知
+ */
+export function emitAlertsResolved(io, db, resolved) {
+  if (!io || !Array.isArray(resolved) || resolved.length === 0) return;
+
+  const idsByUser = new Map();
+  for (const alert of resolved) {
+    if (!alert?.targetUserId) continue;
+    const ids = idsByUser.get(alert.targetUserId) ?? [];
+    ids.push(alert.id);
+    idsByUser.set(alert.targetUserId, ids);
+  }
+
+  for (const [targetUserId, alertIds] of idsByUser) {
+    io.to(`user:${targetUserId}`).emit(SOCKET_ON.ALERT_RESOLVED, {
+      alertIds,
+      unreadCount: countUnreadAlerts(db, targetUserId),
+    });
+  }
 }
 
 /** AI要約は生成を依頼した本人にだけ配信する。 */

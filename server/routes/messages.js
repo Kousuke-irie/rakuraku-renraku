@@ -6,7 +6,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { assertRoomMember } from '../services/roomAuth.js';
 import { classifyTopicTag } from '../services/tagClassifier.js';
 import { calculateRoomUrgency } from '../services/urgencyCalculator.js';
-import { emitMessageNew, emitSummaryUpdated } from '../services/realtime.js';
+import { emitAlertsResolved, emitMessageNew, emitSummaryUpdated } from '../services/realtime.js';
 import { applyStatusTransition } from '../services/statusTransition.js';
 import { queueStudentMessageAnalysis } from '../services/aiPriority.js';
 import {
@@ -144,6 +144,7 @@ router.post('/rooms/:id/messages', requireAuth, async (req, res, next) => {
       return res.status(200).json({ message: existing });
     }
 
+    const io = req.app.get('io');
     const message = insertMessage({
       roomId,
       senderId: req.user.id,
@@ -151,9 +152,9 @@ router.post('/rooms/:id/messages', requireAuth, async (req, res, next) => {
       body,
       clientMsgId,
       acknowledgedCodes: normalizeAcknowledgedCodes(acknowledgedCodes),
+      io,
     });
 
-    const io = req.app.get('io');
     await emitMessageNew(io, db, message);
     emitSummaryUpdated(io, db);
     if (req.user.role === ROLE.STUDENT) queueStudentMessageAnalysis(db, io, message);
@@ -177,8 +178,13 @@ router.post('/rooms/:id/messages', requireAuth, async (req, res, next) => {
 //
 // acknowledgedCodes は送信前チェック（P4-3）で人事が承知したルールコード。
 // 未指定なら「チェック未経由」として記録される（monitoring.md §5）。
-export function insertMessage({ roomId, senderId, senderRole, body, clientMsgId, acknowledgedCodes = null }) {
+//
+// io は SLA 通知の解消を宛先へ配信するために受け取る（P4-1b）。
+// **配信はコミット後**に行う。トランザクション内で送ると、ロールバックしたときに
+// 「解消したはずの通知」が相手の画面から消えたまま復活しない。
+export function insertMessage({ roomId, senderId, senderRole, body, clientMsgId, acknowledgedCodes = null, io = null }) {
   const now = new Date().toISOString();
+  let resolvedAlerts = [];
 
   const run = db.transaction(() => {
     const topicTag = senderRole === ROLE.STUDENT ? classifyTopicTag(db, body) : null;
@@ -205,7 +211,7 @@ export function insertMessage({ roomId, senderId, senderRole, body, clientMsgId,
 
     // P4-1：人事が返信したらこのルームの未解決 SLA 通知を閉じる。
     // コンプライアンス警告は「起きた事実」なので閉じない。
-    if (isCheckedRole(senderRole)) resolveSlaAlerts(db, roomId);
+    if (isCheckedRole(senderRole)) resolvedAlerts = resolveSlaAlerts(db, roomId);
 
     const urgency = calculateRoomUrgency(db, roomId);
     db.prepare(`UPDATE rooms SET urgency = ? WHERE id = ?`).run(urgency, roomId);
@@ -224,7 +230,10 @@ export function insertMessage({ roomId, senderId, senderRole, body, clientMsgId,
     return db.prepare(`SELECT ${MESSAGE_COLUMNS} FROM messages WHERE id = ?`).get(messageId);
   });
 
-  return run();
+  const message = run();
+  emitAlertsResolved(io, db, resolvedAlerts);
+
+  return message;
 }
 
 export default router;

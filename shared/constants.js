@@ -609,6 +609,11 @@ export const SOCKET_ON = Object.freeze({
   AI_SUMMARY_UPDATED: 'ai:summary_updated',
   /** P4-1。通知先（target_user_id）本人にのみ配信する */
   ALERT_NEW: 'alert:new',
+  /**
+   * P4-1b。通知が解消された（人事が返信した等）ことを宛先本人へ知らせる。
+   * これが無いと、片付いた通知がリロードするまで一覧とベルに残る。
+   */
+  ALERT_RESOLVED: 'alert:resolved',
   ERROR: 'error',
 });
 

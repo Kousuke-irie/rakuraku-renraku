@@ -7,6 +7,8 @@
 //
 // 返信すると解消され、既定では一覧から消える（monitoring.md §3）。
 // 「上から処理すれば終わる」状態を保つため、片付いたものを残さない。
+// 解消は socket（alert:resolved）で届くので、開いたままでも消える（P4-1b）。
+// 後から見返したいときだけ「すべて」に切り替えて解消済みも出す。
 import { computed, onMounted } from "vue"
 import { useRouter } from "vue-router"
 import { ALERT_KIND, ALERT_KIND_META } from "../constants/index.js"
@@ -47,6 +49,9 @@ const onOpen = async (alert) => {
   await ui.markAlertRead(alert.id)
   await router.push(`/inbox/${alert.roomId}`)
 }
+
+/** @param {boolean} includeResolved 「未対応」／「すべて」の切り替え（P4-1b） */
+const onFilterChange = (includeResolved) => ui.setAlertsIncludeResolved(includeResolved)
 // #endregion
 </script>
 
@@ -70,14 +75,45 @@ const onOpen = async (alert) => {
         <p class="card__note">
           未読 {{ unreadCount }}件 ／ 表示 {{ ui.alerts.length }}件
         </p>
+
+        <!-- 解消済みは既定で隠れる。見返す口をここで開ける（P4-1b） -->
+        <div
+          class="filter"
+          role="group"
+          aria-label="通知の絞り込み"
+        >
+          <button
+            type="button"
+            class="filter__button"
+            :class="{ 'filter__button--on': !ui.alertsIncludeResolved }"
+            :aria-pressed="!ui.alertsIncludeResolved"
+            @click="onFilterChange(false)"
+          >
+            未対応
+          </button>
+          <button
+            type="button"
+            class="filter__button"
+            :class="{ 'filter__button--on': ui.alertsIncludeResolved }"
+            :aria-pressed="ui.alertsIncludeResolved"
+            @click="onFilterChange(true)"
+          >
+            すべて（解消済みを含む）
+          </button>
+        </div>
       </header>
 
       <p
         v-if="ui.alertsLoaded && ui.alerts.length === 0"
         class="card__placeholder"
       >
-        未対応の通知はありません。<br>
-        返信が24時間滞ると、ここに通知が届きます。
+        <template v-if="ui.alertsIncludeResolved">
+          通知はまだありません。
+        </template>
+        <template v-else>
+          未対応の通知はありません。<br>
+          返信が24時間滞ると、ここに通知が届きます。
+        </template>
       </p>
 
       <ul
@@ -111,6 +147,11 @@ const onOpen = async (alert) => {
                   v-if="!alert.readAt"
                   class="sr-only"
                 >未読</span>
+                <!-- 解消済みは色ではなくラベルで示す（CLAUDE.md §6-13） -->
+                <span
+                  v-if="alert.resolvedAt"
+                  class="row__resolved"
+                >解消済み</span>
               </span>
               <span class="row__detail">{{ alert.detail }}</span>
               <span class="row__meta">
@@ -176,6 +217,34 @@ const onOpen = async (alert) => {
   margin: var(--space-xs) 0 0;
   color: var(--color-ink-mute);
   font-size: 12px;
+}
+
+/* 絞り込み（未対応／すべて）。受信箱の FilterBar と同じ「押されているボタン」の語彙に揃える */
+.filter {
+  display: flex;
+  gap: var(--space-xs);
+  margin-top: var(--space-sm);
+}
+
+.filter__button {
+  padding: 3px var(--space-md);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-pill);
+  background-color: transparent;
+  color: var(--color-ink-mute);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.filter__button:hover {
+  background-color: var(--color-orange-soft);
+}
+
+.filter__button--on {
+  border-color: var(--color-ink);
+  background-color: var(--color-ink);
+  color: var(--color-canvas);
 }
 
 .card__placeholder {
@@ -262,6 +331,15 @@ const onOpen = async (alert) => {
 .row__student {
   font-size: 14px;
   font-weight: 600;
+}
+
+.row__resolved {
+  padding: 1px var(--space-sm);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-pill);
+  color: var(--color-ink-mute);
+  font-size: 11px;
+  line-height: 1.6;
 }
 
 .row__detail {

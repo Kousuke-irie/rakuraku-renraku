@@ -176,20 +176,36 @@ export function detectSlaBreaches(db, now = Date.now()) {
  * コンプライアンス警告（kind='compliance'）は**閉じない**。あちらは
  * 「起きた事実の記録」であって、解消するものではないため。
  *
- * @returns {number} 閉じた件数
+ * ★閉じた行を返すのは配信のため（P4-1b）。宛先が分からないと
+ *   `alert:resolved` を誰に送ればよいか決められず、片付いた通知が
+ *   リロードするまで相手の画面に残る。
+ *
+ * @returns {{id: number, targetUserId: number, roomId: number}[]} 閉じた通知
  */
 export function resolveSlaAlerts(db, roomId, now = Date.now()) {
   const placeholders = SLA_ALERT_KINDS.map(() => '?').join(', ');
 
-  const result = db
+  // UPDATE ... RETURNING は better-sqlite3 でも使えるが、SQLite 3.35 未満では動かない。
+  // 先に対象を SELECT しておくほうが環境差に強い（同一トランザクション内なので競合しない）。
+  const targets = db
     .prepare(
-      `UPDATE alerts
-          SET resolved_at = ?
+      `SELECT id, target_user_id AS targetUserId, room_id AS roomId
+         FROM alerts
         WHERE room_id = ?
           AND kind IN (${placeholders})
           AND resolved_at IS NULL`,
     )
-    .run(new Date(now).toISOString(), roomId, ...SLA_ALERT_KINDS);
+    .all(roomId, ...SLA_ALERT_KINDS);
 
-  return result.changes;
+  if (targets.length === 0) return [];
+
+  db.prepare(
+    `UPDATE alerts
+        SET resolved_at = ?
+      WHERE room_id = ?
+        AND kind IN (${placeholders})
+        AND resolved_at IS NULL`,
+  ).run(new Date(now).toISOString(), roomId, ...SLA_ALERT_KINDS);
+
+  return targets;
 }

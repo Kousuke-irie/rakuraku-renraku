@@ -235,15 +235,26 @@ test('返信すると未解消のSLA通知が閉じる', () => {
   const db = createDb();
   const hr = addUser(db, '大西 陽子', ROLE.HR);
   const roomId = addRoom(db, { hoursAgo: 49, assigneeId: hr });
-  addUser(db, '木村 誠', ROLE.ADMIN);
+  const admin = addUser(db, '木村 誠', ROLE.ADMIN);
 
   detectSlaBreaches(db, NOW);
   assert.equal(alertRows(db).filter((row) => !row.resolved_at).length, 2);
 
   const closed = resolveSlaAlerts(db, roomId, NOW);
 
-  assert.equal(closed, 2, 'notify と escalate の両方が閉じる');
+  assert.equal(closed.length, 2, 'notify と escalate の両方が閉じる');
   assert.equal(alertRows(db).filter((row) => !row.resolved_at).length, 0);
+
+  // 配信のために宛先が返ること（P4-1b）。ここが欠けると片付いた通知が画面に残る
+  assert.deepEqual(
+    closed.map((alert) => alert.targetUserId).sort(),
+    [hr, admin].sort(),
+    '担当者と上長の両方が宛先として返る',
+  );
+  assert.ok(
+    closed.every((alert) => Number.isInteger(alert.id) && alert.roomId === roomId),
+    'id と roomId が入っている',
+  );
 
   db.close();
 });

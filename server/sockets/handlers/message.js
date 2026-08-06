@@ -47,6 +47,7 @@ export function registerMessageHandlers(io, socket) {
           body,
           clientMsgId,
           acknowledgedCodes: normalizeAcknowledgedCodes(acknowledgedCodes),
+          io,
         });
 
       socket.emit(SOCKET_ON.MESSAGE_SENT, { clientMsgId, message });

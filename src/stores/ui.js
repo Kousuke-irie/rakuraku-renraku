@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { alertsApi, companyApi, selectionFlowApi, snippetsApi, toErrorMessage } from '../api/index.js'
 import {
+  ALERT_KIND_META,
   COMPLIANCE_AI_STATUS,
   DEFAULT_BOARD_GROUP_BY,
   MEMO_SCOPE,
@@ -189,6 +190,11 @@ export const useUiStore = defineStore('ui', {
     /** ナビレールのベルバッジ用。サーバが数えた未読件数をそのまま持つ */
     alertsUnreadCount: 0,
     alertsLoaded: false,
+    /**
+     * 通知一覧の絞り込み（P4-1b）。false＝未対応のみ／true＝解消済みも含む。
+     * 既定は「未対応のみ」。片付いたものを残すと「上から処理すれば終わる」が崩れる。
+     */
+    alertsIncludeResolved: false,
 
     /**
      * ログイン → ホームの円形トランジションの状態（描画は CircleRevealOverlay）。
@@ -481,13 +487,28 @@ export const useUiStore = defineStore('ui', {
     /** GET /api/alerts（P4-1）。画面を開くたびに取り直す（件数が変わるため） */
     async fetchAlerts() {
       try {
-        const { data } = await alertsApi.list()
+        // includeResolved は「解消済みも見たい」ときだけ付ける（既定は未対応のみ）
+        const params = this.alertsIncludeResolved ? { includeResolved: true } : undefined
+        const { data } = await alertsApi.list(params)
         this.alerts = data.alerts
         this.alertsUnreadCount = data.unreadCount
         this.alertsLoaded = true
       } catch (error) {
         this.pushToast({ type: 'error', message: toErrorMessage(error, ALERT_ERROR.FETCH) })
       }
+    },
+
+    /**
+     * 通知一覧の絞り込みを切り替えて取り直す（P4-1b）。
+     * 解消済みは既定で隠れているため、後から見返す口をここで開ける。
+     * @param {boolean} includeResolved
+     */
+    async setAlertsIncludeResolved(includeResolved) {
+      if (this.alertsIncludeResolved === includeResolved) return
+
+      this.alertsIncludeResolved = includeResolved
+      this.alertsLoaded = false
+      await this.fetchAlerts()
     },
 
     /** バッジだけ欲しいとき（ナビレール）。一覧は取りに行かない */
@@ -510,6 +531,40 @@ export const useUiStore = defineStore('ui', {
 
       this.alerts = [alert, ...this.alerts]
       if (!alert.readAt) this.alertsUnreadCount += 1
+
+      // ★通知画面を開いていない人に届けるための一手（P4-1b）。
+      //   ベルの数字が静かに増えるだけでは、その場にいても気づけない
+      const kindLabel = ALERT_KIND_META[alert.kind]?.label ?? '通知'
+      this.pushToast({
+        type: 'info',
+        message: `${kindLabel}：${alert.studentName ?? '担当学生'}`,
+      })
+    },
+
+    /**
+     * socket `alert:resolved` で届いた解消（P4-1b）。
+     *
+     * `unreadCount` はサーバが数え直した値をそのまま採用する。
+     * 一覧を開いていない画面ではローカルに再計算する材料が無く、
+     * 自前で減算するとベルの数字だけが実態とずれる。
+     * @param {{alertIds: number[], unreadCount: number}} payload
+     */
+    receiveAlertsResolved({ alertIds, unreadCount } = {}) {
+      if (Number.isFinite(unreadCount)) this.alertsUnreadCount = unreadCount
+      if (!Array.isArray(alertIds) || alertIds.length === 0) return
+
+      const resolvedIds = new Set(alertIds)
+
+      // 「解消済みを含む」表示中は消さずに解消印を付ける（見ている行が急に消えない）
+      if (this.alertsIncludeResolved) {
+        const now = new Date().toISOString()
+        for (const alert of this.alerts) {
+          if (resolvedIds.has(alert.id) && !alert.resolvedAt) alert.resolvedAt = now
+        }
+        return
+      }
+
+      this.alerts = this.alerts.filter((alert) => !resolvedIds.has(alert.id))
     },
 
     /** 行クリック時。既読化して一覧からは消さない（誤クリックで見失わないため） */
@@ -588,6 +643,7 @@ export const useUiStore = defineStore('ui', {
       this.alerts = []
       this.alertsUnreadCount = 0
       this.alertsLoaded = false
+      this.alertsIncludeResolved = false
       this.circleReveal = emptyCircleReveal()
       this.connectionState = 'connecting'
       this.toasts = []
