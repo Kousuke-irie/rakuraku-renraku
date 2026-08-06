@@ -7,15 +7,12 @@
 //   P1-7 で FilterBar.vue に実装が入ったら、このファイルは削除して
 //   FilterBar.vue をホームでも使い回すこと（フィルタ状態は roomsStore.filters で共有され、
 //   ホームと受信箱で同じ絞り込みが効くようにする）。
-import { computed } from "vue"
 import {
   HANDLING_STATUS_META,
   SELECTION_STATUS_META,
-  SORT_KEY_META,
   TOPIC_TAG_META,
   URGENCY_META,
 } from "../constants/index.js"
-import { useRoomsStore } from "../stores/rooms.js"
 
 // #region constants
 /**
@@ -31,14 +28,6 @@ const FILTERS = Object.freeze([
 ])
 
 const DISABLED_HINT = "絞り込みは P1-7 で実装予定です"
-// #endregion
-
-// #region global state
-const rooms = useRoomsStore()
-// #endregion
-
-// #region computed
-const sortLabel = computed(() => SORT_KEY_META[rooms.sortKey]?.label ?? "")
 // #endregion
 </script>
 
@@ -57,17 +46,6 @@ const sortLabel = computed(() => SORT_KEY_META[rooms.sortKey]?.label ?? "")
       {{ filter.label }}
       <span aria-hidden="true">▾</span>
     </button>
-
-    <span class="filter-bar__sort">
-      <span class="filter-bar__caption">並び替え</span>
-      <span
-        class="filter-bar__chip filter-bar__chip--sort"
-        :title="DISABLED_HINT"
-      >
-        {{ sortLabel }}
-        <span aria-hidden="true">▾</span>
-      </span>
-    </span>
   </div>
 </template>
 
@@ -98,15 +76,4 @@ const sortLabel = computed(() => SORT_KEY_META[rooms.sortKey]?.label ?? "")
   font-weight: 600;
 }
 
-.filter-bar__sort {
-  display: inline-flex;
-  gap: var(--space-sm);
-  align-items: center;
-  margin-left: auto;
-}
-
-/* 並び替えは現状固定なので、押せそうな見た目にしない */
-.filter-bar__chip--sort {
-  background-color: color-mix(in srgb, var(--color-ink) 4%, var(--color-canvas));
-}
 </style>

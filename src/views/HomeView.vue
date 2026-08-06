@@ -1,8 +1,11 @@
 <script setup>
 // S-07 ホーム（frontend.md §5-2）
 //
-// 人事のログイン後の着地点。学生一覧を全幅のテーブルで俯瞰する画面で、
-// **返信はここでは行わない**（行クリックで /inbox/:roomId へ渡す）。
+// 人事のログイン後の着地点。ステータスごとの列に学生カードを積んだボードで俯瞰する画面で、
+// **返信はここでは行わない**（カードクリックで /inbox/:roomId へ渡す）。
+//
+// 縦割りの軸は BoardGroupSwitch（対応／選考／緊急度）で切り替える。既定は選考。
+// 並び替え UI は持たない（列の中は常に緊急度の高い順で固定）。
 //
 // 右カラムは AI 現況サマリー（P3-1a）。右下の円形ボタンで開閉する。
 // ワードマーク・アカウント・ログアウトは全画面共通の AppNavRail（AppShell）が持つので、
@@ -12,8 +15,9 @@ import { useRoomsStore } from "../stores/rooms.js"
 import { useUiStore } from "../stores/ui.js"
 import AiLauncherButton from "../components/AiLauncherButton.vue"
 import AiSummaryCard from "../components/AiSummaryCard.vue"
+import BoardGroupSwitch from "../components/BoardGroupSwitch.vue"
 import HomeFilterBar from "../components/HomeFilterBar.vue"
-import StudentTable from "../components/StudentTable.vue"
+import StudentBoard from "../components/StudentBoard.vue"
 import SummaryBar from "../components/SummaryBar.vue"
 
 // #region constants
@@ -74,12 +78,13 @@ onMounted(async () => {
         </div>
 
         <div class="head__filter-row">
+          <BoardGroupSwitch />
           <HomeFilterBar />
           <span class="head__count">{{ roomCount }}件</span>
         </div>
       </header>
 
-      <StudentTable />
+      <StudentBoard />
     </section>
 
     <aside
@@ -168,13 +173,21 @@ onMounted(async () => {
 
 .head__filter-row {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-md);
   align-items: center;
   margin-top: var(--space-lg);
 }
 
+/* 縦割りの切替とフィルタの間に区切りを入れ、別のコントロールだと分かるようにする */
+.head__filter-row > :nth-child(2) {
+  padding-left: var(--space-md);
+  border-left: 1px solid var(--color-hairline);
+}
+
 .head__count {
   flex: none;
+  margin-left: auto;
   color: var(--color-ink-mute);
   font-size: 12px;
   white-space: nowrap;

@@ -184,6 +184,29 @@ export const SEND_STATUS_META = Object.freeze({
 export const SEND_STATUS_VALUES = Object.values(SEND_STATUS);
 
 // ---------------------------------------------------------------------------
+// ホームのボードを縦割りにする軸（S-07 / frontend.md §5-2）
+// ※クライアント内部の表示状態。DB にも API にも出さない。
+// 値は StatusChip の CHIP_KIND と揃えてあり、そのままチップの種別として使える。
+// ---------------------------------------------------------------------------
+
+export const BOARD_GROUP_BY = Object.freeze({
+  HANDLING: 'handling',
+  SELECTION: 'selection',
+  URGENCY: 'urgency',
+});
+
+export const BOARD_GROUP_BY_META = Object.freeze({
+  [BOARD_GROUP_BY.HANDLING]: { label: '対応' },
+  [BOARD_GROUP_BY.SELECTION]: { label: '選考' },
+  [BOARD_GROUP_BY.URGENCY]: { label: '緊急度' },
+});
+
+export const BOARD_GROUP_BY_VALUES = Object.values(BOARD_GROUP_BY);
+
+/** 既定は選考ステータス（選考パイプラインの俯瞰がホームの主目的） */
+export const DEFAULT_BOARD_GROUP_BY = BOARD_GROUP_BY.SELECTION;
+
+// ---------------------------------------------------------------------------
 // AI 現況サマリーの状態（P3-1a / api.md「AI 現況サマリー」・business-logic.md §7-2）
 // GET /api/ai/summary のレスポンス status と、ホームの AiSummaryCard の表示状態を兼ねる。
 // ---------------------------------------------------------------------------

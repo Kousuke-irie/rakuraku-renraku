@@ -1,6 +1,6 @@
 /* eslint-disable no-unused-vars -- 空実装のため引数が未使用。実装時にこの行を消すこと */
 import { defineStore } from 'pinia'
-import { MEMO_SCOPE } from '../constants/index.js'
+import { DEFAULT_BOARD_GROUP_BY, MEMO_SCOPE } from '../constants/index.js'
 
 /** トーストの連番。Date.now() だと同時 push で衝突する */
 let toastSeq = 0
@@ -30,6 +30,9 @@ export const useUiStore = defineStore('ui', {
 
     /** ホーム右カラムの AI 現況サマリー（S-07 / P3-1a）。右下の円形ボタンで開閉する */
     aiPanelOpen: true,
+
+    /** @type {string} ホームのボードを縦割りにする軸。BOARD_GROUP_BY のいずれか（S-07） */
+    boardGroupBy: DEFAULT_BOARD_GROUP_BY,
 
     /** 自分のプロフィール編集ダイアログ（ナビレールのアイコンから開く。B-5） */
     profileDialogOpen: false,
@@ -86,6 +89,11 @@ export const useUiStore = defineStore('ui', {
       this.aiPanelOpen = !this.aiPanelOpen
     },
 
+    /** @param {string} groupBy BOARD_GROUP_BY のいずれか（ホームの縦割り軸を切り替える） */
+    setBoardGroupBy(groupBy) {
+      this.boardGroupBy = groupBy
+    },
+
     /** 自分のプロフィール編集ダイアログ（B-5） */
     openProfileDialog() {
       this.profileDialogOpen = true
@@ -133,6 +141,7 @@ export const useUiStore = defineStore('ui', {
     reset() {
       this.selectedRoomId = null
       this.aiPanelOpen = true
+      this.boardGroupBy = DEFAULT_BOARD_GROUP_BY
       this.profileDialogOpen = false
       this.snippetPaletteOpen = false
       this.snippetQuery = ''
