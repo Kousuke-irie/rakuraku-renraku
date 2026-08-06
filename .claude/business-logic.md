@@ -134,11 +134,11 @@ classify(body: string): TopicTag
 ## 6. 一覧のデフォルトソート（P1-7）
 
 ```
-1. urgency                     -- high → normal → low
-2. last_student_message_at ASC -- 経過時間が長い順
+last_message.created_at DESC   -- 最終メッセージの新しい順
 ```
 
-- 切替可能なソート：最終メッセージ時刻順 / 経過時間順
+- 切替可能なソート：緊急度順 / 経過時間順
+- 「緊急度順」は `1. urgency（high → normal → low）` → `2. last_student_message_at ASC（経過時間が長い順）`
 - フィルタ条件とソート条件は Pinia に保持し、ルーム切替で失われないこと
 
 ---
