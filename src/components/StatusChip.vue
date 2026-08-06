@@ -11,10 +11,10 @@
 //   props の既定値に使う定数はこの通常 `<script>` ブロック（モジュールスコープ）に置く。
 import { computed } from "vue"
 import {
+  AI_RECOMMENDED_PRIORITY_META,
   HANDLING_STATUS_META,
   SELECTION_STATUS_META,
   TOPIC_TAG_META,
-  URGENCY_META,
 } from "../constants/index.js"
 
 /** チップが扱える列挙値の種別。利用側からも参照できるよう export する */
@@ -22,14 +22,14 @@ export const CHIP_KIND = Object.freeze({
   HANDLING: "handling",
   SELECTION: "selection",
   TOPIC: "topic",
-  URGENCY: "urgency",
+  AI_PRIORITY: "ai_priority",
 })
 
 const META_BY_KIND = Object.freeze({
   [CHIP_KIND.HANDLING]: HANDLING_STATUS_META,
   [CHIP_KIND.SELECTION]: SELECTION_STATUS_META,
   [CHIP_KIND.TOPIC]: TOPIC_TAG_META,
-  [CHIP_KIND.URGENCY]: URGENCY_META,
+  [CHIP_KIND.AI_PRIORITY]: AI_RECOMMENDED_PRIORITY_META,
 })
 
 const KINDS = Object.values(CHIP_KIND)

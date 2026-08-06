@@ -9,7 +9,11 @@ import snippetsRouter from './snippets.js';
 import summaryRouter from './summary.js';
 import companyRouter from './company.js';
 import selectionFlowRouter from './selectionFlow.js';
+import studentNotesRouter from './studentNotes.js';
 import aiSummaryRouter from './aiSummary.js';
+import calendarRouter from './calendar.js';
+import scheduleRequestsRouter from './scheduleRequests.js';
+import mockCalendarRouter from './mockCalendar.js';
 import alertsRouter from './alerts.js';
 import dashboardRouter from './dashboard.js';
 
@@ -27,7 +31,11 @@ router.use('/snippets', snippetsRouter);
 router.use('/summary', summaryRouter);
 router.use('/company', companyRouter);
 router.use('/selection-flow', selectionFlowRouter);
+router.use('/student-notes', studentNotesRouter);
 router.use('/ai/summary', aiSummaryRouter);
+router.use('/calendar', calendarRouter);
+router.use('/mock-calendar', mockCalendarRouter);
+router.use('/', scheduleRequestsRouter);
 router.use('/alerts', alertsRouter);
 router.use('/dashboard', dashboardRouter);
 

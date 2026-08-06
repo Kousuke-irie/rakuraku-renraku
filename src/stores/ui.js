@@ -1,11 +1,19 @@
 import { defineStore } from 'pinia'
-import { alertsApi, companyApi, selectionFlowApi, snippetsApi, toErrorMessage } from '../api/index.js'
+import {
+  alertsApi,
+  companyApi,
+  selectionFlowApi,
+  snippetsApi,
+  studentNotesApi,
+  toErrorMessage,
+} from '../api/index.js'
 import {
   ALERT_KIND_META,
   COMPLIANCE_AI_STATUS,
   DEFAULT_BOARD_GROUP_BY,
   MEMO_SCOPE,
   MEMO_SCOPE_VALUES,
+  STUDENT_NOTE_OVERALL_KEY,
 } from '../constants/index.js'
 
 /** トーストの連番。Date.now() だと同時 push で衝突する */
@@ -68,6 +76,11 @@ const ALERT_ERROR = Object.freeze({
 const SELECTION_FLOW_ERROR = Object.freeze({
   FETCH: '選考フローの取得に失敗しました',
   SAVE: '選考フローの保存に失敗しました',
+})
+
+/** 学生メモ（S-10）での失敗時の既定文言 */
+const STUDENT_NOTE_ERROR = Object.freeze({
+  SAVE: 'メモの保存に失敗しました',
 })
 
 /**
@@ -433,6 +446,41 @@ export const useUiStore = defineStore('ui', {
         this.myFlow = data
       } catch (error) {
         this.pushToast({ type: 'error', message: toErrorMessage(error, SELECTION_FLOW_ERROR.FETCH) })
+      }
+    },
+
+    /**
+     * PUT /api/student-notes/:noteKey（学生メモ・S-10）。
+     *
+     * 保存後の myFlow は**新しいオブジェクトに差し替える**（既存を書き換えない）。
+     * 本文そのものは入力中のコンポーネントが持っているので、ここで戻さない
+     * （保存往復の間に続きを打たれると、サーバの応答で打ち消してしまうため）。
+     *
+     * @param {string} noteKey STUDENT_NOTE_KEY_VALUES のいずれか
+     * @param {string} body 空文字なら削除
+     * @returns {boolean} 保存できたか（失敗しても入力は呼び出し側が保持する）
+     */
+    async saveStudentNote(noteKey, body) {
+      try {
+        const { data } = await studentNotesApi.save(noteKey, body)
+        const note = data.note
+
+        if (!this.myFlow) return true
+
+        this.myFlow =
+          noteKey === STUDENT_NOTE_OVERALL_KEY
+            ? { ...this.myFlow, overallNote: note }
+            : {
+                ...this.myFlow,
+                steps: this.myFlow.steps.map((step) =>
+                  step.statusKey === noteKey ? { ...step, note } : step
+                ),
+              }
+
+        return true
+      } catch (error) {
+        this.pushToast({ type: 'error', message: toErrorMessage(error, STUDENT_NOTE_ERROR.SAVE) })
+        return false
       }
     },
 

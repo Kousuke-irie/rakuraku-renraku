@@ -18,6 +18,7 @@ import {
   SEND_STATUS_META,
 } from "../constants/index.js"
 import UserAvatar from "./UserAvatar.vue"
+import ScheduleRequestCard from "./ScheduleRequestCard.vue"
 
 // #region constants
 const HOUR_IN_MS = 3_600_000
@@ -43,6 +44,7 @@ const emit = defineEmits(["retry", "delete"])
 // #region computed
 // ステータス変更などの自動投稿（constants.md §7）。吹き出しにせず中央のピルで出す
 const isSystem = computed(() => props.message.type === MESSAGE_TYPE.SYSTEM)
+const isScheduleRequest = computed(() => Boolean(props.message.scheduleRequest))
 
 const isDeleted = computed(() => Boolean(props.message.deletedAt))
 
@@ -78,7 +80,14 @@ const deletable = computed(() => {
 
 <template>
   <li
-    v-if="isSystem"
+    v-if="isScheduleRequest"
+    class="row row--schedule"
+  >
+    <ScheduleRequestCard :request="message.scheduleRequest" />
+  </li>
+
+  <li
+    v-else-if="isSystem"
     class="row row--system"
   >
     <p class="system">
@@ -181,6 +190,11 @@ const deletable = computed(() => {
 .row--system {
   justify-content: center;
   margin: var(--space-lg) 0;
+}
+
+.row--schedule {
+  justify-content: center;
+  margin: var(--space-xl) 0;
 }
 
 /* システムメッセージは pill-cap-shade（薄いオレンジ面のピル）で会話から浮かせる */

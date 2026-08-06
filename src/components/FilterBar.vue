@@ -1,7 +1,7 @@
 <script setup>
 // フィルタ・ソート UI（P1-7・frontend.md §5/§9）
 //
-// 対応ステータス／選考ステータス／用件タグ／緊急度を**複数選択**で絞り込む。
+// 対応ステータス／選考ステータス／用件タグ／AI推奨度を**複数選択**で絞り込む。
 // ソート切替と「条件をクリア」を併せ持つ。
 //
 // 担当者による絞り込みは提供しない。受信箱は担当制で、そもそも自分の担当ルームしか
@@ -13,14 +13,15 @@
 // 列挙値と日本語ラベルは必ず shared/constants.js の *_META から引く（CLAUDE.md §6-1）。
 import { computed, ref } from "vue"
 import {
+  AI_RECOMMENDED_PRIORITY_META,
+  AI_RECOMMENDED_PRIORITY_TITLE,
+  AI_RECOMMENDED_PRIORITY_VALUES,
   HANDLING_STATUS_META,
   HANDLING_STATUS_VALUES,
   SELECTION_STATUS_META,
   SELECTION_STATUS_VALUES,
   SORT_KEY_META,
   SORT_KEY_VALUES,
-  URGENCY_META,
-  URGENCY_VALUES,
 } from "../constants/index.js"
 import { useDismissOnOutside } from "../composables/useDismissOnOutside.js"
 import { useRoomsStore } from "../stores/rooms.js"
@@ -33,7 +34,7 @@ import { useRoomsStore } from "../stores/rooms.js"
 const MULTI_FILTERS = Object.freeze([
   { key: "handlingStatus", label: "対応", values: HANDLING_STATUS_VALUES, meta: HANDLING_STATUS_META },
   { key: "selectionStatus", label: "選考", values: SELECTION_STATUS_VALUES, meta: SELECTION_STATUS_META },
-  { key: "urgency", label: "緊急度", values: URGENCY_VALUES, meta: URGENCY_META },
+  { key: "priority", label: AI_RECOMMENDED_PRIORITY_TITLE, values: AI_RECOMMENDED_PRIORITY_VALUES, meta: AI_RECOMMENDED_PRIORITY_META },
 ])
 // #endregion
 

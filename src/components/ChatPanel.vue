@@ -25,6 +25,7 @@ import MessageList from "./MessageList.vue"
 import SnippetPalette from "./SnippetPalette.vue"
 import StatusChip, { CHIP_KIND } from "./StatusChip.vue"
 import UserAvatar from "./UserAvatar.vue"
+import ScheduleRequestDialog from "./ScheduleRequestDialog.vue"
 
 const props = defineProps({
   /** rooms ストアの room（stores/rooms.js の JSDoc 参照） */
@@ -36,6 +37,7 @@ const auth = useAuthStore()
 const messages = useMessagesStore()
 const rooms = useRoomsStore()
 const ui = useUiStore()
+const scheduleDialogOpen = ref(false)
 // #endregion
 
 // #region computed
@@ -224,6 +226,11 @@ const onSendAnyway = async (acknowledgedCodes) => {
   if (!canSend.value) return
   await messages.sendMessage(roomId.value, draft.value, acknowledgedCodes)
 }
+
+const openSnippetFromButton = () => {
+  messages.setDraft(roomId.value, "/")
+  textareaRef.value?.focus()
+}
 // #endregion
 </script>
 
@@ -316,6 +323,22 @@ const onSendAnyway = async (acknowledgedCodes) => {
           未設定の項目が残っています。内容を確認してから送信してください。
         </p>
         <div class="composer__actions">
+          <div class="composer__tools">
+            <button
+              type="button"
+              class="button-normal"
+              @click="openSnippetFromButton"
+            >
+              定型文
+            </button>
+            <button
+              type="button"
+              class="button-normal"
+              @click="scheduleDialogOpen = true"
+            >
+              日程調整を作成
+            </button>
+          </div>
           <p class="composer__hint">
             ⌘ / Ctrl + Enter で送信
           </p>
@@ -330,6 +353,11 @@ const onSendAnyway = async (acknowledgedCodes) => {
       </div>
     </form>
 
+    <ScheduleRequestDialog
+      v-if="scheduleDialogOpen"
+      :room="room"
+      @close="scheduleDialogOpen = false"
+    />
     <ComplianceDialog @send="onSendAnyway" />
   </div>
 </template>
@@ -443,6 +471,11 @@ const onSendAnyway = async (acknowledgedCodes) => {
   align-items: center;
   justify-content: space-between;
   padding: var(--space-sm) var(--space-md) var(--space-md) var(--space-lg);
+}
+
+.composer__tools {
+  display: flex;
+  gap: var(--space-sm);
 }
 
 .composer__hint {

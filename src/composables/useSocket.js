@@ -4,6 +4,7 @@ import { useAuthStore } from '../stores/auth.js'
 import { useRoomsStore } from '../stores/rooms.js'
 import { useMessagesStore } from '../stores/messages.js'
 import { useUiStore } from '../stores/ui.js'
+import { useSchedulesStore } from '../stores/schedules.js'
 
 /**
  * Socket.IO イベントの唯一の入口（frontend.md §4）。
@@ -108,12 +109,14 @@ function registerHandlers() {
   const rooms = useRoomsStore()
   const messages = useMessagesStore()
   const ui = useUiStore()
+  const schedules = useSchedulesStore()
 
   // socket.io-client 標準イベント。再接続は socket.io の既定の指数バックオフに任せる
   socket.on('connect', () => {
     ui.setConnectionState('connected')
     rooms.fetchRooms()
     if (ui.selectedRoomId) messages.resync(ui.selectedRoomId)
+    schedules.rewatchRequests()
     // 切断中に作られた／解消された通知は alert:new / alert:resolved が届かない。
     // 再接続のたびに数え直す（P4-1b）。学生には通知が無いので取りに行かない
     if (auth.isHr) ui.fetchAlertCount()
@@ -143,6 +146,9 @@ function registerHandlers() {
   socket.on(SOCKET_ON.MEMO_UPDATED, ({ roomId, memo }) => rooms.upsertMemo(roomId, memo))
   socket.on(SOCKET_ON.SUMMARY_UPDATED, (payload) => rooms.setSummary(payload))
   socket.on(SOCKET_ON.AI_SUMMARY_UPDATED, (payload) => rooms.setAiSummary(payload))
+  socket.on(SOCKET_ON.SCHEDULE_SLOT_UPDATED, (payload) => schedules.handleSlotUpdated(payload))
+  socket.on(SOCKET_ON.SCHEDULE_REQUEST_UPDATED, ({ request }) => schedules.handleRequestUpdated(request))
+  socket.on(SOCKET_ON.SCHEDULE_BOOKED, ({ request }) => schedules.handleBooked(request))
   // P4-1：SLA通知。宛先本人にだけ届く（サーバが user:{id} ルームへ配信）
   socket.on(SOCKET_ON.ALERT_NEW, ({ alert }) => ui.receiveAlert(alert))
   // P4-1b：返信などで片付いた通知。一覧から消し、ベルの未読件数を差し替える

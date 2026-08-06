@@ -84,7 +84,7 @@
 | `normal` | 通常 | 標準表示 |
 | `low` | 低 | 行全体を薄く表示 |
 
-## 5. 日程調整進捗 `SCHEDULE_STATE`（P3-4）
+## 5. 日程調整進捗 `SCHEDULE_STATE`（旧P3-4・互換用）
 
 | 値 | 表示名 |
 | --- | --- |
@@ -93,6 +93,20 @@
 | `interviewer_check` | 面接官確認中 |
 | `room_pending` | 会議室未押さえ |
 | `confirmed` | 確定 |
+
+改訂版P3-4では予約状態の正として使わない。既存プロフィールとの互換表示に必要な範囲だけ同期する。
+
+### 面接日程予約 `SCHEDULE_REQUEST_STATUS`（改訂版P3-4）
+
+| 値 | 表示名 |
+| --- | --- |
+| `draft` | 作成中 |
+| `waiting_student` | 学生日程選択待ち |
+| `booked` | 日程確定 |
+| `expired` | 回答期限切れ |
+| `cancelled` | 取消 |
+
+面接形式は `INTERVIEW_FORMAT`（`online` / `onsite`）を使用する。
 
 ## 6. ロール `ROLE`
 
@@ -115,6 +129,17 @@
 | --- | --- |
 | `private` | 個人メモ。作成者のみ閲覧可 |
 | `shared` | チーム共有メモ。ルームの全人事が閲覧可 |
+
+これは**人事の申し送りメモ**（P2-5）のスコープ。学生本人の選考メモ（S-10）は
+別テーブル・別エンドポイントで、スコープの概念を持たない（常に本人のみ）。
+
+### 学生メモのキー `STUDENT_NOTE_KEY_VALUES`（S-10）
+
+`['overall', ...SELECTION_FLOW_STEP_VALUES]`。`'overall'` は選考全体のメモを表し、
+それ以外は選考ステップに紐づく。`STUDENT_NOTE_OVERALL_KEY` で参照すること。
+
+`student_notes.note_key` の CHECK 制約はこの並びと完全に一致させること。
+本文の上限は `STUDENT_NOTE_MAX_LENGTH`（2000）。
 
 ---
 

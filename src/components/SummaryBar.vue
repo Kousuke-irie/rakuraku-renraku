@@ -27,12 +27,13 @@
 //   「要返信」と「緊急」を両方押せば AND で絞り込める（P1-7 の受入条件）。
 import { computed } from "vue"
 import {
+  AI_RECOMMENDED_PRIORITY,
+  AI_RECOMMENDED_PRIORITY_META,
+  AI_RECOMMENDED_PRIORITY_TITLE,
   ELAPSED_BADGE_HIDDEN_STATUSES,
   HANDLING_STATUS,
   HANDLING_STATUS_META,
   SLA_ALERT_HOURS,
-  URGENCY,
-  URGENCY_META,
 } from "../constants/index.js"
 import { useRoomsStore } from "../stores/rooms.js"
 
@@ -93,15 +94,17 @@ const ariaLabel = computed(() => ARIA_LABEL[props.scope] ?? ARIA_LABEL[SUMMARY_S
  * 条件を1つ増やすときはここに1行足す。
  */
 const items = computed(() => {
-  const { handlingStatus, urgency, overdueOnly } = rooms.filters
+  const { handlingStatus, priority, overdueOnly } = rooms.filters
 
   return [
     {
       key: "urgent",
-      label: URGENCY_META[URGENCY.HIGH].label,
-      count: targetRooms.value.filter((room) => room.urgency === URGENCY.HIGH).length,
-      active: isOnly(urgency, URGENCY.HIGH),
-      patchOf: (active) => ({ urgency: active ? [] : [URGENCY.HIGH] }),
+      label: `${AI_RECOMMENDED_PRIORITY_TITLE}：${AI_RECOMMENDED_PRIORITY_META[AI_RECOMMENDED_PRIORITY.HIGH].label}`,
+      count: targetRooms.value.filter(
+        (room) => (room.priority ?? room.urgency) === AI_RECOMMENDED_PRIORITY.HIGH,
+      ).length,
+      active: isOnly(priority, AI_RECOMMENDED_PRIORITY.HIGH),
+      patchOf: (active) => ({ priority: active ? [] : [AI_RECOMMENDED_PRIORITY.HIGH] }),
     },
     {
       key: "needsReply",

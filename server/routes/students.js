@@ -4,7 +4,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { assertRoomMember } from '../services/roomAuth.js';
 import { emitRoomUpdated } from '../services/realtime.js';
 import { findRoomIdByStudent, findStudent, updateStudent } from '../services/studentProfile.js';
-import { listFeedbacksForHr, saveFeedback } from '../services/selectionFlow.js';
+import { buildHrFeedbackView, saveFeedback } from '../services/selectionFlow.js';
 import {
   ROLE,
   SCHEDULE_STATE_VALUES,
@@ -145,7 +145,7 @@ router.get('/:userId/feedbacks', requireAuth, requireHr, (req, res, next) => {
       return res.status(404).json({ error: 'not_found', message: '学生が存在しません' });
     }
 
-    res.json({ feedbacks: listFeedbacksForHr(db, userId) });
+    res.json(buildHrFeedbackView(db, userId));
   } catch (error) {
     next(error);
   }

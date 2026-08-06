@@ -9,6 +9,7 @@ import { calculateRoomUrgency } from '../services/urgencyCalculator.js';
 import { emitAlertsResolved, emitMessageNew, emitSummaryUpdated } from '../services/realtime.js';
 import { applyStatusTransition } from '../services/statusTransition.js';
 import { queueStudentMessageAnalysis } from '../services/aiPriority.js';
+import { findScheduleRequest } from '../services/scheduleRequests.js';
 import {
   normalizeAcknowledgedCodes,
   queueAiComplianceRecord,
@@ -17,7 +18,12 @@ import {
 import { checkCompliance, isCheckedRole } from '../services/complianceChecker.js';
 import { checkComplianceWithAi, mergeFindings } from '../services/complianceAi.js';
 import { resolveSlaAlerts } from '../services/slaMonitor.js';
-import { COMPLIANCE_AI_STATUS, MESSAGE_TYPE, ROLE } from '../../shared/constants.js';
+import {
+  COMPLIANCE_AI_STATUS,
+  MESSAGE_TYPE,
+  ROLE,
+  SCHEDULE_REQUEST_STATUS,
+} from '../../shared/constants.js';
 
 const router = Router();
 
@@ -33,9 +39,15 @@ const MESSAGE_COLUMNS = `
   type,
   topic_tag     AS topicTag,
   client_msg_id AS clientMsgId,
+  schedule_request_id AS scheduleRequestId,
   created_at    AS createdAt,
   deleted_at    AS deletedAt
 `;
+
+function attachScheduleRequest(message) {
+  if (!message?.scheduleRequestId) return message;
+  return { ...message, scheduleRequest: findScheduleRequest(db, message.scheduleRequestId) };
+}
 
 export function findMessageByClientMsgId(clientMsgId) {
   return db.prepare(`SELECT ${MESSAGE_COLUMNS} FROM messages WHERE client_msg_id = ?`).get(clientMsgId);
@@ -78,7 +90,7 @@ router.get('/rooms/:id/messages', requireAuth, (req, res) => {
         )
         .all(params);
 
-  res.json({ messages: rows });
+  res.json({ messages: rows.map(attachScheduleRequest) });
 });
 
 /**
@@ -207,7 +219,17 @@ export function insertMessage({ roomId, senderId, senderRole, body, clientMsgId,
       );
     }
 
-    applyStatusTransition(db, roomId, senderRole);
+    // 日程確定後の学生向け確定連絡は、学生の返答を求めない運用にする。
+    // そのため、人事がテンプレートで連絡しても「対応中」を「返信待ち」へ戻さない。
+    const hasBookedSchedule = (senderRole === ROLE.HR || senderRole === ROLE.ADMIN) && Boolean(
+      db.prepare(
+        `SELECT 1
+         FROM schedule_requests
+         WHERE room_id = ? AND status = ?
+         LIMIT 1`,
+      ).get(roomId, SCHEDULE_REQUEST_STATUS.BOOKED),
+    );
+    applyStatusTransition(db, roomId, senderRole, { keepInProgress: hasBookedSchedule });
 
     // P4-1：人事が返信したらこのルームの未解決 SLA 通知を閉じる。
     // コンプライアンス警告は「起きた事実」なので閉じない。
