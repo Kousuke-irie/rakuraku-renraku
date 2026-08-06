@@ -24,6 +24,39 @@ const COMPANY_ERROR = Object.freeze({
   SAVE: '会社情報の保存に失敗しました',
 })
 
+/**
+ * ログイン → ホームの円形トランジション（CircleRevealOverlay / useCircleReveal）の進行段階。
+ * idle 以外のときだけ画面を覆う円が描画される。
+ */
+export const CIRCLE_REVEAL_PHASE = Object.freeze({
+  IDLE: 'idle',
+  /** ログイン画面のロゴの円から画面全体へ広がっている最中 */
+  EXPANDING: 'expanding',
+  /** 画面を覆いきった。この間に裏側をホームへ差し替え、中心をレールのロゴへ移す */
+  COVERED: 'covered',
+  /** ナビレールのロゴの円へ縮んでいる最中 */
+  COLLAPSING: 'collapsing',
+})
+
+/** 円形トランジションの初期状態（= 何も描画しない） */
+const emptyCircleReveal = () => ({
+  phase: CIRCLE_REVEAL_PHASE.IDLE,
+  /** 拡大・収束の中心（viewport 基準・px） */
+  x: 0,
+  y: 0,
+  /** CIRCLE_REVEAL_BASE_DIAMETER に対する倍率。transform: scale() にそのまま渡す */
+  scale: 0,
+  opacity: 1,
+  /**
+   * transition を効かせるか。
+   * 覆っている間に中心を差し替える一瞬だけ false にする（円が横滑りして見えるため）。
+   */
+  eased: false,
+  durationMs: 0,
+  /** cubic-bezier(...) の文字列 */
+  easing: 'linear',
+})
+
 /** 通知（P4-1）での失敗時の既定文言 */
 const ALERT_ERROR = Object.freeze({
   FETCH: '通知の取得に失敗しました',
@@ -156,6 +189,12 @@ export const useUiStore = defineStore('ui', {
     /** ナビレールのベルバッジ用。サーバが数えた未読件数をそのまま持つ */
     alertsUnreadCount: 0,
     alertsLoaded: false,
+
+    /**
+     * ログイン → ホームの円形トランジションの状態（描画は CircleRevealOverlay）。
+     * 画面をまたいで続くアニメーションなので、どちらのビューにも属さないここで持つ。
+     */
+    circleReveal: emptyCircleReveal(),
 
     /** @type {'connected'|'connecting'|'disconnected'} socket の接続状態バナー用 */
     connectionState: 'connecting',
@@ -500,6 +539,19 @@ export const useUiStore = defineStore('ui', {
       }
     },
 
+    /**
+     * 円形トランジションの状態を部分更新する（useCircleReveal だけが呼ぶ）。
+     * @param {object} patch circleReveal のキーの一部
+     */
+    patchCircleReveal(patch) {
+      this.circleReveal = { ...this.circleReveal, ...patch }
+    },
+
+    /** 円を消す（アニメーション完了時・中断時） */
+    resetCircleReveal() {
+      this.circleReveal = emptyCircleReveal()
+    },
+
     /** @param {'connected'|'connecting'|'disconnected'} state */
     setConnectionState(state) {
       this.connectionState = state
@@ -536,6 +588,7 @@ export const useUiStore = defineStore('ui', {
       this.alerts = []
       this.alertsUnreadCount = 0
       this.alertsLoaded = false
+      this.circleReveal = emptyCircleReveal()
       this.connectionState = 'connecting'
       this.toasts = []
     },

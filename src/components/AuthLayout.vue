@@ -3,6 +3,7 @@
 // 左：ブランド面（ワードマーク＋キャッチ）／右：入力カード。
 // CSS を各ビューに複製すると必ずズレるため、外枠と入力欄の見た目はここに集約する。
 import logoUrl from "../images/logo-rakuraku.png"
+import { LOGO_MARK } from "../utils/logoMark.js"
 
 defineProps({
   /** 右カードの見出し（例：ログイン／ユーザー登録） */
@@ -24,11 +25,14 @@ defineProps({
 
     <section class="auth-layout__brand">
       <!-- 白背景を透過に落としたワードマーク。円マーク内の「楽」も抜いてあるので、
-           背後のブランド面（--color-orange-soft）が透ける -->
+           背後のブランド面（--color-orange-soft）が透ける。
+           data-logo-mark はログイン後の円形トランジション（useCircleReveal）が
+           円マークの中心を実測するための目印（utils/logoMark.js） -->
       <img
         :src="logoUrl"
         alt="楽楽連ラク"
         class="auth-layout__logo"
+        :data-logo-mark="LOGO_MARK.AUTH"
         width="800"
         height="227"
       >

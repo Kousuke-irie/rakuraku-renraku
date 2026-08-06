@@ -15,6 +15,7 @@ import { useRouter } from "vue-router"
 import { useAuthStore } from "../stores/auth.js"
 import { useUiStore } from "../stores/ui.js"
 import logoUrl from "../images/logo-rakuraku.png"
+import { LOGO_MARK } from "../utils/logoMark.js"
 import NavIcon from "./NavIcon.vue"
 import UserAvatar from "./UserAvatar.vue"
 
@@ -112,7 +113,9 @@ const onLogout = async () => {
       :title="BRAND_NAME"
     >
       <!-- 円マークは画像左端の 227x227px ちょうど。枠幅を高さと同じにすると
-           円だけ、800/227 倍にするとワードマーク全体が現れる -->
+           円だけ、800/227 倍にするとワードマーク全体が現れる。
+           data-logo-mark はログイン直後の円形トランジション（useCircleReveal）が
+           収束先の中心を実測するための目印（utils/logoMark.js） -->
       <span
         class="rail__logo-box"
         aria-hidden="true"
@@ -121,6 +124,7 @@ const onLogout = async () => {
           :src="logoUrl"
           alt=""
           class="rail__logo"
+          :data-logo-mark="LOGO_MARK.RAIL"
           width="800"
           height="227"
         >
