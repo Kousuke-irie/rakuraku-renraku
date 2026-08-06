@@ -66,9 +66,27 @@ export function listSelectionSteps(db) {
   }));
 }
 
-/** 学生に見せるステップ（有効なものだけ） */
-function listEnabledSteps(db) {
-  return listSelectionSteps(db).filter((step) => step.isEnabled);
+/**
+ * その学生に見せるステップ。
+ *
+ * 会社の設定（is_enabled）は**標準フロー**であって、個々の学生の実態はそれより優先される。
+ * 有効なステップに加えて、次の2つは無効でも図に出す。
+ *
+ *   1. その学生の現在地 … 出さないと現在地のノードが図から消え、「山」の頂点が
+ *      決まらないので線がまっすぐになる。学生には自分の段階が伝わらない
+ *   2. FB が届いているステップ … 出さないと人事が書いたFBが黙って学生に届かない
+ *
+ * どちらも「人事があとからフロー設定を変えた」ときに起きる。設定を変えただけで
+ * 進行中の学生の画面が壊れる、という状態を作らないための救済。
+ *
+ * @param {string|null} selectionStatus students.selection_status
+ * @param {Map<string, object>} feedbacks findFeedbacksByStudent の結果
+ */
+function listVisibleSteps(db, { selectionStatus, feedbacks }) {
+  return listSelectionSteps(db).filter(
+    (step) =>
+      step.isEnabled || step.statusKey === selectionStatus || feedbacks.has(step.statusKey)
+  );
 }
 
 /**
@@ -110,34 +128,38 @@ export function saveSelectionSteps(db, steps) {
 }
 
 /**
- * 有効ステップの並びの中で、学生がいまどこにいるかを判定する（business-logic.md §8）。
+ * 並びの中で、学生がいまどこにいるかを判定する（business-logic.md §8）。
  *
  * 現在ステータスより前 → done ／ 同じ → current ／ 後ろ → upcoming。
  *
- * 現在ステータスが「無効化されたステップ」を指している場合（例：三次面接を使わない設定に
- * 変えたが、その段階の学生が残っている）は、**その手前までを完了扱いにする**。
- * 進捗が全部 upcoming になって「何も進んでいない」ように見えるのを防ぐため。
+ * 現在地が並びに含まれていない場合は、`SELECTION_FLOW_STEP_VALUES` の全体順で比べ、
+ * **その手前までを完了扱いにする**。進捗が全部 upcoming になって「何も進んでいない」
+ * ように見えるのを防ぐため。
+ *
+ * ★`listVisibleSteps()` が現在地を必ず含めるようになったので、この分岐に入るのは
+ *   選考ステータスが未設定・辞退のときだけ。それでも安全網として残す
+ *   （この関数は並びを渡されるだけで、呼び出し側の都合を知らないため）。
  *
  * @param {string} selectionStatus students.selection_status
- * @param {{statusKey: string}[]} enabledSteps 有効ステップ（sortOrder 昇順）
- * @returns {string[]} enabledSteps と同じ並びの FLOW_STEP_STATE
+ * @param {{statusKey: string}[]} steps 学生に見せるステップ（sortOrder 昇順）
+ * @returns {string[]} steps と同じ並びの FLOW_STEP_STATE
  */
-export function resolveStepStates(selectionStatus, enabledSteps) {
-  const currentIndex = enabledSteps.findIndex((step) => step.statusKey === selectionStatus);
+export function resolveStepStates(selectionStatus, steps) {
+  const currentIndex = steps.findIndex((step) => step.statusKey === selectionStatus);
 
   if (currentIndex !== -1) {
-    return enabledSteps.map((_step, index) => {
+    return steps.map((_step, index) => {
       if (index < currentIndex) return FLOW_STEP_STATE.DONE;
       if (index === currentIndex) return FLOW_STEP_STATE.CURRENT;
       return FLOW_STEP_STATE.UPCOMING;
     });
   }
 
-  // 無効ステップにいる場合は、全体の並び（SELECTION_FLOW_STEP_VALUES）での位置で比べる
+  // 並びに現在地が無い場合は、全体の並び（SELECTION_FLOW_STEP_VALUES）での位置で比べる
   const absoluteCurrent = SELECTION_FLOW_STEP_VALUES.indexOf(selectionStatus);
-  if (absoluteCurrent === -1) return enabledSteps.map(() => FLOW_STEP_STATE.UPCOMING);
+  if (absoluteCurrent === -1) return steps.map(() => FLOW_STEP_STATE.UPCOMING);
 
-  return enabledSteps.map((step) =>
+  return steps.map((step) =>
     SELECTION_FLOW_STEP_VALUES.indexOf(step.statusKey) < absoluteCurrent
       ? FLOW_STEP_STATE.DONE
       : FLOW_STEP_STATE.UPCOMING
@@ -172,17 +194,19 @@ export function buildStudentFlow(db, studentUserId) {
   const selectionStatus = student?.selectionStatus ?? null;
   const isDeclined = selectionStatus === SELECTION_STATUS.DECLINED;
 
-  const enabledSteps = listEnabledSteps(db);
+  // ★どのステップを出すかの判定に使うので、FB はステップの絞り込みより先に引く
+  const feedbacks = findFeedbacksByStudent(db, studentUserId);
+  const visibleSteps = listVisibleSteps(db, { selectionStatus, feedbacks });
+
   // 辞退はフロー上の一段階ではないので、線の上には現在地を置かない
   const states = isDeclined
-    ? enabledSteps.map(() => FLOW_STEP_STATE.UPCOMING)
-    : resolveStepStates(selectionStatus, enabledSteps);
+    ? visibleSteps.map(() => FLOW_STEP_STATE.UPCOMING)
+    : resolveStepStates(selectionStatus, visibleSteps);
 
-  const feedbacks = findFeedbacksByStudent(db, studentUserId);
   // 本人のメモ（S-10）。FB と違い完了判定で絞らない（本人が書いたものを本人に返すだけ）
   const notes = findNotesByStudent(db, studentUserId);
 
-  const steps = enabledSteps.map((step, index) => {
+  const steps = visibleSteps.map((step, index) => {
     const state = states[index];
     // ★完了済みのステップだけ FB を載せる（進行中・未到達は載せない）
     const feedback = state === FLOW_STEP_STATE.DONE ? (feedbacks.get(step.statusKey) ?? null) : null;
