@@ -52,7 +52,9 @@ const navItems = computed(() =>
   auth.isStudent
     ? [
         { to: auth.homePath, icon: "home", label: "マイページ" },
-        { to: CHAT_PATH, icon: "chat", label: "チャット" },
+        // 学生のルームは1つ。マイページに着地したときに新着へ気づける唯一の手がかりなので、
+        // ここに未読件数を出す
+        { to: CHAT_PATH, icon: "chat", label: "チャット", badge: studentUnreadCount.value },
       ]
     : [
         { to: auth.homePath, icon: "home", label: "ホーム" },
@@ -60,6 +62,9 @@ const navItems = computed(() =>
         { to: STUDENTS_PATH, icon: "students", label: "全学生" },
       ]
 )
+
+/** 学生の未読件数。学生のルームは1つなので先頭を見ればよい */
+const studentUnreadCount = computed(() => rooms.rooms[0]?.unreadCount ?? 0)
 
 /**
  * 通知バッジの件数。
@@ -125,8 +130,16 @@ const onLogout = async () => {
           class="rail__item"
           :to="item.to"
           :title="item.label"
+          :aria-label="item.badge ? `${item.label}：未読${item.badge}件` : undefined"
         >
-          <NavIcon :name="item.icon" />
+          <span class="rail__icon-slot">
+            <NavIcon :name="item.icon" />
+            <span
+              v-if="item.badge"
+              class="rail__badge"
+              aria-hidden="true"
+            >{{ item.badge }}</span>
+          </span>
           <span class="rail__label">{{ item.label }}</span>
         </RouterLink>
       </li>

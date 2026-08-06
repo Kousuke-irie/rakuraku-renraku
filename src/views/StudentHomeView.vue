@@ -12,14 +12,17 @@ import { computed, onMounted, ref, watch } from "vue"
 import { FLOW_STEP_STATE, STUDENT_NOTE_OVERALL_KEY } from "../constants/index.js"
 import { useFeedbackReads } from "../composables/useFeedbackReads.js"
 import { useAuthStore } from "../stores/auth.js"
+import { useRoomsStore } from "../stores/rooms.js"
 import { useUiStore } from "../stores/ui.js"
 import CompanyPanel from "../components/CompanyPanel.vue"
 import SelectionFlow from "../components/SelectionFlow.vue"
 import SelectionStepDetail from "../components/SelectionStepDetail.vue"
+import StudentChatCard from "../components/StudentChatCard.vue"
 import StudentNoteEditor from "../components/StudentNoteEditor.vue"
 
 // #region global state
 const auth = useAuthStore()
+const rooms = useRoomsStore()
 const ui = useUiStore()
 // #endregion
 
@@ -87,6 +90,10 @@ onMounted(() => {
   // 会社情報はマスタデータなので初回だけ。進捗は人事がいつでも変えるので毎回取り直す
   ui.fetchCompany()
   ui.fetchMyFlow()
+
+  // チャットカードの未読件数と最新メッセージ。既に取得済みなら往復を増やさない
+  // （チャット画面から戻ってきた場合。socket 側が最新に保っている）
+  if (rooms.rooms.length === 0) rooms.fetchRooms()
 })
 
 // 既定で現在地の詳細を開いておく。学生がまず知りたいのは「いま」のことなので、
@@ -170,11 +177,12 @@ const onSelect = (statusKey) => {
       </p>
     </section>
 
-    <!-- 選考全体のメモ（S-10）。ステップに紐づかない考えごとの置き場 -->
-    <section
+    <!-- 下段：自分が書くもの（左）と、担当者とのやり取り（右） -->
+    <div
       v-if="showOverallNote"
-      class="overall"
+      class="bottom"
     >
+      <!-- 選考全体のメモ（S-10）。ステップに紐づかない考えごとの置き場 -->
       <StudentNoteEditor
         :note-key="STUDENT_NOTE_OVERALL_KEY"
         :note="overallNote"
@@ -182,7 +190,9 @@ const onSelect = (statusKey) => {
         placeholder="志望動機の軸、企業研究、選考を通して感じたことなど（自分にだけ見えます）"
         :rows="6"
       />
-    </section>
+
+      <StudentChatCard />
+    </div>
   </div>
 </template>
 
@@ -244,11 +254,22 @@ const onSelect = (statusKey) => {
   font-weight: 700;
 }
 
-/* 全体メモは選考フローのカードとは別の紙にする。
-   会社が用意した情報（上）と自分が書くもの（下）を、カードの境目で分ける */
-.overall {
+/* 下段は選考フローのカードとは別の紙にする。
+   会社が用意した情報（上）と、自分が書くもの・担当者とのやり取り（下）を境目で分ける。
+   メモを広く取り、チャットカードは要点だけの幅に収める */
+.bottom {
+  display: grid;
   flex: none;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: var(--space-md);
+  align-items: start;
   padding-bottom: var(--space-sm);
+}
+
+@media (max-width: 900px) {
+  .bottom {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .board__closed {
