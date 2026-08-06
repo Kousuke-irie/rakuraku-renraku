@@ -25,6 +25,7 @@ const INBOX_PATH = "/inbox"
 const CHAT_PATH = "/chat"
 const STUDENTS_PATH = "/students"
 const NOTIFICATIONS_PATH = "/notifications"
+const DASHBOARD_PATH = "/dashboard"
 const SETTINGS_PATH = "/settings/profile"
 // #endregion
 
@@ -55,6 +56,8 @@ const navItems = computed(() =>
         { to: auth.homePath, icon: "home", label: "ホーム" },
         { to: INBOX_PATH, icon: "inbox", label: "受信箱" },
         { to: STUDENTS_PATH, icon: "students", label: "全学生" },
+        // 監視ダッシュボードは上長だけ。担当者別の遵守率を含むため（P4-4）
+        ...(auth.isAdmin ? [{ to: DASHBOARD_PATH, icon: "chart", label: "ダッシュボード" }] : []),
       ]
 )
 

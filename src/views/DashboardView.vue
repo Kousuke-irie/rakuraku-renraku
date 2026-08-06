@@ -1,0 +1,560 @@
+<script setup>
+// 監視ダッシュボード（P4-4 / monitoring.md §6）
+//
+// 閲覧は上長（admin）限定。担当者別の遵守率は評価につながる情報なので
+// 人事全員には開放しない。ルーターガードとサーバ側の両方で弾く。
+//
+// ★受信箱のサマリーバー（P1-8）と数字が重なる部分があるが、
+//   こちらは**全社**が母数。ラベルに明記して混同を避ける。
+//
+// ★全チャートに「表で見る」がある。canvas は読み上げできないため（ChartPanel 参照）。
+import { computed, onMounted, ref } from "vue"
+import { useRouter } from "vue-router"
+import { Bar } from "vue-chartjs"
+import { dashboardApi, toErrorMessage } from "../api/index.js"
+import {
+  ALERT_KIND_META,
+  ALERT_KIND,
+  COMPLIANCE_CATEGORY_META,
+  SELECTION_STATUS_META,
+} from "../constants/index.js"
+import {
+  BAR_STYLE,
+  CHART_COLOR,
+  STACKED_BAR_STYLE,
+  horizontalBarOptions,
+  stackedBarOptions,
+  verticalBarOptions,
+} from "../plugins/charts.js"
+import { useUiStore } from "../stores/ui.js"
+import ChartPanel from "../components/ChartPanel.vue"
+
+// #region global state
+const ui = useUiStore()
+// #endregion
+
+// #region local variable
+const router = useRouter()
+/** @type {import('vue').Ref<object|null>} */
+const data = ref(null)
+const loading = ref(true)
+// #endregion
+
+// #region computed
+const thresholds = computed(() => data.value?.thresholds ?? { notifyHours: 24, escalateHours: 48 })
+
+const kpiTiles = computed(() => {
+  const kpi = data.value?.kpi
+  if (!kpi) return []
+
+  return [
+    { key: "needsReply", label: "要返信（全社）", value: kpi.needsReply, note: "未返信の学生" },
+    {
+      key: "overdue24h",
+      label: `${thresholds.value.notifyHours}時間超`,
+      value: kpi.overdue24h,
+      note: "担当者へ通知済み",
+    },
+    {
+      key: "escalated",
+      label: "上長対応中",
+      value: kpi.escalated,
+      note: `${thresholds.value.escalateHours}時間超`,
+      alert: true,
+    },
+    {
+      key: "compliance",
+      label: "今週の警告",
+      value: kpi.complianceThisWeek,
+      note: "コンプライアンス検知",
+    },
+  ]
+})
+
+// --- ② 選考ステータス別 ---
+// 10段階を10色にしない。段階の違いはバーの位置が示すので色に仕事はない。
+// 辞退だけは進行段階ではなく離脱なので赤で塗り分ける
+const selectionChart = computed(() => {
+  const rows = data.value?.selectionBreakdown ?? []
+
+  return {
+    labels: rows.map((row) => SELECTION_STATUS_META[row.status]?.label ?? row.status),
+    datasets: [
+      {
+        data: rows.map((row) => row.count),
+        backgroundColor: rows.map((row) => (row.isExit ? CHART_COLOR.EXIT : CHART_COLOR.PRIMARY)),
+        ...BAR_STYLE,
+      },
+    ],
+  }
+})
+
+const selectionRows = computed(() =>
+  (data.value?.selectionBreakdown ?? []).map((row) => [
+    SELECTION_STATUS_META[row.status]?.label ?? row.status,
+    `${row.count}名`,
+    row.isExit ? "離脱" : "選考中",
+  ]),
+)
+
+// --- ③ 担当者別 SLA ---
+const slaChart = computed(() => {
+  const rows = data.value?.slaByAssignee ?? []
+  const segments = [
+    { key: "within", label: `${thresholds.value.notifyHours}時間以内`, color: CHART_COLOR.SLA_WITHIN },
+    {
+      key: "over24h",
+      label: `${thresholds.value.notifyHours}〜${thresholds.value.escalateHours}時間`,
+      color: CHART_COLOR.SLA_OVER_24H,
+    },
+    { key: "over48h", label: `${thresholds.value.escalateHours}時間超`, color: CHART_COLOR.SLA_OVER_48H },
+  ]
+
+  return {
+    labels: rows.map((row) => row.displayName),
+    datasets: segments.map((segment) => ({
+      label: segment.label,
+      data: rows.map((row) => row[segment.key]),
+      backgroundColor: segment.color,
+      ...STACKED_BAR_STYLE,
+    })),
+  }
+})
+
+const slaRows = computed(() =>
+  (data.value?.slaByAssignee ?? []).map((row) => [
+    row.displayName,
+    `${row.within}件`,
+    `${row.over24h}件`,
+    `${row.over48h}件`,
+  ]),
+)
+
+// --- ④ 発生推移 ---
+const trendChart = computed(() => {
+  const rows = data.value?.slaTrend ?? []
+
+  return {
+    labels: rows.map((row) => row.date.slice(5).replace("-", "/")),
+    datasets: [
+      { data: rows.map((row) => row.count), backgroundColor: CHART_COLOR.PRIMARY, ...BAR_STYLE },
+    ],
+  }
+})
+
+const trendRows = computed(() =>
+  (data.value?.slaTrend ?? []).map((row) => [row.date, `${row.count}件`]),
+)
+
+// --- ⑤ コンプライアンス内訳 ---
+/** ルールコードは英語なので、カテゴリのラベルを添えて読めるようにする */
+const complianceChart = computed(() => {
+  const rows = data.value?.complianceBreakdown ?? []
+
+  return {
+    labels: rows.map((row) => row.ruleCode),
+    datasets: [
+      { data: rows.map((row) => row.count), backgroundColor: CHART_COLOR.PRIMARY, ...BAR_STYLE },
+    ],
+  }
+})
+
+const complianceRows = computed(() =>
+  (data.value?.complianceBreakdown ?? []).map((row) => [row.ruleCode, `${row.count}件`]),
+)
+
+const escalations = computed(() => data.value?.escalations ?? [])
+// #endregion
+
+// #region local methods
+const chartHeight = (count, min = 160) => Math.max(min, count * 26 + 40)
+
+const formatDateTime = (iso) =>
+  new Date(iso).toLocaleString("ja-JP", {
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+
+const load = async () => {
+  loading.value = true
+  try {
+    const response = await dashboardApi.get()
+    data.value = response.data
+  } catch (error) {
+    ui.pushToast({ type: "error", message: toErrorMessage(error, "ダッシュボードの取得に失敗しました") })
+  } finally {
+    loading.value = false
+  }
+}
+// #endregion
+
+// #region lifecycle
+onMounted(load)
+// #endregion
+
+// #region browser event handler
+const onOpenRoom = (roomId) => router.push(`/inbox/${roomId}`)
+// #endregion
+</script>
+
+<template>
+  <div class="dashboard">
+    <header class="dashboard__head">
+      <div>
+        <h1 class="dashboard__title">
+          監視ダッシュボード
+        </h1>
+        <p class="dashboard__note">
+          全社の対応状況です。担当者別の集計を含むため、管理者のみ閲覧できます。
+        </p>
+      </div>
+      <button
+        type="button"
+        class="chip"
+        :disabled="loading"
+        @click="load"
+      >
+        {{ loading ? "更新中…" : "更新" }}
+      </button>
+    </header>
+
+    <!-- ① KPI：数字そのものが答えなのでグラフにしない -->
+    <ul class="kpi">
+      <li
+        v-for="tile in kpiTiles"
+        :key="tile.key"
+        class="kpi__tile"
+        :class="{ 'kpi__tile--alert': tile.alert && tile.value > 0 }"
+      >
+        <p class="kpi__label">
+          {{ tile.label }}
+        </p>
+        <p class="kpi__value">
+          {{ tile.value }}
+        </p>
+        <p class="kpi__note">
+          {{ tile.note }}
+        </p>
+      </li>
+    </ul>
+
+    <div class="grid">
+      <ChartPanel
+        title="選考ステータス別 学生数"
+        note="全学生。進行順に並べています（辞退は離脱）"
+        :columns="['選考ステータス', '人数', '区分']"
+        :rows="selectionRows"
+        :height="chartHeight(selectionRows.length, 260)"
+      >
+        <Bar
+          :data="selectionChart"
+          :options="horizontalBarOptions()"
+        />
+      </ChartPanel>
+
+      <ChartPanel
+        title="担当者別 SLA 遵守状況"
+        note="現在の滞留件数。返信済み・完了・保留は遵守側に数えます"
+        :columns="['担当者', `${thresholds.notifyHours}時間以内`, `${thresholds.notifyHours}〜${thresholds.escalateHours}時間`, `${thresholds.escalateHours}時間超`]"
+        :rows="slaRows"
+        :height="chartHeight(slaRows.length, 260)"
+      >
+        <Bar
+          :data="slaChart"
+          :options="stackedBarOptions()"
+        />
+      </ChartPanel>
+
+      <ChartPanel
+        title="SLA通知の発生推移"
+        note="直近14日・日別"
+        :columns="['日付', '発生件数']"
+        :rows="trendRows"
+        :height="220"
+      >
+        <Bar
+          :data="trendChart"
+          :options="verticalBarOptions()"
+        />
+      </ChartPanel>
+
+      <ChartPanel
+        title="コンプライアンス検知の内訳"
+        note="ルール別の累計"
+        :columns="['ルール', '件数']"
+        :rows="complianceRows"
+        empty-text="検知はまだありません"
+        :height="chartHeight(complianceRows.length)"
+      >
+        <Bar
+          :data="complianceChart"
+          :options="horizontalBarOptions()"
+        />
+      </ChartPanel>
+    </div>
+
+    <!-- 他社ツールに無い指標。この機能の価値はここに出る -->
+    <p class="ignored">
+      <span class="ignored__label">警告を無視して送信</span>
+      <span class="ignored__value">{{ data?.complianceIgnored ?? 0 }}</span>
+      <span class="ignored__unit">件</span>
+    </p>
+
+    <section class="panel">
+      <header class="panel__head">
+        <h2 class="panel__title">
+          {{ ALERT_KIND_META[ALERT_KIND.SLA_ESCALATE].label }}中の案件
+        </h2>
+        <p class="panel__note">
+          経過時間の長い順。行をクリックするとトークが開きます
+        </p>
+      </header>
+
+      <p
+        v-if="escalations.length === 0"
+        class="panel__empty"
+      >
+        エスカレーション中の案件はありません。
+      </p>
+
+      <div
+        v-else
+        class="panel__table-wrap"
+      >
+        <table class="table">
+          <thead>
+            <tr>
+              <th scope="col">
+                学生
+              </th>
+              <th scope="col">
+                担当者
+              </th>
+              <th scope="col">
+                選考
+              </th>
+              <th scope="col">
+                経過
+              </th>
+              <th scope="col">
+                発生日時
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="row in escalations"
+              :key="row.roomId"
+              class="table__row"
+              tabindex="0"
+              @click="onOpenRoom(row.roomId)"
+              @keydown.enter="onOpenRoom(row.roomId)"
+            >
+              <td>{{ row.studentName }}</td>
+              <td>{{ row.assigneeName ?? "未配属" }}</td>
+              <td>{{ SELECTION_STATUS_META[row.selectionStatus]?.label ?? "—" }}</td>
+              <td>{{ row.elapsedHours === null ? "—" : `${Math.floor(row.elapsedHours)}時間` }}</td>
+              <td>{{ formatDateTime(row.createdAt) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <p class="legend">
+      検知カテゴリ：
+      <span
+        v-for="(meta, key) in COMPLIANCE_CATEGORY_META"
+        :key="key"
+        class="legend__item"
+      >{{ key }} = {{ meta.label }}</span>
+    </p>
+  </div>
+</template>
+
+<style scoped>
+.dashboard {
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--space-xs) var(--space-lg) var(--space-xxl);
+}
+
+.dashboard__head {
+  display: flex;
+  gap: var(--space-md);
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: var(--space-lg);
+}
+
+.dashboard__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.dashboard__note {
+  margin: var(--space-xs) 0 0;
+  color: var(--color-ink-mute);
+  font-size: 12px;
+}
+
+/* --- KPI --- */
+.kpi {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-md);
+  margin: 0 0 var(--space-lg);
+  padding: 0;
+  list-style: none;
+}
+
+.kpi__tile {
+  padding: var(--space-md) var(--space-lg);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-xl);
+  background-color: var(--color-canvas);
+}
+
+/* 上長が対応すべき案件が残っているときだけ強調する */
+.kpi__tile--alert {
+  border-color: var(--color-sla-alert);
+  background-color: var(--color-orange-soft);
+}
+
+.kpi__label {
+  margin: 0;
+  color: var(--color-ink-mute);
+  font-size: 12px;
+}
+
+.kpi__value {
+  margin: 2px 0;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.kpi__note {
+  margin: 0;
+  color: var(--color-ink-mute);
+  font-size: 11px;
+}
+
+/* --- チャート --- */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-md);
+  margin-bottom: var(--space-md);
+}
+
+/* --- 無視して送信 --- */
+.ignored {
+  display: flex;
+  gap: var(--space-sm);
+  align-items: baseline;
+  margin: 0 0 var(--space-md);
+  padding: var(--space-md) var(--space-xl);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-xl);
+  background-color: var(--color-canvas);
+}
+
+.ignored__label {
+  color: var(--color-ink-mute);
+  font-size: 12px;
+}
+
+.ignored__value {
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.ignored__unit {
+  font-size: 12px;
+}
+
+/* --- エスカレーション表 --- */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  padding: var(--space-lg) var(--space-xl);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-xl);
+  background-color: var(--color-canvas);
+}
+
+.panel__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.panel__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.panel__note {
+  margin: 0;
+  color: var(--color-ink-mute);
+  font-size: 11px;
+}
+
+.panel__empty {
+  margin: 0;
+  padding: var(--space-xl) 0;
+  color: var(--color-ink-mute);
+  font-size: 12px;
+  text-align: center;
+}
+
+.panel__table-wrap {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.table th,
+.table td {
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--color-hairline);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.table th {
+  color: var(--color-ink-mute);
+  font-weight: 600;
+}
+
+.table__row {
+  cursor: pointer;
+}
+
+.table__row:hover,
+.table__row:focus-visible {
+  background-color: var(--color-orange-soft);
+}
+
+.legend {
+  margin: var(--space-md) 0 0;
+  color: var(--color-ink-mute);
+  font-size: 11px;
+}
+
+.legend__item + .legend__item::before {
+  content: "／";
+}
+</style>

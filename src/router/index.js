@@ -94,6 +94,17 @@ const routes = [
     meta: { requiresAuth: true },
   },
   {
+    // P4-4 監視ダッシュボード。担当者別の遵守率は評価につながる情報なので
+    // **admin 限定**にする（hr は roles 不一致で /home へ戻される）。
+    // サーバ側（requireAdmin）でも同じ判定をする。画面を隠すだけでは守れないため。
+    path: "/dashboard",
+    name: "dashboard",
+    // chart.js を初期バンドルに載せないため遅延読み込みにする。
+    // 開くのは上長だけなので、大多数のユーザーは読み込まなくて済む
+    component: () => import("../views/DashboardView.vue"),
+    meta: { requiresAuth: true, roles: [ROLE.ADMIN] },
+  },
+  {
     path: "/:pathMatch(.*)*",
     redirect: "/home",
   },

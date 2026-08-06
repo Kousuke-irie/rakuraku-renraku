@@ -631,6 +631,11 @@ Chart.register(BarController, BarElement, LineController, LineElement,
 ```
 
 `Legend` は登録しない。単一系列のチャートには凡例を出さないため（下記の設計方針）。
+複数系列（担当者別SLA）は凡例の代わりにセグメントの色＋テーブル表示で識別する。
+
+実装は `src/plugins/charts.js`（登録・配色・共通オプション）と
+`src/components/ChartPanel.vue`（枠・「表で見る」トグル）に分ける。
+**配色は検証済みなので `CHART_COLOR` を変えないこと。**
 
 ### ★canvas の帰結：テーブル表示は必須
 
@@ -757,7 +762,13 @@ Chart.js は canvas に描くので DOM が存在せず、スクリーンリー�
 ```
 
 - 実装は `server/services/dashboard.js`。**1リクエスト＝複数クエリ**でよい（SQLite なので速い）
-- `role='admin'` 以外は **403**。ミドルウェアで弾く
+- `role='admin'` 以外は **403**。`middleware/auth.js` の `requireAdmin` で弾く。
+  ルーター側（`meta.roles: [ROLE.ADMIN]`）でも弾くが、**画面を隠すだけでは守れない**ので両方必要
+- **選考ステータスは0人の段階も返す。** 欠けるとファネルの段が抜けて読めなくなる
+- 担当者別SLAは alerts の履歴ではなく**いまこの瞬間**の経過時間で数える。
+  「現在どれだけ滞留しているか」の指標なので、過去に超えたが返信済みのルームは遵守側に入る
+- `/dashboard` のルートは**遅延読み込み**にする。chart.js を初期バンドルに載せないため
+  （実測：分離すると 58KB gzip の別チャンクになる）
 - 日別集計は `GROUP BY date(created_at)`。**件数0の日が欠落する**ので、サーバ側で14日分を埋めてから返す
   （クライアントで穴埋めするとグラフの日付軸がずれる）
 - リアルタイム更新はしない。手動リロードで十分（`alerts` の更新のたびに再集計すると無駄が大きい）

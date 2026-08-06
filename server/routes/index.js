@@ -11,6 +11,7 @@ import companyRouter from './company.js';
 import selectionFlowRouter from './selectionFlow.js';
 import aiSummaryRouter from './aiSummary.js';
 import alertsRouter from './alerts.js';
+import dashboardRouter from './dashboard.js';
 
 const router = Router();
 
@@ -28,5 +29,6 @@ router.use('/company', companyRouter);
 router.use('/selection-flow', selectionFlowRouter);
 router.use('/ai/summary', aiSummaryRouter);
 router.use('/alerts', alertsRouter);
+router.use('/dashboard', dashboardRouter);
 
 export default router;

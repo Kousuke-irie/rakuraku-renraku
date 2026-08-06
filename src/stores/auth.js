@@ -46,6 +46,8 @@ export const useAuthStore = defineStore('auth', {
     isAuthenticated: (s) => s.user !== null,
     isHr: (s) => s.user?.role === ROLE.HR || s.user?.role === ROLE.ADMIN,
     isStudent: (s) => s.user?.role === ROLE.STUDENT,
+    /** 上長。監視ダッシュボード（P4-4）の閲覧可否に使う。isHr は admin も true になるので別に持つ */
+    isAdmin: (s) => s.user?.role === ROLE.ADMIN,
     currentUserId: (s) => s.user?.id ?? null,
     /**
      * ログイン後の遷移先（frontend.md §1）。
