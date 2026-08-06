@@ -4,27 +4,22 @@
 // ★このコンポーネントの責務はヘッダ（検索・サマリー・フィルタ）と行の反復のみ。
 //   1行の見た目とふるまいは RoomListItem が単独で持つので、行に項目を足すときは
 //   このファイルではなく RoomListItem を触ること。
+//   絞り込み・並べ替えの UI は FilterBar、判定は roomsStore が持つ（P1-7）。
 //
-//   検索・サマリークリック・フィルタ・ソートは**まだ非活性**。
-//   P1-7（FilterBar）／P1-8（SummaryBar）でそれぞれのコンポーネントに置き換え、
-//   件数の算出も P1-8 で GET /api/summary（roomsStore.summary）へ寄せる。
+//   サマリーのクリックによる絞り込みは**まだ未実装**。P1-8（SummaryBar）で
+//   このブロックを置き換え、件数も GET /api/summary（roomsStore.summary）へ寄せる。
 import { computed } from "vue"
 import {
   ELAPSED_BADGE_HIDDEN_STATUSES,
   HANDLING_STATUS,
   SLA_ALERT_HOURS,
-  SORT_KEY_META,
   URGENCY,
 } from "../constants/index.js"
 import { useRoomsStore } from "../stores/rooms.js"
 import { useUiStore } from "../stores/ui.js"
+import FilterBar from "./FilterBar.vue"
 import PanelIcon from "./PanelIcon.vue"
 import RoomListItem from "./RoomListItem.vue"
-
-// #region constants
-/** 絞り込みの種別。P1-7 で FilterBar に置き換わるまでの見た目だけの並び */
-const FILTER_LABELS = ["対応", "選考", "タグ", "緊急度", "担当"]
-// #endregion
 
 // #region global state
 const rooms = useRoomsStore()
@@ -39,30 +34,43 @@ const isOverdue = (room) =>
 // #endregion
 
 // #region computed
-/** 一覧の並びはサーバが既定順（ピン→緊急度→経過時間）で返す。並べ替えUIは P1-7 */
-const roomList = computed(() => rooms.rooms)
+/** 絞り込みと並べ替えの結果（P1-7）。判定は roomsStore 側にある */
+const roomList = computed(() => rooms.sortedRooms)
 
-/** P1-8 で GET /api/summary に置き換える暫定集計 */
+/**
+ * P1-8 で GET /api/summary に置き換える暫定集計。
+ * **絞り込み前の全件**を数える（絞り込むと未対応件数が減って見えるのは誤解を招くため）。
+ */
 const summaryItems = computed(() => [
   {
     key: "needsReply",
     label: "要返信",
-    count: roomList.value.filter((room) => room.handlingStatus === HANDLING_STATUS.NEEDS_REPLY)
-      .length,
+    count: rooms.rooms.filter((room) => room.handlingStatus === HANDLING_STATUS.NEEDS_REPLY).length,
   },
   {
     key: "urgent",
     label: "緊急",
-    count: roomList.value.filter((room) => room.urgency === URGENCY.HIGH).length,
+    count: rooms.rooms.filter((room) => room.urgency === URGENCY.HIGH).length,
   },
   {
     key: "overdue24h",
     label: `${SLA_ALERT_HOURS}h超`,
-    count: roomList.value.filter(isOverdue).length,
+    count: rooms.rooms.filter(isOverdue).length,
   },
 ])
 
-const sortLabel = computed(() => SORT_KEY_META[rooms.sortKey]?.label ?? "")
+/** 絞り込み中は「表示件数 / 全件数」を出して、隠れている行があることを分かるようにする */
+const countLabel = computed(() =>
+  rooms.hasActiveFilters
+    ? `${roomList.value.length} / ${rooms.rooms.length}件`
+    : `${roomList.value.length}件`
+)
+
+/** 検索欄。入力はそのまま filters.q に入れ、絞り込みは filteredRooms が行う */
+const searchQuery = computed({
+  get: () => rooms.filters.q,
+  set: (value) => rooms.applyFilters({ q: value }),
+})
 // #endregion
 </script>
 
@@ -73,7 +81,7 @@ const sortLabel = computed(() => SORT_KEY_META[rooms.sortKey]?.label ?? "")
         <h2 class="sidebar__title">
           受信箱
         </h2>
-        <span class="sidebar__count">{{ roomList.length }}件</span>
+        <span class="sidebar__count">{{ countLabel }}</span>
         <!-- 最小化。復帰用のボタンは畳んだ跡に残る細いカードに出る -->
         <button
           type="button"
@@ -90,10 +98,11 @@ const sortLabel = computed(() => SORT_KEY_META[rooms.sortKey]?.label ?? "")
       </div>
 
       <input
+        v-model="searchQuery"
         class="sidebar__search"
         type="search"
         placeholder="氏名・大学で検索"
-        disabled
+        aria-label="氏名・大学で検索"
       >
 
       <!-- サマリーバー（P1-8）：件数は実データ、クリックでの絞り込みは未実装 -->
@@ -108,23 +117,28 @@ const sortLabel = computed(() => SORT_KEY_META[rooms.sortKey]?.label ?? "")
         </li>
       </ul>
 
-      <!-- フィルタ＆ソート（P1-7）：形のみ -->
+      <!-- フィルタ＆ソート（P1-7） -->
       <div class="filters">
-        <button
-          v-for="label in FILTER_LABELS"
-          :key="label"
-          type="button"
-          class="filters__chip"
-          disabled
-        >
-          {{ label }} ▾
-        </button>
-        <span class="filters__sort">{{ sortLabel }} ▾</span>
+        <FilterBar />
       </div>
     </div>
 
+    <!-- 空状態は「絞り込んだ結果ゼロ」と「そもそも0件」を区別する -->
     <p
-      v-if="roomList.length === 0"
+      v-if="roomList.length === 0 && rooms.hasActiveFilters"
+      class="sidebar__empty"
+    >
+      条件に一致する学生はいません。
+      <button
+        type="button"
+        class="sidebar__empty-action"
+        @click="rooms.clearFilters()"
+      >
+        条件をクリア
+      </button>
+    </p>
+    <p
+      v-else-if="roomList.length === 0"
       class="sidebar__empty"
     >
       対応が必要な学生はいません 🎉
@@ -216,28 +230,9 @@ const sortLabel = computed(() => SORT_KEY_META[rooms.sortKey]?.label ?? "")
   font-weight: 700;
 }
 
+/* 中身の見た目は FilterBar が持つ。ここは配置だけ */
 .filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-xs);
-  align-items: center;
   margin-top: var(--space-md);
-}
-
-.filters__chip {
-  padding: 3px 10px;
-  border: 1px solid var(--color-hairline);
-  border-radius: var(--radius-pill);
-  background-color: var(--color-canvas);
-  color: var(--color-ink-mute);
-  font-size: 11px;
-}
-
-.filters__sort {
-  margin-left: auto;
-  color: var(--color-ink-mute);
-  font-size: 11px;
-  font-weight: 700;
 }
 
 .sidebar__empty {
@@ -245,6 +240,15 @@ const sortLabel = computed(() => SORT_KEY_META[rooms.sortKey]?.label ?? "")
   color: var(--color-ink-mute);
   font-size: 13px;
   text-align: center;
+}
+
+.sidebar__empty-action {
+  border: none;
+  background: none;
+  color: var(--color-primary);
+  font-size: 13px;
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 .rooms {
