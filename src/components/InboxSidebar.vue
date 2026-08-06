@@ -22,8 +22,9 @@ import PanelIcon from "./PanelIcon.vue"
 import RoomListItem from "./RoomListItem.vue"
 
 // #region constants
-/** 絞り込みの種別。P1-7 で FilterBar に置き換わるまでの見た目だけの並び */
-const FILTER_LABELS = ["対応", "選考", "タグ", "緊急度", "担当"]
+/** 絞り込みの種別。P1-7 で FilterBar に置き換わるまでの見た目だけの並び。
+ *  担当者による絞り込み・ソートは提供しない（常に自分の担当のみを表示するため）。 */
+const FILTER_LABELS = ["対応", "選考", "タグ", "緊急度"]
 // #endregion
 
 // #region global state
@@ -39,8 +40,11 @@ const isOverdue = (room) =>
 // #endregion
 
 // #region computed
-/** 一覧の並びはサーバが既定順（ピン→緊急度→経過時間）で返す。並べ替えUIは P1-7 */
-const roomList = computed(() => rooms.rooms)
+/**
+ * 一覧の並びはサーバが既定順（ピン→緊急度→経過時間）で返す。並べ替えUIは P1-7
+ * filteredRooms は常にログイン中の人事の担当ルームのみに絞る（rooms ストア参照）。
+ */
+const roomList = computed(() => rooms.filteredRooms)
 
 /** P1-8 で GET /api/summary に置き換える暫定集計 */
 const summaryItems = computed(() => [

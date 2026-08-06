@@ -8,6 +8,7 @@ import {
 } from '../constants/index.js'
 import { roomsApi, toErrorMessage } from '../api/index.js'
 import { emitSocketAck } from '../composables/useSocket.js'
+import { useAuthStore } from './auth.js'
 import { useUiStore } from './ui.js'
 
 /** 対応ステータス変更が失敗したときの既定文言（P1-2） */
@@ -116,11 +117,15 @@ export const useRoomsStore = defineStore('rooms', {
 
     /**
      * filters を適用した結果（並べ替え前）。
-     * まず選考ステータスのみ実装（P1-7）。他条件は次のステップ以降で追加する。
+     * 担当者での絞り込み・ソートは提供しない。代わりに常にログイン中の人事が
+     * 担当するルームのみに絞る（未アサインのルームはここで除外され、誰の画面にも出ない）。
+     * 選考ステータス以外の条件は次のステップ以降で追加する。
      */
     filteredRooms: (s) => {
+      const auth = useAuthStore()
       const { selectionStatus } = s.filters
       return s.rooms.filter((room) => {
+        if (room.assignee?.id !== auth.currentUserId) return false
         if (selectionStatus.length && !selectionStatus.includes(room.student?.selectionStatus)) {
           return false
         }
