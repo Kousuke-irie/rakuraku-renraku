@@ -20,6 +20,8 @@ export default [
         // ドロップダウンの「外側クリック」「Escape」検知と開く向きの判定（HandlingStatusMenu）
         document: 'readonly',
         window: 'readonly',
+        // 受信箱3ペインの幅の追従（InboxView・ドラッグの上限計算）
+        ResizeObserver: 'readonly',
       },
     },
   },

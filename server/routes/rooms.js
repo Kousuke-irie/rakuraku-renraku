@@ -9,7 +9,7 @@ import {
   emitRoomUpdated,
   emitSummaryUpdated,
 } from '../services/realtime.js';
-import { updateHandlingStatus } from '../services/roomStatus.js';
+import { updateAssignee, updateHandlingStatus } from '../services/roomStatus.js';
 import { markRoomRead } from '../services/readReceipt.js';
 import {
   HANDLING_STATUS_VALUES,
@@ -113,6 +113,18 @@ router.get('/:id', requireAuth, (req, res) => {
   res.json({ room });
 });
 
+/** PATCH /rooms/:id で変更できる項目。P2-8（isPinned）は未実装 */
+const PATCHABLE_KEYS = Object.freeze(['handlingStatus', 'assigneeUserId']);
+
+/** 担当人事に指定できるのは hr / admin のユーザーのみ。null は「未割当」 */
+function isAssignableUser(assigneeUserId) {
+  if (assigneeUserId === null) return true;
+  if (!Number.isInteger(assigneeUserId) || assigneeUserId <= 0) return false;
+
+  const user = db.prepare('SELECT role FROM users WHERE id = ?').get(assigneeUserId);
+  return Boolean(user) && isHr(user.role);
+}
+
 router.patch('/:id', requireAuth, async (req, res, next) => {
   try {
     if (!isHr(req.user.role)) {
@@ -123,29 +135,39 @@ router.patch('/:id', requireAuth, async (req, res, next) => {
     assertRoomMember(db, req.user.id, roomId);
 
     const keys = Object.keys(req.body ?? {});
-    if (keys.length !== 1 || keys[0] !== 'handlingStatus') {
+    if (keys.length === 0 || !keys.every((key) => PATCHABLE_KEYS.includes(key))) {
       return res.status(400).json({
         error: 'invalid_request',
-        message: 'このエンドポイントでは handlingStatus のみ変更できます',
+        message: `このエンドポイントでは ${PATCHABLE_KEYS.join(' / ')} のみ変更できます`,
       });
     }
 
-    const { handlingStatus } = req.body;
-    if (!HANDLING_STATUS_VALUES.includes(handlingStatus)) {
+    const { handlingStatus, assigneeUserId } = req.body;
+    if (handlingStatus !== undefined && !HANDLING_STATUS_VALUES.includes(handlingStatus)) {
       return res.status(400).json({ error: 'invalid_request', message: '対応ステータスが不正です' });
     }
+    if (assigneeUserId !== undefined && !isAssignableUser(assigneeUserId)) {
+      return res.status(400).json({ error: 'invalid_request', message: '担当人事の指定が不正です' });
+    }
 
-    const result = updateHandlingStatus(db, {
-      roomId,
-      userId: req.user.id,
-      handlingStatus,
-    });
+    let changed = false;
+    let systemMessage = null;
+
+    if (handlingStatus !== undefined) {
+      const result = updateHandlingStatus(db, { roomId, userId: req.user.id, handlingStatus });
+      changed = changed || result.changed;
+      systemMessage = result.message;
+    }
+    if (assigneeUserId !== undefined) {
+      changed = updateAssignee(db, { roomId, assigneeUserId }).changed || changed;
+    }
 
     const room = findRoomForUser(db, req.user.id, roomId);
-    if (result.changed) {
+    if (changed) {
       const io = req.app.get('io');
-      if (result.message) await emitMessageNew(io, db, result.message);
+      if (systemMessage) await emitMessageNew(io, db, systemMessage);
       await emitRoomUpdated(io, db, roomId);
+      // 未対応サマリーの「未割当」件数（P1-8）もアサイン変更で動く
       emitSummaryUpdated(io, db);
     }
 

@@ -4,14 +4,26 @@ import {
   AI_SUMMARY_STATUS,
   DEFAULT_AI_SUMMARY_STATUS,
   DEFAULT_SORT_KEY,
+  ROLE,
   SOCKET_EMIT,
 } from '../constants/index.js'
-import { roomsApi, toErrorMessage } from '../api/index.js'
+import { memosApi, roomsApi, studentsApi, toErrorMessage, usersApi } from '../api/index.js'
 import { emitSocketAck } from '../composables/useSocket.js'
 import { useUiStore } from './ui.js'
 
 /** 対応ステータス変更が失敗したときの既定文言（P1-2） */
 const STATUS_UPDATE_ERROR = '対応ステータスの変更に失敗しました'
+
+/** 申し送りメモ（P2-5）の失敗時の既定文言 */
+const MEMO_ERROR = Object.freeze({
+  FETCH: 'メモの取得に失敗しました',
+  CREATE: 'メモの保存に失敗しました',
+  UPDATE: 'メモの更新に失敗しました',
+  DELETE: 'メモの削除に失敗しました',
+})
+
+/** 更新の新しい順。引き継ぎ時に最新の申し送りが上に来るようにする */
+const byUpdatedAtDesc = (a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt))
 
 /**
  * 受信箱ストア（P1-1 / P1-7 / P1-8・frontend.md §3）
@@ -143,8 +155,8 @@ export const useRoomsStore = defineStore('rooms', {
     /** 全ルームの未読合計 */
     totalUnread: (s) => 0,
 
-    /** @returns {(roomId: number) => object[]} 指定ルームのメモ */
-    memosOf: (s) => (roomId) => [],
+    /** @returns {(roomId: number) => object[]} 指定ルームのメモ（個人＋共有・更新の新しい順） */
+    memosOf: (s) => (roomId) => [...(s.memosByRoomId[Number(roomId)] ?? [])].sort(byUpdatedAtDesc),
   },
 
   actions: {
@@ -170,8 +182,18 @@ export const useRoomsStore = defineStore('rooms', {
     /** GET /api/summary（P1-8） */
     async fetchSummary() {},
 
-    /** GET /api/users?role=hr（P2-9 担当者アサイン用） */
-    async fetchAssignableUsers() {},
+    /** GET /api/users?role=hr&role=admin（P2-9 担当者アサインの候補。人事のみ） */
+    async fetchAssignableUsers() {
+      try {
+        const { data } = await usersApi.list({ role: [ROLE.HR, ROLE.ADMIN] })
+        this.assignableUsers = data.users ?? []
+      } catch (error) {
+        useUiStore().pushToast({
+          type: 'error',
+          message: toErrorMessage(error, '担当者一覧の取得に失敗しました'),
+        })
+      }
+    },
 
     // ---- AI 現況サマリー（P3-1a） -----------------------------------------
 
@@ -228,23 +250,83 @@ export const useRoomsStore = defineStore('rooms', {
     setSummary(summary) {},
 
     /**
-     * 共有メモの追加・更新を反映する（memo:updated / P2-5）。
+     * メモを1件追加または差し替える。**socket 由来（memo:updated）も REST の応答もここを通す。**
      * @param {number} roomId
      * @param {object} memo
      */
-    upsertMemo(roomId, memo) {},
+    upsertMemo(roomId, memo) {
+      if (!memo?.id) return
 
-    /** GET /api/rooms/:id/memos */
-    async fetchMemos(roomId) {},
+      const key = Number(roomId)
+      const list = this.memosByRoomId[key] ?? []
+      const index = list.findIndex((existing) => existing.id === memo.id)
 
-    /** POST /api/rooms/:id/memos */
-    async createMemo(roomId, { body, scope }) {},
+      // 並べ替えは memosOf が行うので、ここでは順序を気にせず入れ替えるだけでよい
+      this.memosByRoomId[key] = index === -1 ? [...list, memo] : list.with(index, memo)
+    },
 
-    /** PATCH /api/memos/:id（本文更新・scope 昇格 P2-6） */
-    async updateMemo(memoId, patch) {},
+    /** メモを1件取り除く（削除の反映） */
+    removeMemo(roomId, memoId) {
+      const key = Number(roomId)
+      const list = this.memosByRoomId[key]
+      if (!list) return
+
+      this.memosByRoomId[key] = list.filter((memo) => memo.id !== memoId)
+    },
+
+    /** GET /api/rooms/:id/memos。自分の個人メモ＋共有メモが返る */
+    async fetchMemos(roomId) {
+      try {
+        const { data } = await memosApi.list(roomId)
+        this.memosByRoomId[Number(roomId)] = data.memos ?? []
+      } catch (error) {
+        useUiStore().pushToast({ type: 'error', message: toErrorMessage(error, MEMO_ERROR.FETCH) })
+      }
+    },
+
+    /**
+     * POST /api/rooms/:id/memos
+     * @returns {Promise<boolean>} 保存できたか（呼び出し側は成功時だけ入力欄を空にする）
+     */
+    async createMemo(roomId, { body, scope }) {
+      try {
+        const { data } = await memosApi.create(roomId, { body, scope })
+        this.upsertMemo(roomId, data.memo)
+        return true
+      } catch (error) {
+        useUiStore().pushToast({ type: 'error', message: toErrorMessage(error, MEMO_ERROR.CREATE) })
+        return false
+      }
+    },
+
+    /**
+     * PATCH /api/memos/:id（本文更新・scope の共有昇格 P2-6）
+     * @param {number} memoId
+     * @param {{ body?: string, scope?: string }} patch
+     * @returns {Promise<boolean>} 更新できたか
+     */
+    async updateMemo(memoId, patch) {
+      try {
+        const { data } = await memosApi.update(memoId, patch)
+        this.upsertMemo(data.memo.roomId, data.memo)
+        return true
+      } catch (error) {
+        useUiStore().pushToast({ type: 'error', message: toErrorMessage(error, MEMO_ERROR.UPDATE) })
+        return false
+      }
+    },
 
     /** DELETE /api/memos/:id */
-    async deleteMemo(memoId) {},
+    async deleteMemo(roomId, memoId) {
+      try {
+        await memosApi.remove(memoId)
+        this.removeMemo(roomId, memoId)
+        return true
+      } catch (error) {
+        useUiStore().pushToast({ type: 'error', message: toErrorMessage(error, MEMO_ERROR.DELETE) })
+        return false
+      }
+    },
 
     // ---- 更新系（人事の操作） ---------------------------------------------
 
@@ -289,14 +371,50 @@ export const useRoomsStore = defineStore('rooms', {
       }
     },
 
-    /** PATCH /api/rooms/:id { assigneeUserId }（P2-9） */
-    async assign(roomId, assigneeUserId) {},
+    /**
+     * PATCH /api/rooms/:id { assigneeUserId }（P2-9）。null で未割当に戻す。
+     * 確定値は他の人事にも配信される `room:updated` で上書きされる。
+     * @returns {Promise<boolean>} 変更できたか
+     */
+    async assign(roomId, assigneeUserId) {
+      try {
+        const { data } = await roomsApi.update(roomId, { assigneeUserId })
+        this.upsertRoom(data.room)
+        return true
+      } catch (error) {
+        useUiStore().pushToast({
+          type: 'error',
+          message: toErrorMessage(error, '担当人事の変更に失敗しました'),
+        })
+        return false
+      }
+    },
 
     /** PATCH /api/rooms/:id { isPinned }（P2-8） */
     async togglePin(roomId) {},
 
-    /** PATCH /api/students/:userId（P2-4 プロフィールのインライン編集 / P3-4 日程調整） */
-    async updateStudent(userId, patch) {},
+    /**
+     * PATCH /api/students/:userId（P2-4 プロフィールのインライン編集 / P3-4 日程調整）
+     * @param {number} userId 学生のユーザーID（ルームIDではない）
+     * @param {object} patch selectionStatus / nextInterviewAt / nextInterviewRoom / interviewer / scheduleState
+     * @returns {Promise<boolean>} 更新できたか
+     */
+    async updateStudent(userId, patch) {
+      const room = this.rooms.find((item) => item.student?.userId === Number(userId))
+
+      try {
+        const { data } = await studentsApi.update(userId, patch)
+        // student はサーバが完全な形で返すのでそのまま差し替えてよい
+        if (room) this.upsertRoom({ id: room.id, student: data.student })
+        return true
+      } catch (error) {
+        useUiStore().pushToast({
+          type: 'error',
+          message: toErrorMessage(error, 'プロフィールの更新に失敗しました'),
+        })
+        return false
+      }
+    },
 
     /** POST /api/rooms/:id/read → 該当ルームの unreadCount を 0 にする */
     async markRead(roomId, lastReadMessageId) {},

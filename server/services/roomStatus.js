@@ -16,6 +16,23 @@ const MESSAGE_COLUMNS = `
   deleted_at    AS deletedAt
 `;
 
+/**
+ * 担当人事のアサイン変更（P2-9）。`assigneeUserId` が null なら未割当に戻す。
+ * 対応ステータスと違いシステムメッセージは残さない（学生の目に触れるトークがノイズになるため）。
+ * @returns {{changed: boolean}}
+ */
+export function updateAssignee(db, { roomId, assigneeUserId }) {
+  const current = db
+    .prepare('SELECT assignee_user_id AS assigneeUserId FROM rooms WHERE id = ?')
+    .get(roomId);
+  if (!current || current.assigneeUserId === assigneeUserId) {
+    return { changed: false };
+  }
+
+  db.prepare('UPDATE rooms SET assignee_user_id = ? WHERE id = ?').run(assigneeUserId, roomId);
+  return { changed: true };
+}
+
 export function updateHandlingStatus(db, { roomId, userId, handlingStatus }) {
   const now = new Date().toISOString();
 
