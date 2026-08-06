@@ -166,12 +166,52 @@ CREATE TABLE IF NOT EXISTS compliance_rules (
   priority INTEGER NOT NULL
 );
 
+-- 選考フローの設定（P2-11）。人事が「どのステップを使うか」「学生にどう見せるか」を決める。
+-- 選考ステータスの識別子そのものは shared/constants.js の SELECTION_STATUS が正で、
+-- このテーブルは**見せ方の設定だけ**を持つ（受信箱・ボード・フィルタを壊さないため）。
+-- CHECK の並びは SELECTION_FLOW_STEP_VALUES と完全に一致させること。
+-- 'declined'（辞退）は終端の分岐でありフロー上の一段階ではないので含めない。
+CREATE TABLE IF NOT EXISTS selection_steps (
+  status_key TEXT PRIMARY KEY CHECK(status_key IN (
+    'entry', 'document', 'aptitude',
+    'interview_1', 'interview_2', 'interview_3', 'interview_4', 'interview_5',
+    'offer'
+  )),
+  is_enabled INTEGER NOT NULL DEFAULT 1 CHECK(is_enabled IN (0, 1)),
+  sort_order INTEGER NOT NULL,
+  -- 学生画面での表示名の上書き。NULL なら SELECTION_STATUS_META のラベルを使う
+  label TEXT,
+  description TEXT,
+  points TEXT,
+  updated_at TEXT NOT NULL
+);
+
+-- 選考ステップごとの企業からのフィードバック（P2-11）。学生1名×ステップで1件。
+-- ★学生には「完了済みステップ」のぶんしか返さないこと（server/services/selectionFlow.js）。
+--   進行中の評価が合否連絡より先に本人へ漏れる。
+CREATE TABLE IF NOT EXISTS selection_feedbacks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  student_user_id INTEGER NOT NULL REFERENCES users(id),
+  status_key TEXT NOT NULL CHECK(status_key IN (
+    'entry', 'document', 'aptitude',
+    'interview_1', 'interview_2', 'interview_3', 'interview_4', 'interview_5',
+    'offer'
+  )),
+  body TEXT NOT NULL,
+  author_id INTEGER NOT NULL REFERENCES users(id),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(student_user_id, status_key)
+);
+
 CREATE INDEX IF NOT EXISTS idx_messages_room       ON messages(room_id, id DESC);
 CREATE INDEX IF NOT EXISTS idx_rooms_sort          ON rooms(urgency, last_student_message_at);
 CREATE INDEX IF NOT EXISTS idx_rooms_status        ON rooms(handling_status);
 CREATE INDEX IF NOT EXISTS idx_rooms_assignee       ON rooms(assignee_user_id);
 CREATE INDEX IF NOT EXISTS idx_room_members_user   ON room_members(user_id);
 CREATE INDEX IF NOT EXISTS idx_memos_room          ON memos(room_id, scope);
+CREATE INDEX IF NOT EXISTS idx_selection_steps_order ON selection_steps(is_enabled, sort_order);
+CREATE INDEX IF NOT EXISTS idx_selection_feedbacks  ON selection_feedbacks(student_user_id);
 -- ★多重通知を防ぐ唯一の仕組み。60秒タイマーはこれに依存している。
 -- SLA：1ルーム×1起点メッセージ×1宛先×1種別につき1件だけ。
 CREATE UNIQUE INDEX IF NOT EXISTS idx_alerts_sla_unique
