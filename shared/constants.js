@@ -163,9 +163,12 @@ export const URGENCY_META = Object.freeze({
 export const URGENCY_VALUES = Object.values(URGENCY);
 
 // ---------------------------------------------------------------------------
-// AI対応推奨度（P3-1改訂）
-// ルール緊急度とは別の補助情報であり、既存の urgency を変更しない。
+// AI推奨度（P3-1改訂）
+// 人事画面の優先表示にはAI判定を使う。AIが未判定・失敗時だけ既存の urgency を
+// フォールバックとして使うため、欠席・遅刻などの即時検知は維持される。
 // ---------------------------------------------------------------------------
+
+export const AI_RECOMMENDED_PRIORITY_TITLE = 'AI推奨度';
 
 export const AI_RECOMMENDED_PRIORITY = Object.freeze({
   HIGH: 'high',
@@ -180,6 +183,12 @@ export const AI_RECOMMENDED_PRIORITY_META = Object.freeze({
 });
 
 export const AI_RECOMMENDED_PRIORITY_VALUES = Object.values(AI_RECOMMENDED_PRIORITY);
+
+export const AI_RECOMMENDED_PRIORITY_ORDER = Object.freeze({
+  [AI_RECOMMENDED_PRIORITY.HIGH]: 0,
+  [AI_RECOMMENDED_PRIORITY.NORMAL]: 1,
+  [AI_RECOMMENDED_PRIORITY.LOW]: 2,
+});
 
 export const AI_ANALYSIS_STATUS = Object.freeze({
   PENDING: 'pending',
@@ -208,6 +217,47 @@ export const SCHEDULE_STATE_META = Object.freeze({
 
 export const SCHEDULE_STATE_VALUES = Object.values(SCHEDULE_STATE);
 
+// ---------------------------------------------------------------------------
+// 面接日程予約（P3-4 改訂）
+// schedule_requests.status が予約フローの正。students.schedule_state は互換表示用に同期する。
+// ---------------------------------------------------------------------------
+
+export const SCHEDULE_REQUEST_STATUS = Object.freeze({
+  DRAFT: 'draft',
+  WAITING_STUDENT: 'waiting_student',
+  BOOKED: 'booked',
+  EXPIRED: 'expired',
+  CANCELLED: 'cancelled',
+});
+
+export const SCHEDULE_REQUEST_STATUS_META = Object.freeze({
+  [SCHEDULE_REQUEST_STATUS.DRAFT]: { label: '作成中' },
+  [SCHEDULE_REQUEST_STATUS.WAITING_STUDENT]: { label: '学生日程選択待ち' },
+  [SCHEDULE_REQUEST_STATUS.BOOKED]: { label: '日程確定' },
+  [SCHEDULE_REQUEST_STATUS.EXPIRED]: { label: '回答期限切れ' },
+  [SCHEDULE_REQUEST_STATUS.CANCELLED]: { label: '取消' },
+});
+
+export const SCHEDULE_REQUEST_STATUS_VALUES = Object.values(SCHEDULE_REQUEST_STATUS);
+
+export const INTERVIEW_FORMAT = Object.freeze({
+  ONLINE: 'online',
+  ONSITE: 'onsite',
+});
+
+export const INTERVIEW_FORMAT_META = Object.freeze({
+  [INTERVIEW_FORMAT.ONLINE]: { label: 'オンライン' },
+  [INTERVIEW_FORMAT.ONSITE]: { label: '対面' },
+});
+
+export const INTERVIEW_FORMAT_VALUES = Object.values(INTERVIEW_FORMAT);
+
+export const INTERVIEW_DURATION_OPTIONS = Object.freeze([30, 60, 90]);
+export const DEFAULT_INTERVIEW_DURATION_MINUTES = 60;
+export const DEFAULT_DAILY_START_TIME = '10:00';
+export const DEFAULT_DAILY_END_TIME = '18:00';
+export const SCHEDULE_REFRESH_INTERVAL_MS = 30_000;
+
 export const MESSAGE_TYPE = Object.freeze({
   TEXT: 'text',
   SYSTEM: 'system',
@@ -227,6 +277,24 @@ export const MEMO_SCOPE_META = Object.freeze({
 
 export const MEMO_SCOPE_VALUES = Object.values(MEMO_SCOPE);
 
+/**
+ * 学生本人だけが読み書きする選考メモのキー（S-10）。
+ *
+ * `'overall'` は選考全体のメモ、それ以外は選考ステップに紐づくメモ。
+ *
+ * **NULL 許容の status_key にしない。** SQLite の UNIQUE 制約は NULL 同士を重複と
+ * 見なさないため、全体メモが学生1人につき何行でも作れてしまう。明示のキーにすることで
+ * `UNIQUE(student_user_id, note_key)` だけで1件に固定できる。
+ *
+ * `student_notes.note_key` の CHECK 制約はこの並びと完全に一致させること。
+ */
+export const STUDENT_NOTE_OVERALL_KEY = 'overall';
+
+export const STUDENT_NOTE_KEY_VALUES = Object.freeze([
+  STUDENT_NOTE_OVERALL_KEY,
+  ...SELECTION_FLOW_STEP_VALUES,
+]);
+
 // ---------------------------------------------------------------------------
 // 一覧の並び順（P1-7 / business-logic.md §6）
 // ---------------------------------------------------------------------------
@@ -241,7 +309,7 @@ export const SORT_KEY = Object.freeze({
 });
 
 export const SORT_KEY_META = Object.freeze({
-  [SORT_KEY.DEFAULT]: { label: '緊急度順' },
+  [SORT_KEY.DEFAULT]: { label: 'AI推奨度順' },
   [SORT_KEY.LAST_MESSAGE]: { label: '最終メッセージ順' },
   [SORT_KEY.ELAPSED]: { label: '経過時間順' },
 });
@@ -287,13 +355,13 @@ export const SEND_STATUS_VALUES = Object.values(SEND_STATUS);
 export const BOARD_GROUP_BY = Object.freeze({
   HANDLING: 'handling',
   SELECTION: 'selection',
-  URGENCY: 'urgency',
+  AI_PRIORITY: 'ai_priority',
 });
 
 export const BOARD_GROUP_BY_META = Object.freeze({
   [BOARD_GROUP_BY.HANDLING]: { label: '対応' },
   [BOARD_GROUP_BY.SELECTION]: { label: '選考' },
-  [BOARD_GROUP_BY.URGENCY]: { label: '緊急度' },
+  [BOARD_GROUP_BY.AI_PRIORITY]: { label: AI_RECOMMENDED_PRIORITY_TITLE },
 });
 
 export const BOARD_GROUP_BY_VALUES = Object.values(BOARD_GROUP_BY);
@@ -342,6 +410,8 @@ export const DEFAULT_TOPIC_TAG = TOPIC_TAG.OTHER;
 export const DEFAULT_URGENCY = URGENCY.NORMAL;
 export const DEFAULT_AI_ANALYSIS_STATUS = AI_ANALYSIS_STATUS.SKIPPED;
 export const DEFAULT_SCHEDULE_STATE = SCHEDULE_STATE.NONE;
+export const DEFAULT_SCHEDULE_REQUEST_STATUS = SCHEDULE_REQUEST_STATUS.DRAFT;
+export const DEFAULT_INTERVIEW_FORMAT = INTERVIEW_FORMAT.ONLINE;
 export const DEFAULT_MEMO_SCOPE = MEMO_SCOPE.PRIVATE;
 export const DEFAULT_AI_SUMMARY_STATUS = AI_SUMMARY_STATUS.IDLE;
 
@@ -616,6 +686,8 @@ export const SOCKET_EMIT = Object.freeze({
   MESSAGE_SEND: 'message:send',
   MESSAGE_READ: 'message:read',
   ROOM_STATUS_UPDATE: 'room:status_update',
+  SCHEDULE_WATCH: 'schedule:watch',
+  SCHEDULE_UNWATCH: 'schedule:unwatch',
 });
 
 // Server → Client
@@ -629,6 +701,9 @@ export const SOCKET_ON = Object.freeze({
   SUMMARY_UPDATED: 'summary:updated',
   /** P3-1a。生成を依頼した本人にのみ配信する */
   AI_SUMMARY_UPDATED: 'ai:summary_updated',
+  SCHEDULE_SLOT_UPDATED: 'schedule:slot_updated',
+  SCHEDULE_REQUEST_UPDATED: 'schedule:request_updated',
+  SCHEDULE_BOOKED: 'schedule:booked',
   /** P4-1。通知先（target_user_id）本人にのみ配信する */
   ALERT_NEW: 'alert:new',
   /**
@@ -663,6 +738,9 @@ export const UNSET_VARIABLE_SUFFIX = '】';
 export const SELECTION_STEP_LABEL_MAX_LENGTH = 30;
 export const SELECTION_STEP_TEXT_MAX_LENGTH = 500;
 export const SELECTION_FEEDBACK_MAX_LENGTH = 1000;
+
+// 学生の選考メモ（S-10）の本文上限。サーバの検証と textarea の maxlength を必ず揃える
+export const STUDENT_NOTE_MAX_LENGTH = 2000;
 
 // 定型文の本文に埋め込める変数（P2-1設定画面／P2-2 / business-logic.md §5）。
 // 実データへの置換は P2-2 の責務。設定画面ではこの一覧を「挿入」候補として出す。

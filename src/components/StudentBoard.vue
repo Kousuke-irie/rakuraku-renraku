@@ -1,21 +1,21 @@
 <script setup>
 // ホームのボード（S-07・frontend.md §5-2）
 //
-// 対応／選考／緊急度 のいずれかで列を作り、学生カードを縦に積む。
+// 対応／選考／AI推奨度 のいずれかで列を作り、学生カードを縦に積む。
 // 縦割りの軸は uiStore.boardGroupBy で切り替える。既定は対応ステータス。
 //
-// 列を横に並べる表示と「列の中は緊急度の高い順」という並びは BoardColumns が持つ。
+// 列を横に並べる表示と「列の中はAI推奨度の高い順」という並びは BoardColumns が持つ。
 // ここは **軸ごとに列を組み立てる** ことだけを担う。
 import { computed } from "vue"
 import {
+  AI_RECOMMENDED_PRIORITY_META,
+  AI_RECOMMENDED_PRIORITY_VALUES,
   BOARD_GROUP_BY,
   DEFAULT_BOARD_GROUP_BY,
   HANDLING_STATUS_META,
   HANDLING_STATUS_VALUES,
   SELECTION_STATUS_META,
   SELECTION_STATUS_VALUES,
-  URGENCY_META,
-  URGENCY_VALUES,
 } from "../constants/index.js"
 import { useRoomsStore } from "../stores/rooms.js"
 import { useUiStore } from "../stores/ui.js"
@@ -39,10 +39,10 @@ const AXES = Object.freeze({
     meta: SELECTION_STATUS_META,
     of: (room) => room.student?.selectionStatus,
   },
-  [BOARD_GROUP_BY.URGENCY]: {
-    values: URGENCY_VALUES,
-    meta: URGENCY_META,
-    of: (room) => room.urgency,
+  [BOARD_GROUP_BY.AI_PRIORITY]: {
+    values: AI_RECOMMENDED_PRIORITY_VALUES,
+    meta: AI_RECOMMENDED_PRIORITY_META,
+    of: (room) => room.priority ?? room.urgency,
   },
 })
 // #endregion

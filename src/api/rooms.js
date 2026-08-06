@@ -7,7 +7,7 @@ import { http } from "./client.js"
  * {
  *   id, student: { userId, displayName, university, selectionStatus, avatarColor,
  *                  nextInterviewAt, nextInterviewRoom, interviewer, scheduleState },
- *   handlingStatus, urgency, topicTag,
+ *   handlingStatus, priority, topicTag,
  *   assignee: { id, displayName } | null,   // null = 未割当
  *   unreadCount, lastMessage: { id, body, createdAt, senderId } | null,
  *   lastStudentMessageAt, elapsedHours,
@@ -22,7 +22,7 @@ export const roomsApi = {
    * GET /api/rooms → `{ rooms: room[] }`
    * @param {{
    *   handlingStatus?: string|string[], selectionStatus?: string|string[],
-   *   topicTag?: string|string[], urgency?: string|string[],
+   *   topicTag?: string|string[], priority?: string|string[],
    *   assigneeId?: number|'unassigned', sort?: string, q?: string
    * }} [params] 列挙値は shared/constants.js のものを渡す
    */

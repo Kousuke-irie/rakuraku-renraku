@@ -10,7 +10,7 @@
 // レイアウトは2種類。中身は同じなので二重実装しない（frontend.md §7-2）。
 //   aside  … トークの右に立てる縦長のパネル（S-05）
 //   banner … マイページ上部に敷く横長の帯（S-09）
-import { computed } from "vue"
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useUiStore } from "../stores/ui.js"
 
 const props = defineProps({
@@ -23,6 +23,23 @@ const props = defineProps({
 
 // #region global state
 const ui = useUiStore()
+// #endregion
+
+// #region local state
+/** 帯（banner）で紹介文を全文表示しているか */
+const isExpanded = ref(false)
+
+/** @type {import('vue').Ref<HTMLElement|null>} 折りたたみ時の1段落目。溢れの判定に使う */
+const firstTextRef = ref(null)
+
+/**
+ * 折りたたみ時に1段落目が2行に収まりきらなかったか。
+ * ★展開中は計測しない。クランプが外れていると必ず「溢れていない」と出るため、
+ *   そのまま採ると「閉じる」ボタンが消えて元に戻せなくなる。
+ */
+const isTruncated = ref(false)
+
+let resizeObserver = null
 // #endregion
 
 // #region computed
@@ -43,12 +60,76 @@ const paragraphs = computed(() =>
 
 /**
  * 帯（banner）に出す紹介文。
- * ★1段落だけに絞る。マイページの主役は選考フローなので、会社情報が縦に伸びて
- *   フローを画面外へ押し出さないようにする。全文はチャット画面の縦パネルで読める。
+ * ★折りたたみ時は1段落目だけを2行にクランプする。マイページの主役は選考フローなので、
+ *   既定では会社情報が縦に伸びてフローを画面外へ押し出さないようにする。
+ *   ただし読めないままにはせず、「もっと見る」でその場に全文を出す。
  */
 const visibleParagraphs = computed(() =>
-  isBanner.value ? paragraphs.value.slice(0, 1) : paragraphs.value
+  isBanner.value && !isExpanded.value ? paragraphs.value.slice(0, 1) : paragraphs.value
 )
+
+/**
+ * 展開ボタンを出すか。
+ * 2段落目以降がある、または1段落目が2行に収まらないときだけ出す
+ * （短い紹介文で押しても何も起きないボタンを置かない）。
+ */
+const canExpand = computed(
+  () => isBanner.value && (paragraphs.value.length > 1 || isTruncated.value)
+)
+// #endregion
+
+// #region local methods
+/** 溢れを測るのは1段落目だけ。2段落目以降は存在するだけで展開の理由になる */
+const setFirstTextRef = (el, index) => {
+  if (index === 0) firstTextRef.value = el
+}
+
+/** 1段落目がクランプで切れているかを実測する。折りたたみ時のみ有効 */
+const measureTruncation = () => {
+  if (!isBanner.value || isExpanded.value) return
+
+  const el = firstTextRef.value
+  if (!el) return
+
+  // 端数の丸めで1px の差が出ることがあるので、1px は誤差として許容する
+  isTruncated.value = el.scrollHeight - el.clientHeight > 1
+}
+// #endregion
+
+// #region lifecycle
+onMounted(() => {
+  if (!isBanner.value) return
+
+  measureTruncation()
+
+  // 幅が変われば折り返しも変わるので、そのたびに測り直す
+  if (typeof ResizeObserver !== "undefined") {
+    resizeObserver = new ResizeObserver(measureTruncation)
+    if (firstTextRef.value) resizeObserver.observe(firstTextRef.value)
+  }
+})
+
+onBeforeUnmount(() => {
+  resizeObserver?.disconnect()
+  resizeObserver = null
+})
+
+// 会社情報は非同期で届くので、本文が入ってから測り直して監視対象も張り替える
+watch(paragraphs, async () => {
+  await nextTick()
+  measureTruncation()
+
+  if (resizeObserver && firstTextRef.value) {
+    resizeObserver.disconnect()
+    resizeObserver.observe(firstTextRef.value)
+  }
+})
+// #endregion
+
+// #region browser event handler
+const onToggleExpand = () => {
+  isExpanded.value = !isExpanded.value
+}
 // #endregion
 </script>
 
@@ -81,14 +162,31 @@ const visibleParagraphs = computed(() =>
           {{ company.name }}
         </p>
 
-        <div class="company__texts">
+        <div
+          class="company__texts"
+          :class="{ 'company__texts--expanded': isBanner && isExpanded }"
+        >
           <p
             v-for="(paragraph, index) in visibleParagraphs"
             :key="index"
+            :ref="(el) => setFirstTextRef(el, index)"
             class="company__text"
+            :class="{ 'company__text--clamped': isBanner && !isExpanded }"
           >
             {{ paragraph }}
           </p>
+
+          <!-- 帯では既定で2行に切るので、切れているときだけその場で開けるようにする -->
+          <button
+            v-if="canExpand"
+            type="button"
+            class="company__more"
+            :aria-expanded="isExpanded"
+            @click="onToggleExpand"
+          >
+            {{ isExpanded ? "閉じる" : "もっと見る" }}
+            <span aria-hidden="true">{{ isExpanded ? "▴" : "▾" }}</span>
+          </button>
         </div>
 
         <!-- 外部サイトへ出るリンク。タブ乗っ取り（window.opener）を防ぐため
@@ -165,6 +263,48 @@ const visibleParagraphs = computed(() =>
   line-height: 1.8;
 }
 
+/* 折りたたみ時の切り詰め。単一の段落にだけ掛けることで、
+   複数ブロックにまたがる line-clamp の挙動差を踏まない */
+.company__text--clamped {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* 展開で現れる段落だけ、短くフェードさせる。
+   高さは動かさない（レイアウトを動かすアニメーションは避ける）。
+   1段落目は最初から見えているので対象にしない */
+.company__texts--expanded .company__text:not(:first-child) {
+  animation: text-in 160ms ease;
+}
+
+@keyframes text-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.company__more {
+  display: block;
+  padding: 0;
+  border: 0;
+  margin-left: auto;
+  background: none;
+  color: var(--color-primary);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.company__more:hover,
+.company__more:focus-visible {
+  text-decoration: underline;
+}
+
 /* 面接前の学生が押す唯一の導線なので、リンクではなくボタンの体裁で置く。
    オレンジは CTA とアクティブ状態のみ（DESIGN.md） */
 .company__link {
@@ -193,7 +333,8 @@ const visibleParagraphs = computed(() =>
 
 /* --- banner：マイページ上部に敷く横長の帯（S-09） ---
    ★主役は下の選考フロー。ここは「どの会社の選考か」を示すだけの静かな帯にする。
-     1行に収め、縦に伸びてフローを画面外へ押し出さないようにする。 */
+     既定は紹介文2行までに収め、縦に伸びてフローを画面外へ押し出さないようにする。
+     読みたい学生は「もっと見る」でその場に全文を開ける。 */
 .company--banner {
   /* 親（.mypage）の flex で潰れないように。中身ぶんの高さで固定する */
   flex: none;
@@ -214,39 +355,47 @@ const visibleParagraphs = computed(() =>
   white-space: nowrap;
 }
 
+/* 上段に「社名 ｜ 採用サイトのリンク」、下段に紹介文を全幅で敷く。
+   紹介文に横幅を渡すことで、2行のうちに読める情報量を最大にする */
 .company--banner .company__body {
   display: grid;
-  align-items: center;
-  /* 社名 ｜ 紹介文（余った幅を全部使う） ｜ リンク */
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: var(--space-lg);
+  align-items: baseline;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--space-lg);
   overflow: visible;
   padding: var(--space-md) var(--space-xl);
+  row-gap: var(--space-xs);
 }
 
 .company--banner .company__name {
+  grid-row: 1;
+  grid-column: 1;
   margin: 0;
   font-size: 15px;
-  white-space: nowrap;
 }
 
-/* 紹介文は1行に切り詰める。長さで帯の高さが変わらないようにするため */
 .company--banner .company__texts {
+  grid-row: 2;
+  grid-column: 1 / -1;
   min-width: 0;
 }
 
 .company--banner .company__text {
-  margin: 0;
-  overflow: hidden;
+  margin: 0 0 var(--space-sm);
   font-size: 12px;
-  line-height: 1.5;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  line-height: 1.7;
+}
+
+.company--banner .company__text:last-of-type {
+  margin-bottom: 0;
 }
 
 /* 帯ではボタンではなく控えめなテキストリンクにする。
    この画面の主役はフローなので、オレンジの面で視線を奪わない */
 .company--banner .company__link {
+  grid-row: 1;
+  grid-column: 2;
+  justify-self: end;
   padding: 0;
   border: 0;
   margin-top: 0;
@@ -269,6 +418,10 @@ const visibleParagraphs = computed(() =>
 @media (prefers-reduced-motion: reduce) {
   .company__link {
     transition: none;
+  }
+
+  .company__texts--expanded .company__text:not(:first-child) {
+    animation: none;
   }
 }
 </style>
