@@ -8,7 +8,7 @@
 //
 // データは1回の GET /selection-flow/me でまとめて取る（往復を増やさない）。
 // ★見せてよいフィードバックの判断はサーバが持つ。ここでは受け取ったものを描くだけ。
-import { computed, onMounted, ref, watch } from "vue"
+import { computed, nextTick, onMounted, ref, watch } from "vue"
 import { FLOW_STEP_STATE } from "../constants/index.js"
 import { useAuthStore } from "../stores/auth.js"
 import { useUiStore } from "../stores/ui.js"
@@ -24,6 +24,13 @@ const ui = useUiStore()
 // #region local state
 /** @type {import('vue').Ref<string|null>} 詳細を開いているステップ */
 const selectedKey = ref(null)
+
+/**
+ * 面接アンケート（frontend.md §7-3）の回答済み statusKey 集合。
+ * ★フロントエンドのみのモック。バックエンド未実装のためここに置き、リロードで消える。
+ * @type {import('vue').Ref<Set<string>>}
+ */
+const answeredSurveyKeys = ref(new Set())
 // #endregion
 
 // #region computed
@@ -39,6 +46,25 @@ const currentStep = computed(
 
 const selectedStep = computed(
   () => steps.value.find((step) => step.statusKey === selectedKey.value) ?? null
+)
+
+/**
+ * 面接アンケート未回答の statusKey（frontend.md §7-3）。
+ * 完了済みの面接ステップ（statusKey が interview_ で始まる）のうち、まだ回答していないもの。
+ */
+const pendingSurveyKeys = computed(() =>
+  steps.value
+    .filter(
+      (step) =>
+        step.state === FLOW_STEP_STATE.DONE &&
+        step.statusKey.startsWith("interview_") &&
+        !answeredSurveyKeys.value.has(step.statusKey)
+    )
+    .map((step) => step.statusKey)
+)
+
+const selectedStepSurveyAnswered = computed(
+  () => selectedStep.value !== null && answeredSurveyKeys.value.has(selectedStep.value.statusKey)
 )
 
 // 「いまは○○の段階です」という一文は置かない。
@@ -71,7 +97,24 @@ watch(steps, (list) => {
 
 // #region browser event handler
 const onSelect = (statusKey) => {
+  // バッジ付き（アンケート未回答）のステップをクリックしたときだけ、
+  // 詳細エリアのアンケートカードまでスクロールする（frontend.md §7-3）
+  const shouldScrollToSurvey = pendingSurveyKeys.value.includes(statusKey)
+
   selectedKey.value = statusKey
+
+  if (!shouldScrollToSurvey) return
+
+  nextTick(() => {
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    document
+      .getElementById("survey-card")
+      ?.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" })
+  })
+}
+
+const onSurveyAnswered = (statusKey) => {
+  answeredSurveyKeys.value.add(statusKey)
 }
 // #endregion
 </script>
@@ -115,10 +158,15 @@ const onSelect = (statusKey) => {
         <SelectionFlow
           :steps="steps"
           :selected-key="selectedKey"
+          :survey-pending-keys="pendingSurveyKeys"
           @select="onSelect"
         />
 
-        <SelectionStepDetail :step="selectedStep" />
+        <SelectionStepDetail
+          :step="selectedStep"
+          :survey-answered="selectedStepSurveyAnswered"
+          @survey-answered="onSurveyAnswered"
+        />
       </template>
 
       <p
