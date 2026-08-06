@@ -23,6 +23,8 @@ const props = defineProps({
   steps: { type: Array, required: true },
   /** 選択中のステップ（詳細を表示しているもの） */
   selectedKey: { type: String, default: null },
+  /** アンケート未回答の面接ステップの statusKey（面接アンケート・frontend.md §7-3） */
+  surveyPendingKeys: { type: Array, default: () => [] },
 })
 
 const emit = defineEmits(["select"])
@@ -112,6 +114,7 @@ const nodes = computed(() =>
     isCurrent: step.state === FLOW_STEP_STATE.CURRENT,
     stateLabel: FLOW_STEP_STATE_META[step.state]?.label ?? "",
     hasFeedback: Boolean(step.feedback),
+    hasSurveyBadge: props.surveyPendingKeys.includes(step.statusKey),
     delayMs: Math.min(index, MAX_STAGGER_INDEX) * STAGGER_MS,
     /** 丸の持ち上げ量。線と同じガウス関数から出すので、線は必ず中心を通る */
     lift: lifts.value[index] ?? 0,
@@ -309,12 +312,100 @@ watch(() => props.steps, scheduleMeasure, { deep: true })
                 aria-hidden="true"
               >{{ node.order }}</span>
 
-              <!-- 完了ステップに企業からのFBが届いているときの目印 -->
+              <!-- 完了ステップに企業からのFBが届いているときの目印。
+                   アンケートの吹き出しタグ（右上）と衝突しないよう左上に置く -->
               <span
                 v-if="node.hasFeedback"
                 class="flow__mark"
                 aria-hidden="true"
               />
+
+              <!-- 面接アンケート未回答の目印（frontend.md §7-3）。
+                   丸い点だとFB印と見分けが付きにくいため、吹き出し型のタグ＋アイコンにする -->
+              <span
+                v-if="node.hasSurveyBadge"
+                class="flow__survey-badge"
+                aria-hidden="true"
+              >
+                <!-- クリップボード＋箇条書き（アンケート帳票の意匠）。塗りなし・線のみ -->
+                <svg
+                  class="flow__survey-icon"
+                  viewBox="0 0 14 16"
+                >
+                  <circle
+                    cx="7"
+                    cy="1.4"
+                    r="1"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1"
+                  />
+                  <rect
+                    x="1.5"
+                    y="2.4"
+                    width="11"
+                    height="12.2"
+                    rx="1.3"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.1"
+                  />
+                  <rect
+                    x="3.3"
+                    y="5.7"
+                    width="1.3"
+                    height="1.3"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="0.9"
+                  />
+                  <line
+                    x1="5.9"
+                    y1="6.35"
+                    x2="10.2"
+                    y2="6.35"
+                    stroke="currentColor"
+                    stroke-width="1"
+                    stroke-linecap="round"
+                  />
+                  <rect
+                    x="3.3"
+                    y="8.5"
+                    width="1.3"
+                    height="1.3"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="0.9"
+                  />
+                  <line
+                    x1="5.9"
+                    y1="9.15"
+                    x2="10.2"
+                    y2="9.15"
+                    stroke="currentColor"
+                    stroke-width="1"
+                    stroke-linecap="round"
+                  />
+                  <rect
+                    x="3.3"
+                    y="11.3"
+                    width="1.3"
+                    height="1.3"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="0.9"
+                  />
+                  <line
+                    x1="5.9"
+                    y1="11.95"
+                    x2="10.2"
+                    y2="11.95"
+                    stroke="currentColor"
+                    stroke-width="1"
+                    stroke-linecap="round"
+                  />
+                </svg>
+              </span>
             </span>
 
             <span class="flow__label">{{ node.label }}</span>
@@ -333,6 +424,10 @@ watch(() => props.steps, scheduleMeasure, { deep: true })
               v-if="node.hasFeedback"
               class="sr-only"
             >企業からのフィードバックあり</span>
+            <span
+              v-if="node.hasSurveyBadge"
+              class="sr-only"
+            >アンケート未回答</span>
           </button>
         </li>
       </ol>
@@ -518,16 +613,38 @@ watch(() => props.steps, scheduleMeasure, { deep: true })
   height: 18px;
 }
 
-/* FB が届いている目印。丸の右上の弧の上に載せる */
+/* FB が届いている目印。アンケートの吹き出しタグ（右上）と衝突しないよう左上に置く */
 .flow__mark {
   position: absolute;
   top: 2px;
-  right: 2px;
+  left: 2px;
   width: 10px;
   height: 10px;
   border: 2px solid var(--color-canvas);
   border-radius: var(--radius-pill);
   background-color: var(--color-primary);
+}
+
+/* 面接アンケート未回答の目印。丸い点だとFB印と混同しやすいため、
+   吹き出し型のタグ（右下の角だけ尖らせて「つの」に見せる）＋アイコンにする */
+.flow__survey-badge {
+  position: absolute;
+  top: -16px;
+  right: -17px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 27px;
+  height: 27px;
+  border: 1.5px solid var(--color-primary);
+  border-radius: 8px 8px 8px 2px;
+  background-color: var(--color-canvas);
+  color: var(--color-primary);
+}
+
+.flow__survey-icon {
+  width: 15px;
+  height: 17px;
 }
 
 /* これからのステップのラベル。丸ほどは薄くしない（読めなくなるため） */
