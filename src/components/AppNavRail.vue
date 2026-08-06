@@ -24,6 +24,7 @@ import UserAvatar from "./UserAvatar.vue"
 /** ワードマークの表記は「楽楽連ラク」に統一する（CLAUDE.md §1） */
 const BRAND_NAME = "楽楽連ラク"
 const INBOX_PATH = "/inbox"
+const CHAT_PATH = "/chat"
 const STUDENTS_PATH = "/students"
 const NOTIFICATIONS_PATH = "/notifications"
 const SETTINGS_PATH = "/settings/profile"
@@ -44,11 +45,15 @@ const router = useRouter()
  * ロールごとのナビ項目（frontend.md §1）。
  * 人事は「ホーム（S-07・自分の担当の俯瞰）」「受信箱（S-03/S-04・返信）」
  * 「全学生（S-08・担当外と未配属の拾い上げ）」を行き来する。
- * 学生は自分のトーク1枚だけ。着地点は必ず auth.homePath から取り、パスを直書きしない。
+ * 学生は「マイページ（S-09・選考状況）」と「チャット（S-05・返信）」の2枚。
+ * 着地点は必ず auth.homePath から取り、パスを直書きしない。
  */
 const navItems = computed(() =>
   auth.isStudent
-    ? [{ to: auth.homePath, icon: "chat", label: "チャット" }]
+    ? [
+        { to: auth.homePath, icon: "home", label: "マイページ" },
+        { to: CHAT_PATH, icon: "chat", label: "チャット" },
+      ]
     : [
         { to: auth.homePath, icon: "home", label: "ホーム" },
         { to: INBOX_PATH, icon: "inbox", label: "受信箱" },

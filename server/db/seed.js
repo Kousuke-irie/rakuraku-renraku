@@ -534,6 +534,74 @@ const COMPANY_INFO = {
   recruitSiteUrl: 'https://example.com/recruit',
 };
 
+/**
+ * 選考フローの初期設定（P2-11）。学生のマイページ（S-09）に並ぶステップ。
+ * 四次・五次面接は使わない設定にして「取捨選択できる」ことがデモで分かるようにする。
+ */
+const SELECTION_STEPS = [
+  {
+    statusKey: SELECTION_STATUS.ENTRY, isEnabled: 1, label: null,
+    description: 'エントリーの受付が完了した段階です。マイページから選考の進み方を確認できます。',
+    points: '登録内容に誤りがないかご確認ください。ご不明点はチャットからお問い合わせいただけます。',
+  },
+  {
+    statusKey: SELECTION_STATUS.DOCUMENT, isEnabled: 1, label: '書類選考',
+    description: 'ご提出いただいたエントリーシートと履歴書を、採用担当と現場社員が拝見します。所要期間は5営業日ほどです。',
+    points: '「学生時代に力を入れたこと」は、結果よりも過程での判断や工夫を具体的に書いていただけると伝わりやすいです。',
+  },
+  {
+    statusKey: SELECTION_STATUS.APTITUDE, isEnabled: 1, label: null,
+    description: 'SPI形式の適性検査です。所要時間は約60分、ご自宅のPCから受検いただけます。',
+    points: '合否だけで判断する材料ではありません。落ち着いて取り組める時間帯を選んでください。',
+  },
+  {
+    statusKey: SELECTION_STATUS.INTERVIEW_1, isEnabled: 1, label: null,
+    description: '現場社員2名との面接です（約45分・オンライン可）。相互理解の場と考えています。',
+    points: '入社後に関わる社員が担当します。仕事の実態について遠慮なく質問してください。',
+  },
+  {
+    statusKey: SELECTION_STATUS.INTERVIEW_2, isEnabled: 1, label: null,
+    description: '部門責任者との面接です（約60分・対面）。これまでの経験と当社での志向の重なりを伺います。',
+    points: 'ご自身が何を大切に働きたいかを、率直にお話しいただけると擦り合わせがしやすくなります。',
+  },
+  {
+    statusKey: SELECTION_STATUS.INTERVIEW_3, isEnabled: 1, label: '最終面接',
+    description: '役員との最終面接です（約45分・対面）。相互の意思確認の場です。',
+    points: '評価というより、入社後の期待値をすり合わせる時間です。迷っている点があればその場でお伝えください。',
+  },
+  { statusKey: SELECTION_STATUS.INTERVIEW_4, isEnabled: 0, label: null, description: null, points: null },
+  { statusKey: SELECTION_STATUS.INTERVIEW_5, isEnabled: 0, label: null, description: null, points: null },
+  {
+    statusKey: SELECTION_STATUS.OFFER, isEnabled: 1, label: null,
+    description: '内定のご連絡です。承諾の期限や入社までの流れは、担当より個別にご案内します。',
+    points: '迷いがある場合は遠慮なくご相談ください。社員との面談の場を追加で設定できます。',
+  },
+];
+
+/**
+ * 選考フィードバック（P2-11）のデモ。
+ * 学生のマイページでは**完了済みステップのぶんだけ**が見える。
+ * student1 は一次面接中なので、書類・適性検査ぶんが本人に見える状態になる。
+ */
+const SELECTION_FEEDBACKS = [
+  {
+    loginId: 'student1', statusKey: SELECTION_STATUS.DOCUMENT,
+    body: '志望動機が具体的で、当社の事業理解が深いと感じました。研究内容を平易に説明できている点も高く評価しています。',
+  },
+  {
+    loginId: 'student1', statusKey: SELECTION_STATUS.APTITUDE,
+    body: '論理分野が特に高い水準でした。安心して次の面接に進んでいただけます。',
+  },
+  {
+    loginId: 'student2', statusKey: SELECTION_STATUS.DOCUMENT,
+    body: 'ゼミでの活動を通じた課題設定の視点が印象的でした。面接ではその背景を詳しくお聞かせください。',
+  },
+  {
+    loginId: 'student4', statusKey: SELECTION_STATUS.INTERVIEW_1,
+    body: 'チームでの立ち回りについて具体的なお話をいただけました。次回は中長期のキャリア観を伺えればと思います。',
+  },
+];
+
 // ---------------------------------------------------------------------------
 // 生成
 // ---------------------------------------------------------------------------
@@ -640,8 +708,8 @@ const STUDENTS = [...SHOWCASE_STUDENTS, ...buildGeneratedStudents()];
 function clearExistingData() {
   // rooms.last_message_id が messages を参照する循環FKがあるため、先にNULL化してから削除する。
   db.prepare(`UPDATE rooms SET last_message_id = NULL, ai_analyzed_message_id = NULL`).run();
-  // alerts は messages/rooms を参照するので、それらより先に消す
-  const tables = ['alerts', 'read_receipts', 'memos', 'room_members', 'messages', 'rooms', 'students', 'users', 'tag_rules', 'compliance_rules', 'snippets', 'company_info'];
+  // alerts は messages/rooms/users を参照するので、それらより先に消す
+  const tables = ['alerts', 'read_receipts', 'memos', 'room_members', 'messages', 'rooms', 'selection_feedbacks', 'students', 'users', 'tag_rules', 'compliance_rules', 'snippets', 'company_info', 'selection_steps'];
   for (const table of tables) {
     db.prepare(`DELETE FROM ${table}`).run();
   }
@@ -652,6 +720,30 @@ function insertCompanyInfo() {
     `INSERT INTO company_info (id, name, description, recruit_site_url, updated_at)
      VALUES (1, ?, ?, ?, ?)`,
   ).run(COMPANY_INFO.name, COMPANY_INFO.description, COMPANY_INFO.recruitSiteUrl, new Date().toISOString());
+}
+
+function insertSelectionSteps() {
+  const now = new Date().toISOString();
+  SELECTION_STEPS.forEach((step, index) => {
+    db.prepare(
+      `INSERT INTO selection_steps (status_key, is_enabled, sort_order, label, description, points, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run(step.statusKey, step.isEnabled, index, step.label, step.description, step.points, now);
+  });
+}
+
+/** 学生を全員入れ終わってから呼ぶ（student_user_id が users を参照するため） */
+function insertSelectionFeedbacks(studentUserIds, authorId) {
+  const now = new Date().toISOString();
+  for (const feedback of SELECTION_FEEDBACKS) {
+    const studentUserId = studentUserIds[feedback.loginId];
+    if (!studentUserId) continue;
+
+    db.prepare(
+      `INSERT INTO selection_feedbacks (student_user_id, status_key, body, author_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(studentUserId, feedback.statusKey, feedback.body, authorId, now, now);
+  }
 }
 
 function insertUser({ loginId, displayName, role, avatarColor }, passwordHash) {
@@ -782,6 +874,9 @@ function insertStudentRoom(student, { hrUserIds, allHrIds, passwordHash }) {
   db.prepare(
     `UPDATE rooms SET last_message_id = ?, last_message_at = ?, last_student_message_at = ?, urgency = ? WHERE id = ?`,
   ).run(lastMessageId, lastMessageAt, lastStudentMessageAt, urgency, roomId);
+
+  // 選考フィードバック（P2-11）の投入で参照する
+  return studentUserId;
 }
 
 function seed() {
@@ -794,6 +889,7 @@ function seed() {
     insertComplianceRules();
     insertSnippets();
     insertCompanyInfo();
+    insertSelectionSteps();
 
     const hrUserIds = {};
     for (const hrUser of HR_USERS) {
@@ -801,9 +897,12 @@ function seed() {
     }
     const allHrIds = Object.values(hrUserIds);
 
+    const studentUserIds = {};
     for (const student of STUDENTS) {
-      insertStudentRoom(student, { hrUserIds, allHrIds, passwordHash });
+      studentUserIds[student.loginId] = insertStudentRoom(student, { hrUserIds, allHrIds, passwordHash });
     }
+
+    insertSelectionFeedbacks(studentUserIds, hrUserIds.hr1);
   });
 
   run();
