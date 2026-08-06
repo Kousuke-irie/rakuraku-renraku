@@ -162,7 +162,10 @@ const onToggleExpand = () => {
           {{ company.name }}
         </p>
 
-        <div class="company__texts">
+        <div
+          class="company__texts"
+          :class="{ 'company__texts--expanded': isBanner && isExpanded }"
+        >
           <p
             v-for="(paragraph, index) in visibleParagraphs"
             :key="index"
@@ -267,6 +270,22 @@ const onToggleExpand = () => {
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+
+/* 展開で現れる段落だけ、短くフェードさせる。
+   高さは動かさない（レイアウトを動かすアニメーションは避ける）。
+   1段落目は最初から見えているので対象にしない */
+.company__texts--expanded .company__text:not(:first-child) {
+  animation: text-in 160ms ease;
+}
+
+@keyframes text-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .company__more {
@@ -399,6 +418,10 @@ const onToggleExpand = () => {
 @media (prefers-reduced-motion: reduce) {
   .company__link {
     transition: none;
+  }
+
+  .company__texts--expanded .company__text:not(:first-child) {
+    animation: none;
   }
 }
 </style>

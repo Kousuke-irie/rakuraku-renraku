@@ -75,10 +75,17 @@ const selectedStep = computed(
 
 /**
  * 選考全体のメモ（S-10）。ステップに属さない「志望動機の軸」「企業研究」の置き場。
- * 辞退している場合は出さない（書く相手のいないメモを残しても意味がないため）。
+ * 辞退している場合は出さない（これから書く相手のいないメモ欄を残しても意味がないため）。
  */
 const overallNote = computed(() => flow.value?.overallNote ?? null)
 const showOverallNote = computed(() => Boolean(flow.value) && !isDeclined.value)
+
+/**
+ * 下段を出すか。
+ * ★辞退していてもチャットカードは残す。選考が終わったあとこそ、
+ *   問い合わせ先が画面から消えていると学生は行き場を失う。
+ */
+const showBottom = computed(() => Boolean(flow.value))
 
 // 「いまは○○の段階です」という一文は置かない。
 // 現在地はフロー図（持ち上がった山の頂上＋オレンジ）が示すので、同じことを
@@ -150,6 +157,12 @@ const onSelect = (statusKey) => {
           class="board__note"
           :class="{ 'board__note--alert': unreadCount > 0 }"
         >
+          <!-- オレンジは面と装飾で使い、本文の色には使わない（DESIGN.md） -->
+          <span
+            v-if="unreadCount > 0"
+            class="board__dot"
+            aria-hidden="true"
+          />
           {{ flowNote }}
         </p>
       </header>
@@ -181,11 +194,13 @@ const onSelect = (statusKey) => {
 
     <!-- 下段：自分が書くもの（左）と、担当者とのやり取り（右） -->
     <div
-      v-if="showOverallNote"
+      v-if="showBottom"
       class="bottom"
+      :class="{ 'bottom--single': !showOverallNote }"
     >
       <!-- 選考全体のメモ（S-10）。ステップに紐づかない考えごとの置き場 -->
       <StudentNoteEditor
+        v-if="showOverallNote"
         :note-key="STUDENT_NOTE_OVERALL_KEY"
         :note="overallNote"
         label="選考全体のメモ"
@@ -250,10 +265,23 @@ const onSelect = (statusKey) => {
 }
 
 /* 未読のFBがあるときだけ、この一文を本文の濃さまで持ち上げる。
-   面や枠は足さない（主役はあくまで下のフロー図） */
+   面や枠は足さない（主役はあくまで下のフロー図）。
+   ★オレンジは本文の色に使わない（DESIGN.md）。色ではなく濃さと点で差をつける */
 .board__note--alert {
-  color: var(--color-primary);
+  display: flex;
+  gap: var(--space-sm);
+  align-items: center;
+  color: var(--color-ink);
   font-weight: 700;
+}
+
+/* 図の中の「FBあり」の点と同じ印。文章と図で同じ記号を使い、対応関係を作る */
+.board__dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background-color: var(--color-primary);
 }
 
 /* 下段は選考フローのカードとは別の紙にする。
@@ -264,12 +292,21 @@ const onSelect = (statusKey) => {
   flex: none;
   grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
   gap: var(--space-md);
-  align-items: start;
+  /* 底を揃える。高さの違う2枚が並ぶと、下に段差ができて雑に見える */
+  align-items: stretch;
   padding-bottom: var(--space-sm);
 }
 
+/* 辞退時はメモが消えてチャットカードだけが残る。
+   1枚だけ全幅に伸ばすと締まらないので、右寄せの手紙くらいの幅に留める */
+.bottom--single {
+  grid-template-columns: minmax(0, 380px);
+  justify-content: end;
+}
+
 @media (max-width: 900px) {
-  .bottom {
+  .bottom,
+  .bottom--single {
     grid-template-columns: minmax(0, 1fr);
   }
 }

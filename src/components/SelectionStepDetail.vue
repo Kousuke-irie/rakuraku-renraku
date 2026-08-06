@@ -323,10 +323,13 @@ const formatUpdatedAt = (isoString) =>
   line-height: 1.8;
 }
 
-/* FB 未着の枠。何も無いより「これから届く」と分かる方が学生の不安が減る */
+/* FB 未着の枠。何も無いより「これから届く」と分かる方が学生の不安が減る。
+   届いたときのFBカードと同じ位置・同じ形にして、面の濃さだけを落とす
+   （点線はこのシステムの他のどこにも無いので、ここだけ浮く） */
 .detail__pending {
   padding: var(--space-lg);
-  border: 1px dashed var(--color-hairline);
+  border: 1px solid var(--color-hairline);
+  border-left: 3px solid var(--color-hairline);
   border-radius: var(--radius-md);
 }
 

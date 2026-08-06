@@ -69,9 +69,10 @@ const unreadLabel = computed(() => `未読${unreadCount.value}件`)
     :class="{ 'chat--unread': hasUnread }"
     :to="CHAT_PATH"
   >
+    <!-- 隣の「選考全体のメモ」と同じ骨格（ラベル＋状態 → 中身）に揃える -->
     <header class="chat__head">
-      <h2 class="chat__heading">
-        {{ partnerName }}
+      <h2 class="chat__label">
+        担当者とのチャット
       </h2>
 
       <span
@@ -84,19 +85,25 @@ const unreadLabel = computed(() => `未読${unreadCount.value}件`)
       >{{ time }}</span>
     </header>
 
-    <!-- ★本文はテキスト補間で描画する。v-html は使わない（frontend.md §10-1） -->
-    <p
-      v-if="preview"
-      class="chat__preview"
-    >
-      {{ preview }}
-    </p>
-    <p
-      v-else
-      class="chat__preview chat__preview--empty"
-    >
-      選考について気になることは、いつでもご相談いただけます。
-    </p>
+    <div class="chat__body">
+      <p class="chat__name">
+        {{ partnerName }}
+      </p>
+
+      <!-- ★本文はテキスト補間で描画する。v-html は使わない（frontend.md §10-1） -->
+      <p
+        v-if="preview"
+        class="chat__preview"
+      >
+        {{ preview }}
+      </p>
+      <p
+        v-else
+        class="chat__preview chat__preview--empty"
+      >
+        選考について気になることは、いつでもご相談いただけます。
+      </p>
+    </div>
 
     <p class="chat__action">
       チャットを開く
@@ -111,7 +118,11 @@ const unreadLabel = computed(() => `未読${unreadCount.value}件`)
 .chat {
   display: flex;
   flex-direction: column;
-  gap: var(--space-sm);
+  /* 上（ラベルと中身）と下（導線）に分けて底を埋める。
+     隣のメモが縦に長いので、揃えたときに間延びさせない */
+  gap: var(--space-md);
+  justify-content: space-between;
+  height: 100%;
   padding: var(--space-md) var(--space-lg);
   border: 1px solid var(--color-hairline);
   border-radius: var(--radius-md);
@@ -144,7 +155,22 @@ const unreadLabel = computed(() => `未読${unreadCount.value}件`)
   justify-content: space-between;
 }
 
-.chat__heading {
+/* 隣のメモの見出し（.note__label）と同じ寸法・同じ字送りに揃える */
+.chat__label {
+  margin: 0;
+  color: var(--color-ink-mute);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.chat__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.chat__name {
   margin: 0;
   font-size: 13px;
   font-weight: 700;
@@ -188,8 +214,20 @@ const unreadLabel = computed(() => `未読${unreadCount.value}件`)
   text-align: right;
 }
 
+/* 矢印だけが少し先へ出る。カード全体がリンクであることの小さな手応え */
+.chat__action span {
+  display: inline-block;
+  transition: transform 120ms ease;
+}
+
+.chat:hover .chat__action span,
+.chat:focus-visible .chat__action span {
+  transform: translateX(3px);
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .chat {
+  .chat,
+  .chat__action span {
     transition: none;
   }
 }
