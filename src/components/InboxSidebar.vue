@@ -222,6 +222,11 @@ const sortLabel = computed(() => SORT_KEY_META[rooms.sortKey]?.label ?? "")
                 :value="room.urgency"
                 size="sm"
               />
+              <StatusChip
+                :kind="CHIP_KIND.TOPIC"
+                :value="room.topicTag"
+                size="sm"
+              />
               <ElapsedBadge
                 :since="room.lastStudentMessageAt"
                 :handling-status="room.handlingStatus"
