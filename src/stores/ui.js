@@ -4,9 +4,11 @@ import {
   ALERT_KIND_META,
   COMPLIANCE_AI_STATUS,
   DEFAULT_BOARD_GROUP_BY,
+  IMPORTANT_ALERT_KINDS,
   MEMO_SCOPE,
   MEMO_SCOPE_VALUES,
 } from '../constants/index.js'
+import { alertDestination, NOTIFICATIONS_PATH } from '../utils/alertLink.js'
 
 /** トーストの連番。Date.now() だと同時 push で衝突する */
 let toastSeq = 0
@@ -190,6 +192,11 @@ export const useUiStore = defineStore('ui', {
     /** ナビレールのベルバッジ用。サーバが数えた未読件数をそのまま持つ */
     alertsUnreadCount: 0,
     alertsLoaded: false,
+    /**
+     * 接続時の同期（syncAlertSummary）を一度でも済ませたか（P4-6）。
+     * 初回は「未読が N 件あります」、再接続以降は「増えた分」だけを知らせるための目印。
+     */
+    alertsSyncedOnce: false,
     /**
      * 通知一覧の絞り込み（P4-1b）。false＝未対応のみ／true＝解消済みも含む。
      * 既定は「未対応のみ」。片付いたものを残すと「上から処理すれば終わる」が崩れる。
@@ -522,6 +529,50 @@ export const useUiStore = defineStore('ui', {
     },
 
     /**
+     * socket 接続時の通知の同期（P4-6）。
+     *
+     * 切断中に作られた／解消された通知は `alert:new` / `alert:resolved` が届かない。
+     * 件数を数え直したうえで、**溜まっていることをバナーで知らせる**。
+     * ベルの数字が黙って変わるだけでは、画面を見ていても気づけない。
+     *
+     * - 初回接続（ログイン直後）：未読があれば「未読の通知が N 件あります」
+     * - 再接続：**増えた分があるときだけ**出す。変化が無いときに出すとうるさい
+     */
+    async syncAlertSummary() {
+      const previousCount = this.alertsUnreadCount
+      const isFirstSync = !this.alertsSyncedOnce
+
+      let data
+      try {
+        ({ data } = await alertsApi.list({ unread: true, limit: 1 }))
+      } catch {
+        // 数えられないだけ。バナーも出さずに黙って諦める
+        return
+      }
+
+      this.alertsUnreadCount = data.unreadCount
+      this.alertsSyncedOnce = true
+
+      const added = data.unreadCount - previousCount
+      if (isFirstSync ? data.unreadCount === 0 : added <= 0) return
+
+      const emphasis = (data.unreadImportantCount ?? 0) > 0
+      const message = isFirstSync
+        ? `未読の通知が ${data.unreadCount} 件あります。`
+        : `未読の通知が ${added} 件増えました（未読 ${data.unreadCount} 件）。`
+
+      this.pushToast({
+        type: 'info',
+        title: emphasis ? '通知（重要なものがあります）' : '通知',
+        message,
+        emphasis,
+        to: NOTIFICATIONS_PATH,
+        // 再接続を繰り返しても積み上がらないよう、同じ key のものは置き換える
+        key: 'alert-summary',
+      })
+    },
+
+    /**
      * socket `alert:new` で届いた通知を先頭に積む（P4-1）。
      * 同じ id が既にあれば無視する（再接続時の重複配信対策）。
      */
@@ -532,12 +583,16 @@ export const useUiStore = defineStore('ui', {
       this.alerts = [alert, ...this.alerts]
       if (!alert.readAt) this.alertsUnreadCount += 1
 
-      // ★通知画面を開いていない人に届けるための一手（P4-1b）。
-      //   ベルの数字が静かに増えるだけでは、その場にいても気づけない
+      // ★通知画面を開いていない人に届けるための一手（P4-1b/P4-6）。
+      //   ベルの数字が静かに増えるだけでは、その場にいても気づけない。
+      //   見出しに種別と学生名、本文に detail を出し、クリックで該当画面へ飛ばす
       const kindLabel = ALERT_KIND_META[alert.kind]?.label ?? '通知'
       this.pushToast({
         type: 'info',
-        message: `${kindLabel}：${alert.studentName ?? '担当学生'}`,
+        title: alert.studentName ? `${kindLabel}｜${alert.studentName}` : kindLabel,
+        message: alert.detail,
+        emphasis: IMPORTANT_ALERT_KINDS.includes(alert.kind),
+        to: alertDestination(alert),
       })
     },
 
@@ -612,8 +667,22 @@ export const useUiStore = defineStore('ui', {
       this.connectionState = state
     },
 
-    pushToast({ type, message }) {
-      this.toasts.push({ id: ++toastSeq, type, message })
+    /**
+     * バナー（ToastStack）を1枚積む。
+     *
+     * @param {object} toast
+     * @param {'info'|'error'} toast.type 左端の色帯。error は失敗の報告
+     * @param {string} toast.message 本文。1〜2行で読み切れる長さに収める
+     * @param {string} [toast.title] 見出し（通知の種別など）。省略時は本文だけの1段表示
+     * @param {boolean} [toast.emphasis] 重要。テキストラベルも併記される（色だけに頼らない）
+     * @param {string} [toast.to] クリックしたときの遷移先パス。無ければクリックできない
+     * @param {string} [toast.key] 同じ key のバナーは**置き換える**。
+     *   再接続を繰り返したときに同じまとめバナーが積み上がるのを防ぐ
+     */
+    pushToast({ type, message, title = null, emphasis = false, to = null, key = null }) {
+      if (key) this.toasts = this.toasts.filter((toast) => toast.key !== key)
+
+      this.toasts.push({ id: ++toastSeq, type, message, title, emphasis, to, key })
     },
 
     dismissToast(id) {
@@ -644,6 +713,7 @@ export const useUiStore = defineStore('ui', {
       this.alertsUnreadCount = 0
       this.alertsLoaded = false
       this.alertsIncludeResolved = false
+      this.alertsSyncedOnce = false
       this.circleReveal = emptyCircleReveal()
       this.connectionState = 'connecting'
       this.toasts = []

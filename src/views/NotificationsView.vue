@@ -14,6 +14,7 @@ import { computed, onMounted } from "vue"
 import { useRouter } from "vue-router"
 import { ALERT_KIND, ALERT_KIND_META, SLA_ALERT_KINDS } from "../constants/index.js"
 import { useUiStore } from "../stores/ui.js"
+import { alertDestination } from "../utils/alertLink.js"
 
 // #region global state
 const ui = useUiStore()
@@ -52,10 +53,10 @@ onMounted(() => ui.fetchAlerts())
 // #endregion
 
 // #region browser event handler
-/** 行クリック：既読にしてから該当ルームを開く */
+/** 行クリック：既読にしてから該当画面を開く（遷移先はバナーと同じ規則・P4-6） */
 const onOpen = async (alert) => {
   await ui.markAlertRead(alert.id)
-  await router.push(`/inbox/${alert.roomId}`)
+  await router.push(alertDestination(alert))
 }
 
 /** @param {boolean} includeResolved 「未対応」／「すべて」の切り替え（P4-1b） */

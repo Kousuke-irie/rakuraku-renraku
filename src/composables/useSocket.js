@@ -30,7 +30,7 @@ import { useUiStore } from '../stores/ui.js'
  * | `alert:new`       | `{ alert }`                                  | `ui.receiveAlert(alert)`（宛先本人にのみ届く）        |
  * | `alert:resolved`  | `{ alertIds, unreadCount }`                  | `ui.receiveAlertsResolved(payload)`                  |
  * | `error`           | `{ code, message }`                          | `ui.pushToast({ type:'error', message })`。`unauthorized` なら `auth.reset()` |
- * | `connect`         | -                                            | `ui.setConnectionState('connected')` → `rooms.fetchRooms()` + 開いているルームの `messages.resync()` + 人事なら `ui.fetchAlertCount()` |
+ * | `connect`         | -                                            | `ui.setConnectionState('connected')` → `rooms.fetchRooms()` + 開いているルームの `messages.resync()` + 人事なら `ui.syncAlertSummary()` |
  * | `disconnect`      | -                                            | `ui.setConnectionState('disconnected')`              |
  * | `connect_error`   | -                                            | `ui.setConnectionState('disconnected')`（指数バックオフで再接続） |
  *
@@ -115,8 +115,9 @@ function registerHandlers() {
     rooms.fetchRooms()
     if (ui.selectedRoomId) messages.resync(ui.selectedRoomId)
     // 切断中に作られた／解消された通知は alert:new / alert:resolved が届かない。
-    // 再接続のたびに数え直す（P4-1b）。学生には通知が無いので取りに行かない
-    if (auth.isHr) ui.fetchAlertCount()
+    // 数え直し、溜まっていればバナーで知らせる（P4-1b / P4-6）。
+    // 学生には通知が無いので取りに行かない
+    if (auth.isHr) ui.syncAlertSummary()
   })
   socket.on('disconnect', () => ui.setConnectionState('disconnected'))
   socket.on('connect_error', (error) => {

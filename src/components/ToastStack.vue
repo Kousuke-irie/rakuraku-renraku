@@ -1,13 +1,20 @@
 <script setup>
-// 通知トースト（uiStore.toasts の描画先）
+// 通知バナー（uiStore.toasts の描画先・P4-6）
 //
-// 失敗を黙って握りつぶさないための共通の出口。
-// - socket の `error` イベント（useSocket.js）
-// - 楽観更新のロールバック（P1-2 対応ステータス変更）
+// 画面右上に iOS の通知のように重ねる。ここが「気づかせる」唯一の出口で、
+// - SLA・会議室などの新着通知（P4-1b：alert:new → ui.receiveAlert）
+// - 接続時のまとめ（P4-6：ui.syncAlertSummary）
+// - socket の `error` イベント、楽観更新のロールバック
+// がすべてここに出る。
+//
+// ★右上に置く理由：受信箱の左（一覧）・下（入力欄）は操作中の視線が乗る場所で、
+//   バナーが被ると邪魔になる。右上は3ペインのどれとも競合しない。
+//   以前は右下だったが、AI ランチャー（右下の丸ボタン）との回避に寄りすぎていた。
 //
 // 表示するだけのコンポーネントで、積む／消すのは uiStore が持つ。
-// 自動で消える必要があるものだけタイマーで dismiss する。
+// 遷移だけはここで行う（router はコンポーネントの責務）。
 import { onBeforeUnmount, watch } from "vue"
+import { useRouter } from "vue-router"
 import { useUiStore } from "../stores/ui.js"
 
 // #region constants
@@ -17,6 +24,10 @@ const AUTO_DISMISS_MS = 6000
 
 // #region global state
 const ui = useUiStore()
+// #endregion
+
+// #region local variable
+const router = useRouter()
 // #endregion
 
 // #region local state
@@ -56,6 +67,16 @@ onBeforeUnmount(() => {
   timers.clear()
 })
 // #endregion
+
+// #region browser event handler
+/** バナー本体のクリック：該当画面へ飛び、バナーは閉じる */
+const onOpen = async (toast) => {
+  if (!toast.to) return
+
+  dismiss(toast.id)
+  await router.push(toast.to)
+}
+// #endregion
 </script>
 
 <template>
@@ -70,11 +91,33 @@ onBeforeUnmount(() => {
       v-for="toast in ui.toasts"
       :key="toast.id"
       class="toast"
-      :class="`toast--${toast.type}`"
+      :class="[
+        `toast--${toast.type}`,
+        { 'toast--emphasis': toast.emphasis },
+      ]"
     >
-      <p class="toast__message">
-        {{ toast.message }}
-      </p>
+      <!-- 遷移先があるときだけ押せる。無いバナー（保存しました等）は div で出す -->
+      <component
+        :is="toast.to ? 'button' : 'div'"
+        class="toast__main"
+        :class="{ 'toast__main--clickable': toast.to }"
+        :type="toast.to ? 'button' : null"
+        @click="onOpen(toast)"
+      >
+        <span
+          v-if="toast.title"
+          class="toast__head"
+        >
+          <span class="toast__title">{{ toast.title }}</span>
+          <!-- 重要は色だけでなくテキストでも示す（CLAUDE.md §6-13） -->
+          <span
+            v-if="toast.emphasis"
+            class="toast__badge"
+          >重要</span>
+        </span>
+        <span class="toast__message">{{ toast.message }}</span>
+      </component>
+
       <button
         type="button"
         class="toast__close"
@@ -89,30 +132,47 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .toasts {
-  /* AI ランチャー（AiLauncherButton の .ai-fab：右下 24px・56px 角）と重ならないよう、
-     同じ右端に揃えたうえで FAB の上に積む */
-  --ai-fab-clearance: calc(var(--space-xxl) + 56px + var(--space-md));
-
   position: fixed;
   z-index: 100;
-  right: var(--space-xxl);
-  bottom: var(--ai-fab-clearance);
+  top: var(--space-md);
+  right: var(--space-md);
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
-  max-width: 360px;
+  width: 360px;
+  max-width: calc(100vw - var(--space-xxl));
 }
 
 .toast {
   display: flex;
-  gap: var(--space-sm);
+  gap: var(--space-xs);
   align-items: flex-start;
-  padding: var(--space-sm) var(--space-md);
+  padding: var(--space-sm) var(--space-sm) var(--space-sm) var(--space-md);
   border: 1px solid var(--color-hairline);
   border-left-width: 4px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   background-color: var(--color-canvas);
-  box-shadow: var(--shadow-1);
+  /* 上から降りてくる紙片に見せる。影は既存より一段強く（画面に浮かせる） */
+  box-shadow: var(--shadow-2);
+  animation: toast-in 180ms ease-out;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 動きを減らす設定を尊重する（アクセシビリティ） */
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
+  }
 }
 
 .toast--error {
@@ -123,10 +183,57 @@ onBeforeUnmount(() => {
   border-left-color: var(--color-primary);
 }
 
-.toast__message {
+/* 重要（上長エスカレーション）。帯を SLA の赤に振り替えて一段強くする */
+.toast--emphasis {
+  border-left-color: var(--color-sla-alert);
+}
+
+.toast__main {
+  display: flex;
   flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.toast__main--clickable {
+  cursor: pointer;
+}
+
+.toast__head {
+  display: flex;
+  gap: var(--space-xs);
+  align-items: center;
+}
+
+.toast__title {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.toast__badge {
+  flex: none;
+  padding: 0 var(--space-xs);
+  border-radius: var(--radius-pill);
+  background-color: var(--color-sla-alert);
+  color: #ffffff;
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.toast__message {
   font-size: 13px;
   line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .toast__close {

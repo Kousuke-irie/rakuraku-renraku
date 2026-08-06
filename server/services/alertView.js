@@ -3,7 +3,7 @@
 // 自分宛（target_user_id = 自分）の通知だけを扱う。
 // コンプライアンス警告は target_user_id が NULL なのでここには出ない
 // （本人へは送信前ダイアログで伝え、集計はダッシュボード P4-4 が担う）。
-import { SLA_ALERT_KINDS } from '../../shared/constants.js';
+import { IMPORTANT_ALERT_KINDS, SLA_ALERT_KINDS } from '../../shared/constants.js';
 
 const ALERT_SELECT_SQL = `
   SELECT
@@ -87,6 +87,25 @@ export function countUnreadAlerts(db, userId) {
           AND resolved_at IS NULL`,
     )
     .get(userId).count;
+}
+
+/**
+ * 未読のうち「重要」なものの件数（P4-6）。
+ * 接続時のまとめバナーを強調するかの判断だけに使う。
+ */
+export function countUnreadImportantAlerts(db, userId) {
+  const placeholders = IMPORTANT_ALERT_KINDS.map(() => '?').join(', ');
+
+  return db
+    .prepare(
+      `SELECT COUNT(*) AS count
+         FROM alerts
+        WHERE target_user_id = ?
+          AND read_at IS NULL
+          AND resolved_at IS NULL
+          AND kind IN (${placeholders})`,
+    )
+    .get(userId, ...IMPORTANT_ALERT_KINDS).count;
 }
 
 export function findAlertForUser(db, userId, alertId) {

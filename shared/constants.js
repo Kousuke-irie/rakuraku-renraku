@@ -428,6 +428,14 @@ export const SLA_ALERT_KINDS = Object.freeze([
   ALERT_KIND.SLA_ESCALATE,
 ]);
 
+/**
+ * バナーで強調する kind（P4-6）。
+ *
+ * 「重要」は**すでに手遅れになりかけているもの**に限る。増やすと強調の意味が薄まる。
+ * 上長エスカレーションは「担当者が返さないまま2日経った」＝一番まずい状態なのでここに入る。
+ */
+export const IMPORTANT_ALERT_KINDS = Object.freeze([ALERT_KIND.SLA_ESCALATE]);
+
 export const ALERT_SEVERITY = Object.freeze({
   /** 送信前に警告ダイアログで止める */
   BLOCK: 'block',

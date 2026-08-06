@@ -7,6 +7,7 @@ import db from '../db/index.js';
 import { requireAuth, requireHr } from '../middleware/auth.js';
 import {
   countUnreadAlerts,
+  countUnreadImportantAlerts,
   listAlertsForUser,
   markAlertRead,
   markAllAlertsRead,
@@ -29,7 +30,12 @@ router.get('/', (req, res) => {
     limit,
   });
 
-  res.json({ alerts, unreadCount: countUnreadAlerts(db, req.user.id) });
+  res.json({
+    alerts,
+    unreadCount: countUnreadAlerts(db, req.user.id),
+    // 接続時のまとめバナーを強調するかの判断に使う（P4-6）
+    unreadImportantCount: countUnreadImportantAlerts(db, req.user.id),
+  });
 });
 
 router.post('/read-all', (req, res) => {
