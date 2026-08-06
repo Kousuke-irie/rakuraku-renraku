@@ -1,101 +1,191 @@
-// P1-1: 受信箱一覧・ルーム詳細。
-// フィルタ・ステータス変更・既読(PATCH/read)はP1-7/P1-2/P2-7スコープのため対象外。
 import { Router } from 'express';
 import db from '../db/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { assertRoomMember } from '../services/roomAuth.js';
+import { findRoomForUser, listRoomsForUser } from '../services/roomView.js';
+import {
+  emitMessageNew,
+  emitReadUpdated,
+  emitRoomUpdated,
+  emitSummaryUpdated,
+} from '../services/realtime.js';
+import { updateHandlingStatus } from '../services/roomStatus.js';
+import { markRoomRead } from '../services/readReceipt.js';
+import {
+  HANDLING_STATUS_VALUES,
+  ROLE,
+  SELECTION_STATUS_VALUES,
+  SORT_KEY,
+  SORT_KEY_VALUES,
+  TOPIC_TAG_VALUES,
+  URGENCY_VALUES,
+} from '../../shared/constants.js';
 
 const router = Router();
+const ASSIGNEE_MODE = Object.freeze({ UNASSIGNED: 'unassigned', ASSIGNED: 'assigned' });
 
-const ROOM_LIST_SQL = `
-  SELECT
-    r.id,
-    r.handling_status        AS handlingStatus,
-    r.urgency,
-    r.is_pinned               AS isPinned,
-    r.last_student_message_at AS lastStudentMessageAt,
-    su.id                     AS studentUserId,
-    su.display_name           AS studentDisplayName,
-    su.avatar_color           AS studentAvatarColor,
-    st.university             AS studentUniversity,
-    st.selection_status       AS studentSelectionStatus,
-    au.id                     AS assigneeId,
-    au.display_name           AS assigneeDisplayName,
-    lm.id                     AS lastMessageId,
-    lm.body                   AS lastMessageBody,
-    lm.created_at             AS lastMessageCreatedAt,
-    lm.sender_id              AS lastMessageSenderId,
-    lm.topic_tag              AS topicTag,
-    (
-      SELECT COUNT(*) FROM messages m
-      WHERE m.room_id = r.id
-        AND m.deleted_at IS NULL
-        AND m.id > rm.last_read_message_id
-        AND m.sender_id != rm.user_id
-    ) AS unreadCount
-  FROM rooms r
-  JOIN room_members rm ON rm.room_id = r.id AND rm.user_id = ?
-  LEFT JOIN users su ON su.id = r.student_user_id
-  LEFT JOIN students st ON st.user_id = su.id
-  LEFT JOIN users au ON au.id = r.assignee_user_id
-  LEFT JOIN messages lm ON lm.id = r.last_message_id
-`;
-
-const ROOM_LIST_ORDER_SQL = `
-  ORDER BY
-    r.is_pinned DESC,
-    CASE r.urgency WHEN 'high' THEN 0 WHEN 'normal' THEN 1 WHEN 'low' THEN 2 ELSE 3 END,
-    r.last_student_message_at ASC
-`;
-
-function elapsedHours(isoString) {
-  if (!isoString) return null;
-  const elapsedMs = Date.now() - new Date(isoString).getTime();
-  return Math.round((elapsedMs / 3_600_000) * 10) / 10;
+function isHr(role) {
+  return role === ROLE.HR || role === ROLE.ADMIN;
 }
 
-function toRoomListItem(row) {
+function parseList(value) {
+  if (value === undefined || value === null || value === '') return [];
+  const values = Array.isArray(value) ? value : [value];
+  return values.flatMap((item) => String(item).split(',')).filter(Boolean);
+}
+
+function parseEnumList(value, allowedValues) {
+  const values = parseList(value);
+  return values.every((item) => allowedValues.includes(item)) ? values : null;
+}
+
+function jsonOrNull(values) {
+  return values.length > 0 ? JSON.stringify(values) : null;
+}
+
+function parseRoomFilters(query, userId) {
+  const handlingStatus = parseEnumList(query.handlingStatus, HANDLING_STATUS_VALUES);
+  const selectionStatus = parseEnumList(query.selectionStatus, SELECTION_STATUS_VALUES);
+  const topicTag = parseEnumList(query.topicTag, TOPIC_TAG_VALUES);
+  const urgency = parseEnumList(query.urgency, URGENCY_VALUES);
+  const sort = query.sort ?? SORT_KEY.DEFAULT;
+
+  if (
+    handlingStatus === null ||
+    selectionStatus === null ||
+    topicTag === null ||
+    urgency === null ||
+    !SORT_KEY_VALUES.includes(sort)
+  ) {
+    return null;
+  }
+
+  let assigneeMode = null;
+  let assigneeId = null;
+  if (query.assigneeId === ASSIGNEE_MODE.UNASSIGNED) {
+    assigneeMode = ASSIGNEE_MODE.UNASSIGNED;
+  } else if (query.assigneeId !== undefined && query.assigneeId !== '') {
+    assigneeId = Number(query.assigneeId);
+    if (!Number.isInteger(assigneeId) || assigneeId <= 0) return null;
+    assigneeMode = ASSIGNEE_MODE.ASSIGNED;
+  }
+
+  if (query.onlyMine === 'true') {
+    assigneeMode = ASSIGNEE_MODE.ASSIGNED;
+    assigneeId = userId;
+  }
+
+  const search = typeof query.q === 'string' ? query.q.trim() : '';
   return {
-    id: row.id,
-    student: {
-      userId: row.studentUserId,
-      displayName: row.studentDisplayName,
-      university: row.studentUniversity,
-      selectionStatus: row.studentSelectionStatus,
-      avatarColor: row.studentAvatarColor,
-    },
-    handlingStatus: row.handlingStatus,
-    urgency: row.urgency,
-    topicTag: row.topicTag,
-    isPinned: !!row.isPinned,
-    assignee: row.assigneeId ? { id: row.assigneeId, displayName: row.assigneeDisplayName } : null,
-    unreadCount: row.unreadCount,
-    lastMessage: row.lastMessageId
-      ? { id: row.lastMessageId, body: row.lastMessageBody, createdAt: row.lastMessageCreatedAt, senderId: row.lastMessageSenderId }
-      : null,
-    lastStudentMessageAt: row.lastStudentMessageAt,
-    elapsedHours: elapsedHours(row.lastStudentMessageAt),
+    userId,
+    handlingStatuses: jsonOrNull(handlingStatus),
+    selectionStatuses: jsonOrNull(selectionStatus),
+    topicTags: jsonOrNull(topicTag),
+    urgencies: jsonOrNull(urgency),
+    assigneeMode,
+    assigneeId,
+    queryPattern: search ? `%${search}%` : null,
+    sort,
   };
 }
 
 router.get('/', requireAuth, (req, res) => {
-  const rows = db.prepare(ROOM_LIST_SQL + ROOM_LIST_ORDER_SQL).all(req.user.id);
-  res.json({ rooms: rows.map(toRoomListItem) });
+  const filters = parseRoomFilters(req.query, req.user.id);
+  if (!filters) {
+    return res.status(400).json({
+      error: 'invalid_query',
+      message: 'フィルタまたはソート条件が不正です',
+    });
+  }
+
+  res.json({ rooms: listRoomsForUser(db, filters) });
 });
 
 router.get('/:id', requireAuth, (req, res) => {
   const roomId = Number(req.params.id);
-
-  // RoomAccessDeniedError は errorHandler が 403 `{ error, message }` に変換する。
   assertRoomMember(db, req.user.id, roomId);
 
-  const row = db.prepare(`${ROOM_LIST_SQL} WHERE r.id = ?`).get(req.user.id, roomId);
-
-  if (!row) {
+  const room = findRoomForUser(db, req.user.id, roomId);
+  if (!room) {
     return res.status(404).json({ error: 'not_found', message: 'ルームが存在しません' });
   }
 
-  res.json({ room: toRoomListItem(row) });
+  res.json({ room });
+});
+
+router.patch('/:id', requireAuth, async (req, res, next) => {
+  try {
+    if (!isHr(req.user.role)) {
+      return res.status(403).json({ error: 'forbidden', message: '人事担当者のみ変更できます' });
+    }
+
+    const roomId = Number(req.params.id);
+    assertRoomMember(db, req.user.id, roomId);
+
+    const keys = Object.keys(req.body ?? {});
+    if (keys.length !== 1 || keys[0] !== 'handlingStatus') {
+      return res.status(400).json({
+        error: 'invalid_request',
+        message: 'このエンドポイントでは handlingStatus のみ変更できます',
+      });
+    }
+
+    const { handlingStatus } = req.body;
+    if (!HANDLING_STATUS_VALUES.includes(handlingStatus)) {
+      return res.status(400).json({ error: 'invalid_request', message: '対応ステータスが不正です' });
+    }
+
+    const result = updateHandlingStatus(db, {
+      roomId,
+      userId: req.user.id,
+      handlingStatus,
+    });
+
+    const room = findRoomForUser(db, req.user.id, roomId);
+    if (result.changed) {
+      const io = req.app.get('io');
+      if (result.message) await emitMessageNew(io, db, result.message);
+      await emitRoomUpdated(io, db, roomId);
+      emitSummaryUpdated(io, db);
+    }
+
+    res.json({ room });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/:id/read', requireAuth, async (req, res, next) => {
+  try {
+    const roomId = Number(req.params.id);
+    const lastReadMessageId = Number(req.body?.lastReadMessageId);
+    assertRoomMember(db, req.user.id, roomId);
+
+    if (!Number.isInteger(lastReadMessageId) || lastReadMessageId <= 0) {
+      return res.status(400).json({ error: 'invalid_request', message: '既読位置が不正です' });
+    }
+
+    const persistedId = markRoomRead(db, {
+      roomId,
+      userId: req.user.id,
+      lastReadMessageId,
+    });
+    if (persistedId === null) {
+      return res.status(400).json({
+        error: 'invalid_request',
+        message: '指定されたメッセージはこのルームに存在しません',
+      });
+    }
+
+    const payload = { roomId, userId: req.user.id, lastReadMessageId: persistedId };
+    const io = req.app.get('io');
+    emitReadUpdated(io, payload);
+    await emitRoomUpdated(io, db, roomId);
+
+    res.json(payload);
+  } catch (error) {
+    next(error);
+  }
 });
 
 export default router;
