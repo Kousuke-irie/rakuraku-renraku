@@ -258,6 +258,20 @@ export const useMessagesStore = defineStore('messages', {
       this.byRoomId[roomId] = mergeAscending(current, [{ ...message, sendStatus: SEND_STATUS.SENT }])
     },
 
+    /** schedule:request_updated を既存の日程予約カードへ反映する。 */
+    updateScheduleRequest(request) {
+      if (!request?.id) return
+      for (const [roomId, list] of Object.entries(this.byRoomId)) {
+        let changed = false
+        const next = list.map((message) => {
+          if (Number(message.scheduleRequestId) !== Number(request.id)) return message
+          changed = true
+          return { ...message, scheduleRequest: request }
+        })
+        if (changed) this.byRoomId[roomId] = next
+      }
+    },
+
     /**
      * ack（message:sent）を受けて楽観描画を確定する。
      * clientMsgId で仮メッセージを探し、サーバの message で置き換えて sendStatus='sent'。

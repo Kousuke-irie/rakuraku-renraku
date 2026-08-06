@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS messages (
     'absence_late', 'scheduling', 'aptitude_test', 'result_waiting', 'question', 'other'
   )),
   client_msg_id TEXT UNIQUE,
+  schedule_request_id INTEGER REFERENCES schedule_requests(id),
   created_at TEXT NOT NULL,
   deleted_at TEXT
 );
@@ -122,6 +123,68 @@ CREATE TABLE IF NOT EXISTS company_info (
   description TEXT,
   recruit_site_url TEXT,
   updated_at TEXT NOT NULL
+);
+
+-- 擬似カレンダー上の面接官。チャット利用者ではないため users とは分離する。
+CREATE TABLE IF NOT EXISTS calendar_interviewers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  external_id TEXT NOT NULL UNIQUE,
+  display_name TEXT NOT NULL,
+  department TEXT,
+  is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0, 1)),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+-- 擬似カレンダー上の既存予定。空き枠生成時に重なっている枠を受付終了として返す。
+CREATE TABLE IF NOT EXISTS calendar_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  interviewer_id INTEGER NOT NULL REFERENCES calendar_interviewers(id),
+  starts_at TEXT NOT NULL,
+  ends_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  CHECK(starts_at < ends_at)
+);
+
+-- 学生へ送る日程予約依頼。予約フローの状態の正はこの status とする。
+CREATE TABLE IF NOT EXISTS schedule_requests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  room_id INTEGER NOT NULL REFERENCES rooms(id),
+  student_user_id INTEGER NOT NULL REFERENCES users(id),
+  interviewer_id INTEGER NOT NULL REFERENCES calendar_interviewers(id),
+  created_by_user_id INTEGER NOT NULL REFERENCES users(id),
+  selection_stage TEXT NOT NULL,
+  duration_minutes INTEGER NOT NULL CHECK(duration_minutes > 0),
+  available_from TEXT NOT NULL,
+  available_until TEXT NOT NULL,
+  daily_start_time TEXT,
+  daily_end_time TEXT,
+  response_deadline TEXT NOT NULL,
+  interview_format TEXT NOT NULL CHECK(interview_format IN ('online', 'onsite')),
+  location_text TEXT,
+  needs_attention INTEGER NOT NULL DEFAULT 0 CHECK(needs_attention IN (0, 1)),
+  status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN (
+    'draft', 'waiting_student', 'booked', 'expired', 'cancelled'
+  )),
+  booked_slot_id TEXT,
+  booked_starts_at TEXT,
+  booked_ends_at TEXT,
+  booked_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  CHECK(available_from < available_until)
+);
+
+-- 予約成功の監査・競合防止。同じ外部枠IDは UNIQUE により必ず1件だけ成功する。
+CREATE TABLE IF NOT EXISTS calendar_bookings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  schedule_request_id INTEGER NOT NULL UNIQUE REFERENCES schedule_requests(id),
+  interviewer_id INTEGER NOT NULL REFERENCES calendar_interviewers(id),
+  external_slot_id TEXT NOT NULL UNIQUE,
+  starts_at TEXT NOT NULL,
+  ends_at TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'booked' CHECK(status = 'booked'),
+  created_at TEXT NOT NULL
 );
 
 -- 監視イベント（P4-0）。SLA 通知もコンプライアンス警告もここに集約する。
@@ -218,14 +281,41 @@ CREATE TABLE IF NOT EXISTS selection_feedbacks (
   UNIQUE(student_user_id, status_key)
 );
 
+-- 学生本人だけが読み書きする選考メモ（S-10）。人事の申し送りメモ（memos）とは別物。
+-- ★人事向けの読み取りクエリ・エンドポイントを作らないこと。本人しか見ないと分かって
+--   いるから率直に書ける、というのがこの機能の価値そのもの。
+-- note_key は 'overall'（選考全体）＋ 選考ステップ。並びは STUDENT_NOTE_KEY_VALUES と
+-- 完全に一致させること。NULL 許容にすると UNIQUE が効かず全体メモが重複する。
+CREATE TABLE IF NOT EXISTS student_notes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  student_user_id INTEGER NOT NULL REFERENCES users(id),
+  note_key TEXT NOT NULL CHECK(note_key IN (
+    'overall',
+    'entry', 'document', 'aptitude',
+    'interview_1', 'interview_2', 'interview_3', 'interview_4', 'interview_5',
+    'offer'
+  )),
+  body TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(student_user_id, note_key)
+);
+
 CREATE INDEX IF NOT EXISTS idx_messages_room       ON messages(room_id, id DESC);
 CREATE INDEX IF NOT EXISTS idx_rooms_sort          ON rooms(urgency, last_student_message_at);
 CREATE INDEX IF NOT EXISTS idx_rooms_status        ON rooms(handling_status);
 CREATE INDEX IF NOT EXISTS idx_rooms_assignee       ON rooms(assignee_user_id);
 CREATE INDEX IF NOT EXISTS idx_room_members_user   ON room_members(user_id);
 CREATE INDEX IF NOT EXISTS idx_memos_room          ON memos(room_id, scope);
+CREATE INDEX IF NOT EXISTS idx_messages_schedule   ON messages(schedule_request_id);
+CREATE INDEX IF NOT EXISTS idx_schedule_room       ON schedule_requests(room_id, id DESC);
+CREATE INDEX IF NOT EXISTS idx_schedule_student    ON schedule_requests(student_user_id, id DESC);
+CREATE INDEX IF NOT EXISTS idx_calendar_events     ON calendar_events(interviewer_id, starts_at, ends_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_schedule_one_waiting_per_room
+  ON schedule_requests(room_id) WHERE status = 'waiting_student';
 CREATE INDEX IF NOT EXISTS idx_selection_steps_order ON selection_steps(is_enabled, sort_order);
 CREATE INDEX IF NOT EXISTS idx_selection_feedbacks  ON selection_feedbacks(student_user_id);
+CREATE INDEX IF NOT EXISTS idx_student_notes        ON student_notes(student_user_id);
 -- ★多重通知を防ぐ唯一の仕組み。60秒タイマーはこれに依存している。
 -- SLA：1ルーム×1起点メッセージ×1宛先×1種別につき1件だけ。
 CREATE UNIQUE INDEX IF NOT EXISTS idx_alerts_sla_unique

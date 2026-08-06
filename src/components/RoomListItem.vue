@@ -7,9 +7,8 @@
 //   3段目：選考ステータス／用件タグ（P1-3 の「一覧行に選考段階が常に表示」を満たす）
 // 大学名・担当人事は右ペイン（ProfilePanel）に置き、ここには出さない。
 //
-// 緊急度は**行の面の着色だけ**で表す（P1-6）。チップも左バーも置かないことで、
-// 段数を増やさずに「上から順に処理する」対象を目立たせる。
-// 面の色は読み上げに乗らないため、ラベルは sr-only で残す（CLAUDE.md §6-13）。
+// AI推奨度は行の面の着色と補助文で表す。AI未判定時はルール判定をフォールバック
+// として使うため、欠席・遅刻などの即時対応も一覧から見落とさない。
 //
 // **一覧行の見た目とふるまいはこのコンポーネントが単独で持つ。**
 // InboxSidebar はヘッダ（検索・サマリー・フィルタ）とこの行の反復だけを担当する。
@@ -17,15 +16,14 @@
 // 対応ステータスの**変更**は右ペイン（ProfilePanel）の責務。ここは表示のみ。
 import { computed } from "vue"
 import {
-  AI_ANALYSIS_STATUS,
   AI_RECOMMENDED_PRIORITY,
   AI_RECOMMENDED_PRIORITY_META,
-  HANDLING_STATUS,
+  AI_RECOMMENDED_PRIORITY_TITLE,
   LAST_MESSAGE_PREVIEW_LENGTH,
   SELECTION_STATUS_META,
+  SCHEDULE_REQUEST_STATUS,
+  SCHEDULE_REQUEST_STATUS_META,
   TOPIC_TAG_META,
-  URGENCY,
-  URGENCY_META,
 } from "../constants/index.js"
 import { useUiStore } from "../stores/ui.js"
 import ElapsedBadge from "./ElapsedBadge.vue"
@@ -51,9 +49,24 @@ const selectionLabel = computed(
 
 const topicLabel = computed(() => TOPIC_TAG_META[props.room.topicTag]?.label ?? "")
 
-/** 緊急（high）の行だけ面を着色し、テキストラベルを添える */
-const isUrgent = computed(() => props.room.urgency === URGENCY.HIGH)
-const urgentLabel = computed(() => URGENCY_META[URGENCY.HIGH].label)
+const scheduleLabel = computed(() => {
+  const request = props.room.scheduleRequest
+  if (!request) return ""
+  if (request.needsAttention) return "[要対応] 予約可能枠なし"
+  if (request.status === SCHEDULE_REQUEST_STATUS.BOOKED && request.bookedStartsAt) {
+    const date = new Date(request.bookedStartsAt).toLocaleString("ja-JP", {
+      month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit",
+    })
+    return `[日程確定] ${date}`
+  }
+  if (request.status === SCHEDULE_REQUEST_STATUS.EXPIRED) return "[要対応] 日程選択期限切れ"
+  if (request.status === SCHEDULE_REQUEST_STATUS.WAITING_STUDENT) return "[日程調整] 学生日程選択待ち"
+  return SCHEDULE_REQUEST_STATUS_META[request.status]?.label ?? ""
+})
+
+const isHighPriority = computed(
+  () => (props.room.priority ?? props.room.urgency) === AI_RECOMMENDED_PRIORITY.HIGH,
+)
 
 /** 最終メッセージの抜粋（frontend.md §5：40文字で省略） */
 const preview = computed(() => {
@@ -64,13 +77,11 @@ const preview = computed(() => {
 })
 
 const showAiRecommendation = computed(() =>
-  props.room.aiRecommendation?.status === AI_ANALYSIS_STATUS.COMPLETED &&
-  props.room.aiRecommendation?.priority === AI_RECOMMENDED_PRIORITY.HIGH &&
-  [HANDLING_STATUS.NEEDS_REPLY, HANDLING_STATUS.IN_PROGRESS].includes(props.room.handlingStatus)
+  (props.room.priority ?? props.room.urgency) === AI_RECOMMENDED_PRIORITY.HIGH
 )
 
 const aiPriorityLabel = computed(
-  () => AI_RECOMMENDED_PRIORITY_META[props.room.aiRecommendation?.priority]?.label ?? ""
+  () => AI_RECOMMENDED_PRIORITY_META[props.room.priority ?? props.room.urgency]?.label ?? ""
 )
 
 /** 保存・送受信は UTC、表示のみローカル変換（CLAUDE.md §6-2） */
@@ -92,8 +103,8 @@ const time = computed(() => {
     class="room"
     :class="{
       'room--active': room.id === ui.selectedRoomId,
-      'room--high': isUrgent,
-      'room--low': room.urgency === URGENCY.LOW,
+      'room--high': isHighPriority,
+      'room--low': (room.priority ?? room.urgency) === AI_RECOMMENDED_PRIORITY.LOW,
       'room--unread': room.unreadCount > 0,
     }"
   >
@@ -109,11 +120,6 @@ const time = computed(() => {
 
       <div class="room__body">
         <div class="room__line">
-          <!-- 面の色は読み上げに乗らないので、ラベルだけ sr-only で残す（CLAUDE.md §6-13） -->
-          <span
-            v-if="isUrgent"
-            class="sr-only"
-          >{{ urgentLabel }}</span>
           <span class="room__name">{{ student.displayName }}</span>
           <!-- 変更は右ペインで行うため、ここは現在値の表示だけ（P1-2） -->
           <StatusChip
@@ -140,7 +146,7 @@ const time = computed(() => {
           class="room__ai"
           :title="room.aiRecommendation.reason"
         >
-          AI対応推奨度：{{ aiPriorityLabel }}
+          {{ AI_RECOMMENDED_PRIORITY_TITLE }}：{{ aiPriorityLabel }}
           <span v-if="room.aiRecommendation.reason">・{{ room.aiRecommendation.reason }}</span>
         </p>
 
@@ -152,6 +158,17 @@ const time = computed(() => {
             aria-hidden="true"
           >/</span>
           <span>{{ topicLabel }}</span>
+          <span
+            v-if="scheduleLabel"
+            class="room__schedule"
+            :class="{
+              'room__schedule--alert':
+                room.scheduleRequest?.status === SCHEDULE_REQUEST_STATUS.EXPIRED ||
+                room.scheduleRequest?.needsAttention,
+            }"
+          >
+            ・{{ scheduleLabel }}
+          </span>
         </p>
       </div>
     </RouterLink>
@@ -176,8 +193,7 @@ const time = computed(() => {
   background-color: color-mix(in srgb, var(--color-primary) 4%, var(--color-canvas));
 }
 
-/* 緊急（high）は行の面を淡い警告色にする。
-   面だけで緊急を伝えるので、他の行と一目で分かる濃さを持たせる（P1-6） */
+/* AI推奨度 high は行の面を淡い警告色にする。 */
 .room--high .room__link {
   background-color: color-mix(in srgb, var(--color-sla-alert) 9%, var(--color-canvas));
 }
@@ -186,7 +202,7 @@ const time = computed(() => {
   background-color: color-mix(in srgb, var(--color-sla-alert) 14%, var(--color-canvas));
 }
 
-/* 緊急度 low は行全体を薄く表示（frontend.md §6） */
+/* AI推奨度 low は行全体を薄く表示 */
 .room--low .room__link {
   opacity: 0.62;
 }
@@ -266,5 +282,16 @@ const time = computed(() => {
 
 .room__sep {
   color: var(--color-hairline);
+}
+
+.room__schedule {
+  overflow: hidden;
+  color: var(--color-primary);
+  font-weight: 700;
+  text-overflow: ellipsis;
+}
+
+.room__schedule--alert {
+  color: var(--color-error);
 }
 </style>

@@ -23,8 +23,11 @@ users ──┬─< room_members >── rooms ──< messages ──< read_rec
 snippets（ルーム非依存・全社共有）
 tag_rules（キーワード辞書）
 company_info（ルーム非依存・全社共有・必ず1行）
+calendar_interviewers ──< calendar_events
+calendar_interviewers ──< schedule_requests ──1 calendar_bookings
 selection_steps（選考フローの設定：ルーム非依存・全社共有。P2-11）
 users ──< selection_feedbacks（学生×ステップで1件。P2-11）
+users ──< student_notes（学生本人だけが読み書きする選考メモ。S-10）
 alerts（監視イベント：SLA通知・コンプライアンス警告。P4-0）
 compliance_rules（就職差別・オワハラの辞書。P4-2）
 ```
@@ -100,6 +103,18 @@ compliance_rules（就職差別・オワハラの辞書。P4-2）
 | `client_msg_id` | TEXT | UNIQUE | クライアント生成 UUID。重複排除用 |
 | `created_at` | TEXT | NOT NULL | |
 | `deleted_at` | TEXT | | NULL でなければ送信取消済み |
+| `schedule_request_id` | INTEGER | NULL, FK→schedule_requests.id | 日程予約カードとの関連 |
+
+### 面接日程予約（P3-4）
+
+- `calendar_interviewers`：擬似カレンダーの面接官。チャット利用者ではないため `users` と分離
+- `calendar_events`：面接官の既存予定。重なる生成枠を受付終了にする
+- `schedule_requests`：学生へ送る予約依頼。`status` が予約フローの正
+- `calendar_bookings`：確定予約の監査テーブル。`external_slot_id` と `schedule_request_id` は UNIQUE
+- `idx_schedule_one_waiting_per_room`：1ルームの有効な `waiting_student` を1件に制限
+
+予約確定は `calendar_bookings` INSERT、`schedule_requests` 更新、`students` 更新、確定メッセージ追加を
+同一SQLiteトランザクションで実行する。
 
 ### `read_receipts`
 
@@ -189,6 +204,29 @@ compliance_rules（就職差別・オワハラの辞書。P4-2）
 絞り込みは `server/services/selectionFlow.js` の `buildStudentFlow()` が行う。
 クライアント側で隠す作りにしないこと。
 
+### `student_notes`（学生の選考メモ・S-10）
+
+学生1名 × キーで1件。**学生本人だけが読み書きする自分用のメモ。**
+
+| カラム | 型 | 制約 | 説明 |
+| --- | --- | --- | --- |
+| `id` | INTEGER | PK AUTOINCREMENT | |
+| `student_user_id` | INTEGER | NOT NULL FK users | 常に認証済み本人 |
+| `note_key` | TEXT | NOT NULL CHECK(10種) | `'overall'` ＝選考全体／それ以外は選考ステップ |
+| `body` | TEXT | NOT NULL | 本文（2000文字以内） |
+| `created_at` / `updated_at` | TEXT | NOT NULL | |
+
+`UNIQUE(student_user_id, note_key)` で1件に固定し、保存は UPSERT。本文が空なら行を削除する。
+
+**`note_key` を NULL 許容の `status_key` にしない。** SQLite の UNIQUE は NULL 同士を
+重複と見なさないため、全体メモが学生1人につき何行でも作れてしまう。
+`'overall'` という明示のキーにすることで、素の UNIQUE 制約だけで1件に固定できる。
+キーの一覧は `shared/constants.js` の `STUDENT_NOTE_KEY_VALUES` が正。
+
+**★人事に見せない。** 人事向けの読み取りクエリ・エンドポイントを作らないこと。
+本人しか見ないと分かっているから率直に書ける、というのがこの機能の価値そのもの。
+人事の申し送りメモ（`memos`）とは別テーブルで、相互に参照しない。
+
 ### `tag_rules`（用件タグのキーワード辞書）
 
 | カラム | 型 | 制約 | 説明 |
@@ -262,6 +300,7 @@ CREATE INDEX idx_room_members_user   ON room_members(user_id);
 CREATE INDEX idx_memos_room          ON memos(room_id, scope);
 CREATE INDEX idx_selection_steps_order ON selection_steps(is_enabled, sort_order);
 CREATE INDEX idx_selection_feedbacks  ON selection_feedbacks(student_user_id);
+CREATE INDEX idx_student_notes        ON student_notes(student_user_id);
 CREATE INDEX idx_alerts_target       ON alerts(target_user_id, read_at, created_at DESC);
 CREATE INDEX idx_alerts_open         ON alerts(kind, resolved_at);
 CREATE INDEX idx_alerts_room         ON alerts(room_id);

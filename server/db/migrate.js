@@ -29,6 +29,18 @@ function addMissingRoomAiColumns(db) {
   }
 }
 
+function addMissingMessageScheduleColumn(db) {
+  const table = db
+    .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`)
+    .get('messages');
+  if (!table) return;
+
+  const columns = new Set(db.prepare(`PRAGMA table_info(messages)`).all().map((column) => column.name));
+  if (!columns.has('schedule_request_id')) {
+    db.exec(`ALTER TABLE messages ADD COLUMN schedule_request_id INTEGER REFERENCES schedule_requests(id)`);
+  }
+}
+
 /**
  * compliance_rules.code の UNIQUE を落とす（P4-2）。
  *
@@ -143,6 +155,8 @@ function migrate() {
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
 
+  // schema.sql 内の idx_messages_schedule 作成より先に既存 messages を拡張する。
+  addMissingMessageScheduleColumn(db);
   // schema.sql は CREATE TABLE IF NOT EXISTS なので、旧定義の取り壊しは適用前に行う。
   dropLegacyComplianceRuleUnique(db);
   const stashed = stashLegacyAlerts(db);

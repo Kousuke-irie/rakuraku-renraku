@@ -137,13 +137,25 @@ classify(body: string): TopicTag
 last_message.created_at DESC   -- 最終メッセージの新しい順
 ```
 
-- 切替可能なソート：緊急度順 / 経過時間順
-- 「緊急度順」は `1. urgency（high → normal → low）` → `2. last_student_message_at ASC（経過時間が長い順）`
+- 切替可能なソート：AI推奨度順 / 経過時間順
+- 「AI推奨度順」は `1. priority（high → normal → low）` → `2. last_student_message_at ASC（経過時間が長い順）`
+- `priority` はAI判定が完了していれば `ai_priority` を使い、未判定・失敗時はルールベースの `urgency` を使う。
 - フィルタ条件とソート条件は Pinia に保持し、ルーム切替で失われないこと
 
 ---
 
-## 7. AI 緊急度判定（P3-1・採用した場合のみ）
+## 7. 面接日程予約（P3-4改訂）
+
+実装：`server/services/calendarGateway.js` / `scheduleRequests.js` / `scheduleBookingService.js`
+
+1. 候補期間・日次時間帯・所要時間から擬似カレンダー枠を生成する
+2. `calendar_events` または既存 `calendar_bookings` と重なる枠、過去枠は受付終了にする
+3. 予約確定時は表示中の `available` を信用せず、対象面接官・期間・所要時間を再検証する
+4. `calendar_bookings.external_slot_id` の UNIQUE 制約を最後の防衛線にする
+5. 予約、依頼更新、学生プロフィール更新、確定メッセージ追加を同一トランザクションで行う
+6. 期限切れ判定は `expireWaitingScheduleRequests()` に集約し、取得時と60秒バッチから呼ぶ
+
+## 8. AI 緊急度判定（P3-1・採用した場合のみ）
 
 実装：`server/services/aiClassifier.js`
 
@@ -164,7 +176,7 @@ last_message.created_at DESC   -- 最終メッセージの新しい順
 
 ---
 
-## 7-2. ホームの AI 現況サマリー／TODO（P3-1a）
+## 8-2. ホームの AI 現況サマリー／TODO（P3-1a）
 
 実装：`server/services/aiSummary.js`（`aiClassifier.js` とは別ファイルにする。用途もプロンプトも違うため）
 
@@ -216,10 +228,22 @@ last_message.created_at DESC   -- 最終メッセージの新しい順
 学生のマイページに出す「いまどこにいるか」は、**保存せず毎回導出する。**
 正は `students.selection_status`（P1-3 が維持している）で、進捗を別に持つと二重管理になる。
 
+### 図に出すステップ ★重要
+
+**会社の設定（`is_enabled`）は「標準フロー」であって、個々の学生の実態がそれより優先される。**
+有効なステップに加えて、次の2つは**無効でも図に出す**（`listVisibleSteps()`）。
+
+| 差し込む条件 | 出さないと起きること |
+| --- | --- |
+| その学生の現在地（`selection_status`） | 現在地のノードが図から消え、山の頂点が決まらず**線がまっすぐになる**。学生に自分の段階が伝わらない |
+| その学生にFBが届いているステップ | 人事が書いたFBが**黙って学生に届かない** |
+
+どちらも「人事があとからフロー設定を変えた」ときに起きる。
+設定を変えただけで進行中の学生の画面が壊れる、という状態を作らないための救済。
+
 ### 判定
 
-有効なステップ（`selection_steps.is_enabled = 1`）を `sort_order` 順に並べ、
-学生の `selection_status` の位置と比べる。
+図に出すステップを `sort_order` 順に並べ、学生の `selection_status` の位置と比べる。
 
 | 位置 | 状態 |
 | --- | --- |
@@ -229,10 +253,11 @@ last_message.created_at DESC   -- 最終メッセージの新しい順
 
 ### 例外
 
-- **現在ステータスが無効化されたステップを指している場合**（例：三次面接を「使わない」に
-  変えたが、その段階の学生が残っている）は、`SELECTION_FLOW_STEP_VALUES` の全体順で比べ、
+- **現在地が並びに含まれない場合**は、`SELECTION_FLOW_STEP_VALUES` の全体順で比べ、
   **その手前までを `done` にする。** 全部 `upcoming` になって「何も進んでいない」ように
-  見えるのを防ぐため
+  見えるのを防ぐため。
+  上記の差し込みにより現在地は必ず並びに含まれるので、ここに入るのは選考ステータスが
+  未設定・辞退のときだけ。それでも `resolveStepStates()` の安全網として残す
 - **`declined`（辞退）はフロー上の一段階ではない。** 現在地を線の上に置かず、
   フロー図自体を出さずに終端の文言へ切り替える
 

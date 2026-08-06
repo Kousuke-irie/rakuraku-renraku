@@ -3,18 +3,28 @@
 //
 // 面接直後にその学生の文脈を見ながら書けるよう、ProfilePanel の中に置く。
 //
-// ★学生に見えるのは「完了済みステップ」のぶんだけ（サーバが絞る）。
+// ★学生に見えるのは「通過済みステップ」のぶんだけ。
 //   進行中のステップに書いた内容は、その学生が次の段階へ進むまで本人には出ない。
 //   人事が誤解しないよう、ここで「いつ本人に見えるか」を明示する。
-import { computed, onMounted, ref, watch } from "vue"
-import { SELECTION_FEEDBACK_MAX_LENGTH, SELECTION_STATUS_META } from "../constants/index.js"
+//
+// ★★「本人に見えているか」を**この画面で計算しない。**
+//   サーバが学生側と同じ判定（selectionFlow.js の isFeedbackVisibleToStudent）を通した
+//   結果を返すので、それを描くだけにする。ここで独自に判定すると、現在地が無効ステップに
+//   ある学生などで学生側とズレて、「本人には非公開」と出ているFBが実際は本人に見えている、
+//   という事故になる（実際に起きていた）。
+import { onMounted, ref, watch } from "vue"
+import { SELECTION_FEEDBACK_MAX_LENGTH } from "../constants/index.js"
 import { selectionFlowApi, toErrorMessage } from "../api/index.js"
 import { useUiStore } from "../stores/ui.js"
 
 const props = defineProps({
   /** 対象学生の user_id */
   studentUserId: { type: Number, required: true },
-  /** その学生の現在の選考ステータス。どこまでが本人に見えるかの判定に使う */
+  /**
+   * その学生の現在の選考ステータス。
+   * ★これで可視範囲を判定しない。**取り直しのきっかけとしてだけ**使う。
+   *   人事がステータスを進めると本人に見えるFBが増えるので、その瞬間に取り直す。
+   */
   selectionStatus: { type: String, default: null },
 })
 
@@ -23,8 +33,13 @@ const ui = useUiStore()
 // #endregion
 
 // #region local state
-/** @type {import('vue').Ref<Record<string, string>>} statusKey → 本文 */
-const bodies = ref({})
+/**
+ * サーバから受け取った行。ラベル・状態・本人に見えているか・本文がすべて入っている。
+ * @type {import('vue').Ref<{statusKey: string, label: string, isVisibleToStudent: boolean,
+ *                           isEnabled: boolean, feedback: {body: string}|null}[]>}
+ */
+const rows = ref([])
+
 /** @type {import('vue').Ref<string|null>} 編集中のステップ */
 const editingKey = ref(null)
 const draft = ref("")
@@ -32,35 +47,12 @@ const saving = ref(false)
 const loading = ref(false)
 // #endregion
 
-// #region computed
-/** 有効なステップだけを対象にする（使わない選考にFBを書かせない） */
-const steps = computed(() => ui.selectionSteps.filter((step) => step.isEnabled))
-
-/** 学生の現在位置。ここより前のステップに書いたFBは本人に見えている */
-const currentIndex = computed(() =>
-  steps.value.findIndex((step) => step.statusKey === props.selectionStatus)
-)
-
-const rows = computed(() =>
-  steps.value.map((step, index) => {
-    const isVisibleToStudent = currentIndex.value !== -1 && index < currentIndex.value
-
-    return {
-      statusKey: step.statusKey,
-      label: step.label || SELECTION_STATUS_META[step.statusKey]?.label || step.statusKey,
-      body: bodies.value[step.statusKey] ?? "",
-      isVisibleToStudent,
-    }
-  })
-)
-// #endregion
-
 // #region local methods
 const load = async () => {
   loading.value = true
   try {
     const { data } = await selectionFlowApi.listFeedbacks(props.studentUserId)
-    bodies.value = Object.fromEntries(data.feedbacks.map((item) => [item.statusKey, item.body]))
+    rows.value = data.steps
   } catch (error) {
     ui.pushToast({
       type: "error",
@@ -73,14 +65,14 @@ const load = async () => {
 // #endregion
 
 // #region lifecycle
-onMounted(() => {
-  ui.fetchSelectionSteps()
-  load()
-})
+// ステップの並び・ラベルも load() のレスポンスに含まれるので、
+// ここで選考フローの設定を別途取りに行く必要はない
+onMounted(load)
 
-// ルームを切り替えたら対象の学生が変わる
+// 対象の学生が変わったとき（ルーム切り替え）と、
+// 選考ステータスが進んだとき（本人に見えるFBが増える）に取り直す
 watch(
-  () => props.studentUserId,
+  [() => props.studentUserId, () => props.selectionStatus],
   () => {
     editingKey.value = null
     load()
@@ -91,7 +83,7 @@ watch(
 // #region browser event handler
 const startEdit = (row) => {
   editingKey.value = row.statusKey
-  draft.value = row.body
+  draft.value = row.feedback?.body ?? ""
 }
 
 const cancelEdit = () => {
@@ -103,9 +95,13 @@ const save = async (statusKey) => {
   saving.value = true
   try {
     const body = draft.value.trim()
-    await selectionFlowApi.saveFeedback(props.studentUserId, statusKey, body)
-    // 空文字は取り消し。サーバ側で行が消えるのでこちらも空にする
-    bodies.value = { ...bodies.value, [statusKey]: body }
+    const { data } = await selectionFlowApi.saveFeedback(props.studentUserId, statusKey, body)
+
+    // 空文字は取り消し。サーバ側で行が消えて feedback は null で返る。
+    // 既存を書き換えず新しい配列に差し替える
+    rows.value = rows.value.map((row) =>
+      row.statusKey === statusKey ? { ...row, feedback: data.feedback } : row
+    )
     editingKey.value = null
   } catch (error) {
     ui.pushToast({
@@ -161,9 +157,18 @@ const save = async (statusKey) => {
             :disabled="saving"
             @click="editingKey === row.statusKey ? cancelEdit() : startEdit(row)"
           >
-            {{ editingKey === row.statusKey ? "やめる" : (row.body ? "編集" : "書く") }}
+            {{ editingKey === row.statusKey ? "やめる" : (row.feedback ? "編集" : "書く") }}
           </button>
         </div>
+
+        <!-- 会社の標準フローから外れているステップ。
+             設定で無効なのに行が出ているのは、その学生の現在地かFBがあるため -->
+        <p
+          v-if="!row.isEnabled"
+          class="feedback__off-flow"
+        >
+          このステップは選考フローで無効です（この学生にだけ表示しています）
+        </p>
 
         <div v-if="editingKey === row.statusKey">
           <textarea
@@ -187,10 +192,10 @@ const save = async (statusKey) => {
         </div>
 
         <p
-          v-else-if="row.body"
+          v-else-if="row.feedback"
           class="feedback__body"
         >
-          {{ row.body }}
+          {{ row.feedback.body }}
         </p>
       </li>
     </ul>
@@ -207,6 +212,15 @@ const save = async (statusKey) => {
   margin: 0;
   font-size: 12px;
   font-weight: 700;
+}
+
+/* 標準フローから外れている行の注記。警告色までは使わない
+   （間違いではなく「例外的に出している」という説明なので） */
+.feedback__off-flow {
+  margin: var(--space-xs) 0 0;
+  color: var(--color-ink-mute);
+  font-size: 10px;
+  line-height: 1.6;
 }
 
 .feedback__hint {

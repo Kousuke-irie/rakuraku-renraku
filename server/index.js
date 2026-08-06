@@ -10,17 +10,19 @@ import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { registerSocketHandlers } from './sockets/index.js';
 import db from './db/index.js';
 import { recalculateAllUrgencies } from './services/urgencyCalculator.js';
+import {
+  emitAlertsNew,
+  emitAlertsResolved,
+  emitRoomUpdated,
+  emitScheduleRequestUpdated,
+  emitSummaryUpdated,
+} from './services/realtime.js';
+import { expireWaitingScheduleRequests } from './services/scheduleRequests.js';
 import { detectSlaBreaches } from './services/slaMonitor.js';
 import {
   detectInterviewRoomGaps,
   resolveStaleInterviewRoomAlerts,
 } from './services/interviewRoomMonitor.js';
-import {
-  emitAlertsNew,
-  emitAlertsResolved,
-  emitRoomUpdated,
-  emitSummaryUpdated,
-} from './services/realtime.js';
 
 const app = express();
 app.use(cors({ origin: CLIENT_ORIGIN, credentials: true }));
@@ -67,6 +69,21 @@ const monitorTimer = setInterval(async () => {
     emitAlertsNew(io, db, detectInterviewRoomGaps(db));
   } catch (error) {
     console.error('server: interview room monitoring failed', error.stack);
+  }
+
+  // 日程依頼の期限監視も同じ60秒ループに相乗りさせ、監視タイマーを増やさない。
+  // ★ここで early return しないこと。この後ろに監視を足したときに黙って飛ばされる
+  try {
+    const expired = expireWaitingScheduleRequests(db);
+    if (expired.length > 0) {
+      const roomIds = [...new Set(expired.map((request) => request.roomId))];
+      await Promise.all([
+        ...expired.map((request) => emitScheduleRequestUpdated(io, request)),
+        ...roomIds.map((roomId) => emitRoomUpdated(io, db, roomId)),
+      ]);
+    }
+  } catch (error) {
+    console.error('server: schedule expiry update failed', error.stack);
   }
 }, MONITOR_INTERVAL_MS);
 monitorTimer.unref();

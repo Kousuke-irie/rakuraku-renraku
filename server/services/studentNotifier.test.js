@@ -50,6 +50,16 @@ function createDb() {
       updated_at TEXT NOT NULL,
       UNIQUE(student_user_id, status_key)
     );
+    -- 学生の選考メモ（S-10）。buildStudentFlow が一緒に引くので必要
+    CREATE TABLE student_notes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      student_user_id INTEGER NOT NULL,
+      note_key TEXT NOT NULL,
+      body TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(student_user_id, note_key)
+    );
     CREATE TABLE alerts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       kind TEXT NOT NULL,
