@@ -90,8 +90,12 @@ export const useUiStore = defineStore('ui', {
     moveSnippetHighlight(delta) {},
 
     /** 対応ステータスのドロップダウン開閉（P1-2。1クリックで変更するため単一管理） */
-    openStatusMenu(roomId) {},
-    closeStatusMenu() {},
+    openStatusMenu(roomId) {
+      this.statusMenuRoomId = roomId
+    },
+    closeStatusMenu() {
+      this.statusMenuRoomId = null
+    },
 
     /** @param {'connected'|'connecting'|'disconnected'} state */
     setConnectionState(state) {
