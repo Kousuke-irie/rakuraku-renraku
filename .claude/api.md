@@ -147,7 +147,7 @@
 | GET | `/selection-flow` | 全ロール。無効なステップも含む全件 |
 | PUT | `/selection-flow` | **人事のみ**。全ステップの一括置換 |
 | GET | `/selection-flow/me` | **学生のみ**。自分の進捗＋見せてよいFB |
-| GET | `/students/:userId/feedbacks` | **人事のみ**。完了判定で絞らない全件 |
+| GET | `/students/:userId/feedbacks` | **人事のみ**。本文は全件＋`isVisibleToStudent` |
 | PUT | `/students/:userId/feedbacks/:statusKey` | **人事のみ**。本文が空なら削除 |
 
 ```json
@@ -178,6 +178,32 @@
 - 有効なステップが0件になる指定も **400**（学生の画面が空になるため）
 - 更新頻度が低いので Socket.IO では配信しない
 - `note` / `overallNote` は**本人のメモ**（S-10）。読み取りの往復を増やさないためここに載せる
+
+```json
+// GET /students/:userId/feedbacks（人事のプロフィールパネル用）
+{
+  "steps": [
+    {
+      "statusKey": "document",
+      "label": "書類選考",
+      "state": "done",
+      "isVisibleToStudent": true,
+      "isEnabled": true,
+      "feedback": { "body": "…", "updatedAt": "…", "authorName": "大西 陽子" }
+    }
+  ],
+  "selectionStatus": "interview_2",
+  "isDeclined": false
+}
+```
+
+- **`isVisibleToStudent` はサーバが返す。クライアントで計算し直さない。**
+  学生側（`GET /selection-flow/me`）と同じ `listVisibleSteps()` + `resolveStepStates()` を
+  通しているので、並びと状態は必ず一致する。人事側で独自に判定すると、現在地が無効ステップに
+  ある学生などでズレ、**「本人には非公開」と表示されているFBが実際は本人に見えている**
+  という事故になる
+- `isEnabled` が `false` の行は、会社の標準フローから外れているステップ
+  （その学生の現在地かFBがあるために出している）。人事にその旨を注記すること
 
 ### 学生の選考メモ（S-10）
 

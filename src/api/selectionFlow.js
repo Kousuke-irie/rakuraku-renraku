@@ -23,8 +23,12 @@ export const selectionFlowApi = {
   me: () => http.get("/selection-flow/me"),
 
   /**
-   * GET /api/students/:userId/feedbacks → `{ feedbacks }`（人事のみ）
-   * 受信箱のプロフィールパネル用。完了判定で絞らない全件。
+   * GET /api/students/:userId/feedbacks
+   *   → `{ steps, selectionStatus, isDeclined }`（人事のみ）
+   *
+   * 受信箱のプロフィールパネル用。本文は全ステップぶん返る（完了判定で絞らない）。
+   * ★`isVisibleToStudent` は**サーバが返す**。学生側と同じ判定を通しているので、
+   *   クライアントで計算し直さないこと（ズレると「非公開」の表示が嘘になる）。
    */
   listFeedbacks: (userId) => http.get(`/students/${userId}/feedbacks`),
 
