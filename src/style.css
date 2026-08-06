@@ -56,6 +56,12 @@
      メッセージ列・入力欄・トークヘッダの内容をこの幅で揃える。 */
   --chat-column-max: 1040px;
 
+  /* 全画面共通のナビレール（AppShell / AppNavRail）。
+     既定はアイコンだけの幅で、hover / focus すると open 幅まで開く。
+     open のときも**グリッド列の幅は変わらない**（レールが絶対配置で重なる）。 */
+  --nav-rail-width: 64px;
+  --nav-rail-width-open: 208px;
+
   /* --- 影（DESIGN.md Elevation） --- */
   --shadow-1: 0 5px 20px rgb(0 0 0 / 10%);
   --shadow-2: 0 0 32px rgb(0 0 0 / 10%);

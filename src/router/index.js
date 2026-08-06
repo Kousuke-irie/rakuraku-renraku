@@ -5,6 +5,7 @@ import LoginView from "../views/LoginView.vue"
 import RegisterView from "../views/RegisterView.vue"
 import InboxView from "../views/InboxView.vue"
 import ChatView from "../views/ChatView.vue"
+import NotificationsView from "../views/NotificationsView.vue"
 import ProfileSettingsView from "../views/ProfileSettingsView.vue"
 
 /**
@@ -50,6 +51,14 @@ const routes = [
     name: "chat",
     component: ChatView,
     meta: { requiresAuth: true, roles: [ROLE.STUDENT] },
+  },
+  {
+    // 通知一覧（ナビレールのベルから開く）。受信箱に対する機能なので人事のみ。
+    // ★雛形。要件IDが無い画面なので frontend.md §1 の S-xx は割り当てていない
+    path: "/notifications",
+    name: "notifications",
+    component: NotificationsView,
+    meta: { requiresAuth: true, roles: [ROLE.HR, ROLE.ADMIN] },
   },
   {
     path: "/settings/profile",
