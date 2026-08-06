@@ -20,6 +20,103 @@ import { useUiStore } from './ui.js'
 /** 対応ステータス変更が失敗したときの既定文言（P1-2） */
 const STATUS_UPDATE_ERROR = '対応ステータスの変更に失敗しました'
 
+/** 日時を比較用の数値にする。日時なし・不正値は常に末尾へ送る。 */
+const timestampOf = (value) => {
+  if (!value) return Number.POSITIVE_INFINITY
+
+  const timestamp = Date.parse(value)
+  return Number.isNaN(timestamp) ? Number.POSITIVE_INFINITY : timestamp
+}
+
+/** 比較結果が同じときにも表示順を安定させる。 */
+const byRoomId = (left, right) => Number(left.id) - Number(right.id)
+
+/**
+ * 既定の優先順位。ピン留め → 緊急度 → 学生最終メッセージが古い順。
+ * 時刻がないルームは経過時間を算出できないため、同条件の末尾に置く。
+ */
+const byDefaultPriority = (left, right) => {
+  const pin = Number(Boolean(right.isPinned)) - Number(Boolean(left.isPinned))
+  if (pin !== 0) return pin
+
+  const urgency = (URGENCY_ORDER[left.urgency] ?? Infinity) - (URGENCY_ORDER[right.urgency] ?? Infinity)
+  if (urgency !== 0) return urgency
+
+  const elapsed = timestampOf(left.lastStudentMessageAt) - timestampOf(right.lastStudentMessageAt)
+  return elapsed !== 0 ? elapsed : byRoomId(left, right)
+}
+
+/**
+ * 最終メッセージの新しい順。時刻がないルームは末尾に置く。
+ * timestampOf は欠損を +Infinity で表すため、単純な引き算だと降順では
+ * 欠損が先頭に来てしまう。欠損かどうかを先に判定する。
+ */
+const byLastMessage = (left, right) => {
+  const leftAt = timestampOf(left.lastMessage?.createdAt)
+  const rightAt = timestampOf(right.lastMessage?.createdAt)
+
+  const missing = Number(leftAt === Infinity) - Number(rightAt === Infinity)
+  if (missing !== 0) return missing
+
+  const recency = rightAt - leftAt
+  return recency !== 0 ? recency : byRoomId(left, right)
+}
+
+/** 学生最終メッセージが古い順、すなわち経過時間が長い順。 */
+const byElapsedTime = (left, right) => {
+  const elapsed = timestampOf(left.lastStudentMessageAt) - timestampOf(right.lastStudentMessageAt)
+  return elapsed !== 0 ? elapsed : byRoomId(left, right)
+}
+
+/** フィルタ条件を満たすルームだけを残す（P1-7）。 */
+const filterRooms = (rooms, filters) => {
+  const {
+    handlingStatus,
+    selectionStatus,
+    topicTag,
+    urgency,
+    assigneeId,
+    onlyMine,
+    overdueOnly,
+    q,
+  } = filters
+  const keyword = q.trim().toLowerCase()
+  // 「自分の担当のみ」のときだけ認証ストアを参照する（毎行引かない）
+  const myUserId = onlyMine ? useAuthStore().currentUserId : null
+
+  return rooms.filter((room) => {
+    if (handlingStatus.length && !handlingStatus.includes(room.handlingStatus)) return false
+    if (selectionStatus.length && !selectionStatus.includes(room.student?.selectionStatus)) {
+      return false
+    }
+    // 用件タグはサーバが最新の学生メッセージから導出する。まだ発言が無いルームは null
+    if (topicTag.length && !topicTag.includes(room.topicTag ?? DEFAULT_TOPIC_TAG)) return false
+    if (urgency.length && !urgency.includes(room.urgency)) return false
+
+    // 担当者：UNASSIGNED_FILTER は「未割当のみ」、数値はそのユーザーの担当のみ
+    if (assigneeId === UNASSIGNED_FILTER && room.assignee) return false
+    if (typeof assigneeId === 'number' && room.assignee?.id !== assigneeId) return false
+    if (onlyMine && room.assignee?.id !== myUserId) return false
+
+    // 24h超（P1-8 のサマリーからの絞り込み用）。返信済み・完了は SLA の対象外
+    if (
+      overdueOnly &&
+      (ELAPSED_BADGE_HIDDEN_STATUSES.includes(room.handlingStatus) ||
+        (room.elapsedHours ?? 0) < SLA_ALERT_HOURS)
+    ) {
+      return false
+    }
+
+    if (keyword) {
+      const haystack =
+        `${room.student?.displayName ?? ''} ${room.student?.university ?? ''}`.toLowerCase()
+      if (!haystack.includes(keyword)) return false
+    }
+
+    return true
+  })
+}
+
 /**
  * 担当者フィルタの「未割当のみ」を表す値（P1-7）。
  * assigneeId は数値のユーザーIDと排他なので、サーバの query 値（api.md §2）に合わせる。
@@ -49,27 +146,6 @@ function initialFilters() {
     /** 氏名・大学の部分一致検索 */
     q: '',
   }
-}
-
-/** 未設定の日時を常に最後へ送るための比較用の値。null は「情報が無い」であって最古ではない */
-function timeOf(isoString) {
-  return isoString ? new Date(isoString).getTime() : null
-}
-
-/** 昇順（古い順）。null は末尾 */
-function ascending(a, b) {
-  if (a === b) return 0
-  if (a === null) return 1
-  if (b === null) return -1
-  return a - b
-}
-
-/** 降順（新しい順）。null は末尾 */
-function descending(a, b) {
-  if (a === b) return 0
-  if (a === null) return 1
-  if (b === null) return -1
-  return b - a
 }
 
 /**
@@ -161,51 +237,7 @@ export const useRoomsStore = defineStore('rooms', {
      * 絞り込みはサーバに投げ直さずここで行う。socket の room:updated が届いた瞬間に
      * 絞り込み結果へ反映させるため（frontend.md §3）。
      */
-    filteredRooms: (s) => {
-      const {
-        handlingStatus,
-        selectionStatus,
-        topicTag,
-        urgency,
-        assigneeId,
-        onlyMine,
-        overdueOnly,
-        q,
-      } = s.filters
-      const keyword = q.trim().toLowerCase()
-
-      return s.rooms.filter((room) => {
-        if (handlingStatus.length && !handlingStatus.includes(room.handlingStatus)) return false
-        if (selectionStatus.length && !selectionStatus.includes(room.student?.selectionStatus)) {
-          return false
-        }
-        // 用件タグはサーバが最新の学生メッセージから導出する。まだ発言が無いルームは null
-        if (topicTag.length && !topicTag.includes(room.topicTag ?? DEFAULT_TOPIC_TAG)) return false
-        if (urgency.length && !urgency.includes(room.urgency)) return false
-
-        // 担当者：UNASSIGNED_FILTER は「未割当のみ」、数値はそのユーザーの担当のみ
-        if (assigneeId === UNASSIGNED_FILTER && room.assignee) return false
-        if (typeof assigneeId === 'number' && room.assignee?.id !== assigneeId) return false
-        if (onlyMine && room.assignee?.id !== useAuthStore().currentUserId) return false
-
-        // 24h超（P1-8 のサマリーからの絞り込み）。返信済み・完了は SLA の対象外
-        if (
-          overdueOnly &&
-          (ELAPSED_BADGE_HIDDEN_STATUSES.includes(room.handlingStatus) ||
-            (room.elapsedHours ?? 0) < SLA_ALERT_HOURS)
-        ) {
-          return false
-        }
-
-        if (keyword) {
-          const haystack =
-            `${room.student?.displayName ?? ''} ${room.student?.university ?? ''}`.toLowerCase()
-          if (!haystack.includes(keyword)) return false
-        }
-
-        return true
-      })
-    },
+    filteredRooms: (s) => filterRooms(s.rooms, s.filters),
 
     /**
      * 表示用の最終リスト。
@@ -214,26 +246,19 @@ export const useRoomsStore = defineStore('rooms', {
      * SORT_KEY.ELAPSED: lastStudentMessageAt ASC（経過時間が長い順）
      * （business-logic.md §6）
      */
-    sortedRooms(s) {
-      // getter は元配列を書き換えないこと（sort は破壊的なので複製してから並べ替える）
-      const rooms = [...this.filteredRooms]
+    sortedRooms: (s) => {
+      // filterRooms は毎回新しい配列を返すので、sort が s.rooms を壊すことはない
+      const rooms = filterRooms(s.rooms, s.filters)
 
-      if (s.sortKey === SORT_KEY.LAST_MESSAGE) {
-        return rooms.sort((a, b) => descending(timeOf(a.lastMessage?.createdAt), timeOf(b.lastMessage?.createdAt)))
+      switch (s.sortKey) {
+        case SORT_KEY.LAST_MESSAGE:
+          return rooms.sort(byLastMessage)
+        case SORT_KEY.ELAPSED:
+          return rooms.sort(byElapsedTime)
+        case SORT_KEY.DEFAULT:
+        default:
+          return rooms.sort(byDefaultPriority)
       }
-      if (s.sortKey === SORT_KEY.ELAPSED) {
-        return rooms.sort((a, b) => ascending(timeOf(a.lastStudentMessageAt), timeOf(b.lastStudentMessageAt)))
-      }
-
-      // 既定：ピン留め → 緊急度 → 経過時間が長い順
-      return rooms.sort(
-        (a, b) =>
-          Number(Boolean(b.isPinned)) - Number(Boolean(a.isPinned)) ||
-          (URGENCY_ORDER[a.urgency] ?? Number.MAX_SAFE_INTEGER) -
-            (URGENCY_ORDER[b.urgency] ?? Number.MAX_SAFE_INTEGER) ||
-          ascending(timeOf(a.lastStudentMessageAt), timeOf(b.lastStudentMessageAt)) ||
-          a.id - b.id,
-      )
     },
 
     /** フィルタが1つでも掛かっているか（「条件をクリア」ボタンの活性判定） */
@@ -449,8 +474,7 @@ export const useRoomsStore = defineStore('rooms', {
 
     /** @param {string} sortKey SORT_KEY のいずれか */
     setSortKey(sortKey) {
-      if (!SORT_KEY_VALUES.includes(sortKey)) return
-      this.sortKey = sortKey
+      if (SORT_KEY_VALUES.includes(sortKey)) this.sortKey = sortKey
     },
 
     /** 「自分の担当のみ」トグル。担当者フィルタとは排他にする（条件が矛盾しないように） */

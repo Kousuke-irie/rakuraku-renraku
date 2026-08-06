@@ -209,6 +209,7 @@ useDismissOnOutside(isMenuOpen, closeMenu)
       <span class="sr-only">並び順</span>
       <select
         class="filter-bar__select"
+        aria-label="並び順"
         :value="rooms.sortKey"
         @change="rooms.setSortKey($event.target.value)"
       >
@@ -316,10 +317,15 @@ useDismissOnOutside(isMenuOpen, closeMenu)
   margin-left: auto;
 }
 
+/* 他のフィルタチップと同じピル型に揃える */
 .filter-bar__select {
-  border: none;
-  background: none;
+  max-width: 116px;
+  padding: 3px 18px 3px 8px;
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-pill);
+  background-color: var(--color-canvas);
   color: var(--color-ink-mute);
+  font: inherit;
   font-size: 11px;
   font-weight: 700;
   cursor: pointer;
