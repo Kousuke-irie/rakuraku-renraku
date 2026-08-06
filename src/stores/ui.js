@@ -1,5 +1,5 @@
-/* eslint-disable no-unused-vars -- 空実装のため引数が未使用。実装時にこの行を消すこと */
 import { defineStore } from 'pinia'
+import { snippetsApi } from '../api/snippets.js'
 import { DEFAULT_BOARD_GROUP_BY, MEMO_SCOPE, MEMO_SCOPE_VALUES } from '../constants/index.js'
 
 /** トーストの連番。Date.now() だと同時 push で衝突する */
@@ -87,10 +87,17 @@ export const useUiStore = defineStore('ui', {
   }),
 
   getters: {
-    /** snippetQuery で絞り込んだ候補（P2-1） */
-    filteredSnippets: (s) => [],
+    /** snippetQuery で絞り込んだ候補（P2-1）。"/" を除いた部分文字列で command を前方一致させる */
+    filteredSnippets: (s) => {
+      const query = s.snippetQuery.trim()
+      if (!query) return s.snippets
+
+      return s.snippets.filter((snippet) => snippet.command.startsWith(`/${query}`))
+    },
     /** ↑↓ で選択中の定型文 */
-    highlightedSnippet: (s) => null,
+    highlightedSnippet() {
+      return this.filteredSnippets[this.snippetHighlightIndex] ?? null
+    },
     isOffline: (s) => s.connectionState !== 'connected',
   },
 
@@ -150,16 +157,38 @@ export const useUiStore = defineStore('ui', {
       this.memoScope = scope
     },
 
-    /** GET /api/snippets（初回のみ） */
-    async fetchSnippets() {},
+    /** GET /api/snippets（初回のみ。マスタデータなのでルーム切替のたびに取り直さない） */
+    async fetchSnippets() {
+      if (this.snippets.length > 0) return
+
+      const { data } = await snippetsApi.list()
+      this.snippets = data.snippets
+    },
 
     /** "/" 入力でパレットを開く */
-    openSnippetPalette() {},
-    closeSnippetPalette() {},
-    /** 続けて入力された文字で絞り込む */
-    setSnippetQuery(query) {},
+    async openSnippetPalette() {
+      this.snippetPaletteOpen = true
+      this.snippetQuery = ''
+      this.snippetHighlightIndex = 0
+      await this.fetchSnippets()
+    },
+    closeSnippetPalette() {
+      this.snippetPaletteOpen = false
+      this.snippetQuery = ''
+      this.snippetHighlightIndex = 0
+    },
+    /** 続けて入力された文字で絞り込む。候補が変わるので選択位置は先頭に戻す */
+    setSnippetQuery(query) {
+      this.snippetQuery = query
+      this.snippetHighlightIndex = 0
+    },
     /** @param {number} delta ↑=-1 / ↓=+1 */
-    moveSnippetHighlight(delta) {},
+    moveSnippetHighlight(delta) {
+      const count = this.filteredSnippets.length
+      if (count === 0) return
+
+      this.snippetHighlightIndex = (this.snippetHighlightIndex + delta + count) % count
+    },
 
     /** @param {'connected'|'connecting'|'disconnected'} state */
     setConnectionState(state) {
