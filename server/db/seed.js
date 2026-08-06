@@ -81,7 +81,7 @@ const STUDENTS = [
   {
     loginId: 'student1', displayName: '田中 太郎', avatarColor: '#7CBF9C',
     university: '東京大学', faculty: '工学部', gradYear: 2027, selectionStatus: 'interview_2',
-    assignee: 'hr1', handlingStatus: HANDLING_STATUS.NEEDS_REPLY, isPinned: false,
+    assignee: 'hr1', handlingStatus: HANDLING_STATUS.NEEDS_REPLY,
     fillerCount: 8,
     thread: [
       { sender: 'hr', hoursAgo: 48, body: '明日14時からの一次面接、忘れずにご参加ください。' },
@@ -91,7 +91,7 @@ const STUDENTS = [
   {
     loginId: 'student2', displayName: '佐藤 花子', avatarColor: '#BFB27C',
     university: '早稲田大学', faculty: '商学部', gradYear: 2027, selectionStatus: 'interview_4',
-    assignee: 'hr2', handlingStatus: HANDLING_STATUS.NEEDS_REPLY, isPinned: false,
+    assignee: 'hr2', handlingStatus: HANDLING_STATUS.NEEDS_REPLY,
     fillerCount: 8,
     thread: [
       { sender: 'hr', hoursAgo: 20, body: '候補日は8/10, 8/12, 8/14です。' },
@@ -101,7 +101,7 @@ const STUDENTS = [
   {
     loginId: 'student3', displayName: '鈴木 一郎', avatarColor: '#7CA8BF',
     university: '慶應義塾大学', faculty: '経済学部', gradYear: 2028, selectionStatus: 'entry',
-    assignee: null, handlingStatus: HANDLING_STATUS.NEEDS_REPLY, isPinned: false,
+    assignee: null, handlingStatus: HANDLING_STATUS.NEEDS_REPLY,
     fillerCount: 6,
     thread: [
       { sender: 'hr', hoursAgo: 6, body: '面接会場は本社ビル3階になります。' },
@@ -111,7 +111,7 @@ const STUDENTS = [
   {
     loginId: 'student4', displayName: '高橋 美咲', avatarColor: '#BF7C9C',
     university: '一橋大学', faculty: '社会学部', gradYear: 2027, selectionStatus: 'interview_5',
-    assignee: 'admin1', handlingStatus: HANDLING_STATUS.NEEDS_REPLY, isPinned: false,
+    assignee: 'admin1', handlingStatus: HANDLING_STATUS.NEEDS_REPLY,
     fillerCount: 8,
     thread: [
       { sender: 'hr', hoursAgo: 20, body: '五次面接の結果について確認中です。' },
@@ -121,7 +121,7 @@ const STUDENTS = [
   {
     loginId: 'student5', displayName: '伊藤 健太', avatarColor: '#9CBF7C',
     university: '筑波大学', faculty: '情報学群', gradYear: 2027, selectionStatus: 'offer',
-    assignee: 'hr1', handlingStatus: HANDLING_STATUS.WAITING_STUDENT, isPinned: false,
+    assignee: 'hr1', handlingStatus: HANDLING_STATUS.WAITING_STUDENT,
     fillerCount: 6,
     thread: [
       { sender: 'student', hoursAgo: 76, body: '内定のご連絡ありがとうございます、承諾いたします。' },
@@ -131,7 +131,7 @@ const STUDENTS = [
   {
     loginId: 'student6', displayName: '渡辺 さくら', avatarColor: '#BF7C7C',
     university: '明治大学', faculty: '法学部', gradYear: 2027, selectionStatus: 'declined',
-    assignee: 'hr2', handlingStatus: HANDLING_STATUS.DONE, isPinned: false,
+    assignee: 'hr2', handlingStatus: HANDLING_STATUS.DONE,
     fillerCount: 4,
     thread: [
       { sender: 'student', hoursAgo: 200, body: '今回は内定を辞退させていただきます。' },
@@ -141,7 +141,7 @@ const STUDENTS = [
   {
     loginId: 'student7', displayName: '山本 直樹', avatarColor: '#7CBFBF',
     university: '大阪大学', faculty: '基礎工学部', gradYear: 2028, selectionStatus: 'document',
-    assignee: 'admin1', handlingStatus: HANDLING_STATUS.IN_PROGRESS, isPinned: false,
+    assignee: 'admin1', handlingStatus: HANDLING_STATUS.IN_PROGRESS,
     fillerCount: 6,
     thread: [
       { sender: 'hr', hoursAgo: 24, body: '適性検査（SPI）の受検リンクをお送りします。' },
@@ -151,7 +151,7 @@ const STUDENTS = [
   {
     loginId: 'student8', displayName: '中村 陽菜', avatarColor: '#BFBF7C',
     university: '同志社大学', faculty: '文学部', gradYear: 2028, selectionStatus: 'aptitude',
-    assignee: 'hr1', handlingStatus: HANDLING_STATUS.ON_HOLD, isPinned: false,
+    assignee: 'hr1', handlingStatus: HANDLING_STATUS.ON_HOLD,
     fillerCount: 4,
     thread: [
       { sender: 'student', hoursAgo: 100, body: '少し検討するお時間をいただけますでしょうか。' },
@@ -161,7 +161,7 @@ const STUDENTS = [
   {
     loginId: 'student9', displayName: '小林 蓮', avatarColor: '#9C7CBF',
     university: '立命館大学', faculty: '経営学部', gradYear: 2027, selectionStatus: 'interview_1',
-    assignee: 'hr2', handlingStatus: HANDLING_STATUS.NEEDS_REPLY, isPinned: true,
+    assignee: 'hr2', handlingStatus: HANDLING_STATUS.NEEDS_REPLY,
     fillerCount: 6,
     thread: [
       { sender: 'hr', hoursAgo: 10, body: '何かご不明点があればいつでもご連絡ください。' },
@@ -172,7 +172,7 @@ const STUDENTS = [
     loginId: 'student10', displayName: '加藤 美月',
     avatarColor: '#BF9C7C',
     university: '関西学院大学', faculty: '総合政策学部', gradYear: 2028, selectionStatus: 'interview_3',
-    assignee: 'admin1', handlingStatus: HANDLING_STATUS.IN_PROGRESS, isPinned: false,
+    assignee: 'admin1', handlingStatus: HANDLING_STATUS.IN_PROGRESS,
     fillerCount: 4,
     thread: [
       { sender: 'hr', hoursAgo: 3, body: '本日はご参加ありがとうございました。' },
@@ -252,10 +252,10 @@ function seed() {
 
       const { lastInsertRowid: roomId } = db
         .prepare(
-          `INSERT INTO rooms (type, student_user_id, handling_status, assignee_user_id, urgency, is_pinned, created_at)
-           VALUES (?, ?, ?, ?, 'normal', ?, ?)`,
+          `INSERT INTO rooms (type, student_user_id, handling_status, assignee_user_id, urgency, created_at)
+           VALUES (?, ?, ?, ?, 'normal', ?)`,
         )
-        .run(ROOM_TYPE.DM, studentUserId, student.handlingStatus, assigneeUserId, student.isPinned ? 1 : 0, roomCreatedAt);
+        .run(ROOM_TYPE.DM, studentUserId, student.handlingStatus, assigneeUserId, roomCreatedAt);
 
       // 受信箱は人事全員が共有する。担当者(assignee)は表示専用の別概念とし、閲覧・参加権限は全hr/adminに付与する。
       const memberIds = [studentUserId, ...allHrIds];

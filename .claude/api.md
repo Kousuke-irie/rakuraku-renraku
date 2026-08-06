@@ -44,7 +44,7 @@
 | --- | --- | --- |
 | GET | `/rooms` | ルーム一覧。query: `handlingStatus`, `selectionStatus`, `topicTag`, `urgency`, `assigneeId`, `sort`, `q` |
 | GET | `/rooms/:id` | ルーム詳細（学生プロフィール込み） |
-| PATCH | `/rooms/:id` | `{handlingStatus?, assigneeUserId?, isPinned?}` |
+| PATCH | `/rooms/:id` | `{handlingStatus?, assigneeUserId?}` |
 | POST | `/rooms/:id/read` | `{lastReadMessageId}` |
 
 #### `GET /rooms` レスポンス例
@@ -64,7 +64,6 @@
       "handlingStatus": "needs_reply",
       "urgency": "high",
       "topicTag": "absence_late",
-      "isPinned": true,
       "assignee": { "id": 3, "displayName": "田中" },
       "unreadCount": 2,
       "lastMessage": {
@@ -173,7 +172,7 @@ io(BASE_URL, { withCredentials: true })
 | `message:sent` | `{ clientMsgId, message }` | 送信者のみ（ack） |
 | `message:deleted` | `{ roomId, messageId }` | ルーム参加者 |
 | `read:updated` | `{ roomId, userId, lastReadMessageId }` | ルーム参加者 |
-| `room:updated` | `{ room }` | `hr` ルーム。ステータス・緊急度・担当者・ピン留めの変更時 |
+| `room:updated` | `{ room }` | `hr` ルーム。ステータス・緊急度・担当者の変更時 |
 | `memo:updated` | `{ roomId, memo }` | `hr` ルーム（共有メモのみ） |
 | `summary:updated` | `{ needsReply, urgent, overdue24h }` | `hr` ルーム |
 | `ai:summary_updated` | `{ status, situation, todos, generatedAt }` | 生成を依頼した本人のみ（P3-1a・未実装） |

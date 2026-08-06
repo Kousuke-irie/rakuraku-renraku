@@ -9,8 +9,8 @@ import { onBeforeUnmount, watch } from 'vue'
  * ポップアップ側は**ルート要素で click の伝播を止める**こと。
  * 止めないと、開いた直後に自分自身のクリックで閉じてしまう。
  *
- *   const isOpen = computed(() => ui.statusMenuRoomId === props.roomId)
- *   useDismissOnOutside(isOpen, () => ui.closeStatusMenu())
+ *   const isMenuOpen = computed(() => openMenuKey.value === props.filterKey)
+ *   useDismissOnOutside(isMenuOpen, closeMenu)
  *
  * @param {import('vue').Ref<boolean>|import('vue').ComputedRef<boolean>} isOpen 開閉状態
  * @param {() => void} dismiss 閉じる処理

@@ -8,7 +8,6 @@ import { ELAPSED_REFRESH_INTERVAL_MS } from "../constants/index.js"
 // #region constants
 const MS_PER_MINUTE = 60_000
 const MS_PER_HOUR = 3_600_000
-const MS_PER_DAY = 86_400_000
 // #endregion
 
 // #region shared ticker
@@ -40,18 +39,18 @@ const stopTicker = () => {
 // #endregion
 
 /**
- * 経過時間を `3分` / `2時間` / `1日3時間` 形式に整形する（business-logic.md §3）。
+ * 経過時間を `<1m` / `45m` / `26h` 形式に整形する（business-logic.md §3）。
+ *
+ * **1日を超えても「日」に繰り上げず h のままにする。** SLA の閾値（12h / 24h）と
+ * 同じ単位で並ぶので、「1日2時間」より「26h」の方が超過幅を直接比較できる。
+ *
  * @param {number} ms 経過ミリ秒
  * @returns {string}
  */
 export const formatElapsed = (ms) => {
-  if (ms < MS_PER_MINUTE) return "1分未満"
-  if (ms < MS_PER_HOUR) return `${Math.floor(ms / MS_PER_MINUTE)}分`
-  if (ms < MS_PER_DAY) return `${Math.floor(ms / MS_PER_HOUR)}時間`
-
-  const days = Math.floor(ms / MS_PER_DAY)
-  const hours = Math.floor((ms % MS_PER_DAY) / MS_PER_HOUR)
-  return hours === 0 ? `${days}日` : `${days}日${hours}時間`
+  if (ms < MS_PER_MINUTE) return "<1m"
+  if (ms < MS_PER_HOUR) return `${Math.floor(ms / MS_PER_MINUTE)}m`
+  return `${Math.floor(ms / MS_PER_HOUR)}h`
 }
 
 /**

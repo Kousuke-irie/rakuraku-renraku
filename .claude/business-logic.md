@@ -83,7 +83,7 @@ classify(body: string): TopicTag
 
 - 基準時刻は `rooms.last_student_message_at`
 - `handling_status` が `done` / `waiting_student` の場合は**バッジ非表示**
-- 表示形式：`3分` / `2時間` / `1日3時間`
+- 表示形式：`<1m` / `45m` / `26h`。**1日を超えても日に繰り上げず h のまま**にし、SLA 閾値（12h / 24h）と同じ単位で比較できるようにする
 - **クライアント側で1分ごとに再計算**して表示更新する（`composables/useElapsedTime.js`）。サーバへの再取得は不要
 
 これが課題 C-1「合否連絡が1日遅れた」への直接の回答となる中核機能。
@@ -134,9 +134,8 @@ classify(body: string): TopicTag
 ## 6. 一覧のデフォルトソート（P1-7）
 
 ```
-1. is_pinned DESC              -- ピン留めが最上位
-2. urgency                     -- high → normal → low
-3. last_student_message_at ASC -- 経過時間が長い順
+1. urgency                     -- high → normal → low
+2. last_student_message_at ASC -- 経過時間が長い順
 ```
 
 - 切替可能なソート：最終メッセージ時刻順 / 経過時間順

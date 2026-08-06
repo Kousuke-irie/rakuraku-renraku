@@ -138,7 +138,7 @@ export const MEMO_SCOPE_VALUES = Object.values(MEMO_SCOPE);
 // ---------------------------------------------------------------------------
 
 export const SORT_KEY = Object.freeze({
-  // 既定：is_pinned DESC → urgency → last_student_message_at ASC
+  // 既定：urgency → last_student_message_at ASC
   DEFAULT: 'default',
   // 最終メッセージ時刻の新しい順
   LAST_MESSAGE: 'last_message',
