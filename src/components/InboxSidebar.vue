@@ -5,7 +5,7 @@
 //   1行の見た目とふるまいは RoomListItem が単独で持つので、行に項目を足すときは
 //   このファイルではなく RoomListItem を触ること。
 //
-//   検索・サマリークリック・フィルタ・ソートは**まだ非活性**。
+//   検索・サマリークリック・フィルタは**まだ非活性**。
 //   P1-7（FilterBar）／P1-8（SummaryBar）でそれぞれのコンポーネントに置き換え、
 //   件数の算出も P1-8 で GET /api/summary（roomsStore.summary）へ寄せる。
 import { computed } from "vue"
@@ -14,6 +14,7 @@ import {
   HANDLING_STATUS,
   SLA_ALERT_HOURS,
   SORT_KEY_META,
+  SORT_KEY_VALUES,
   URGENCY,
 } from "../constants/index.js"
 import { useRoomsStore } from "../stores/rooms.js"
@@ -39,8 +40,8 @@ const isOverdue = (room) =>
 // #endregion
 
 // #region computed
-/** 一覧の並びはサーバが既定順（ピン→緊急度→経過時間）で返す。並べ替えUIは P1-7 */
-const roomList = computed(() => rooms.rooms)
+/** フィルタ済みのルームを選択したソート条件で表示する。 */
+const roomList = computed(() => rooms.sortedRooms)
 
 /** P1-8 で GET /api/summary に置き換える暫定集計 */
 const summaryItems = computed(() => [
@@ -62,7 +63,9 @@ const summaryItems = computed(() => [
   },
 ])
 
-const sortLabel = computed(() => SORT_KEY_META[rooms.sortKey]?.label ?? "")
+const changeSort = (event) => {
+  rooms.setSortKey(event.target.value)
+}
 // #endregion
 </script>
 
@@ -108,7 +111,7 @@ const sortLabel = computed(() => SORT_KEY_META[rooms.sortKey]?.label ?? "")
         </li>
       </ul>
 
-      <!-- フィルタ＆ソート（P1-7）：形のみ -->
+      <!-- フィルタは形のみ。ソートは P1-7 で実装済み。 -->
       <div class="filters">
         <button
           v-for="label in FILTER_LABELS"
@@ -119,7 +122,22 @@ const sortLabel = computed(() => SORT_KEY_META[rooms.sortKey]?.label ?? "")
         >
           {{ label }} ▾
         </button>
-        <span class="filters__sort">{{ sortLabel }} ▾</span>
+        <label class="filters__sort">
+          <span class="visually-hidden">並び替え</span>
+          <select
+            :value="rooms.sortKey"
+            aria-label="並び替え"
+            @change="changeSort"
+          >
+            <option
+              v-for="sortKey in SORT_KEY_VALUES"
+              :key="sortKey"
+              :value="sortKey"
+            >
+              {{ SORT_KEY_META[sortKey]?.label }}
+            </option>
+          </select>
+        </label>
       </div>
     </div>
 
@@ -235,7 +253,16 @@ const sortLabel = computed(() => SORT_KEY_META[rooms.sortKey]?.label ?? "")
 
 .filters__sort {
   margin-left: auto;
+}
+
+.filters__sort select {
+  max-width: 116px;
+  padding: 3px 18px 3px 8px;
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-pill);
+  background-color: var(--color-canvas);
   color: var(--color-ink-mute);
+  font: inherit;
   font-size: 11px;
   font-weight: 700;
 }

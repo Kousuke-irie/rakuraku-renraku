@@ -6,6 +6,9 @@ import {
   DEFAULT_SORT_KEY,
   ROLE,
   SOCKET_EMIT,
+  SORT_KEY,
+  SORT_KEY_VALUES,
+  URGENCY_ORDER,
 } from '../constants/index.js'
 import { memosApi, roomsApi, studentsApi, toErrorMessage, usersApi } from '../api/index.js'
 import { emitSocketAck } from '../composables/useSocket.js'
@@ -13,6 +16,55 @@ import { useUiStore } from './ui.js'
 
 /** 対応ステータス変更が失敗したときの既定文言（P1-2） */
 const STATUS_UPDATE_ERROR = '対応ステータスの変更に失敗しました'
+
+/** 日時を比較用の数値にする。日時なし・不正値は常に末尾へ送る。 */
+const timestampOf = (value) => {
+  if (!value) return Number.POSITIVE_INFINITY
+
+  const timestamp = Date.parse(value)
+  return Number.isNaN(timestamp) ? Number.POSITIVE_INFINITY : timestamp
+}
+
+/** 比較結果が同じときにも表示順を安定させる。 */
+const byRoomId = (left, right) => Number(left.id) - Number(right.id)
+
+/**
+ * 既定の優先順位。ピン留め → 緊急度 → 学生最終メッセージが古い順。
+ * 時刻がないルームは経過時間を算出できないため、同条件の末尾に置く。
+ */
+const byDefaultPriority = (left, right) => {
+  const pin = Number(Boolean(right.isPinned)) - Number(Boolean(left.isPinned))
+  if (pin !== 0) return pin
+
+  const urgency = (URGENCY_ORDER[left.urgency] ?? Infinity) - (URGENCY_ORDER[right.urgency] ?? Infinity)
+  if (urgency !== 0) return urgency
+
+  const elapsed = timestampOf(left.lastStudentMessageAt) - timestampOf(right.lastStudentMessageAt)
+  return elapsed !== 0 ? elapsed : byRoomId(left, right)
+}
+
+/** 最終メッセージの新しい順。時刻がないルームは末尾に置く。 */
+const byLastMessage = (left, right) => {
+  const recency = timestampOf(right.lastMessage?.createdAt) - timestampOf(left.lastMessage?.createdAt)
+  return recency !== 0 ? recency : byRoomId(left, right)
+}
+
+/** 学生最終メッセージが古い順、すなわち経過時間が長い順。 */
+const byElapsedTime = (left, right) => {
+  const elapsed = timestampOf(left.lastStudentMessageAt) - timestampOf(right.lastStudentMessageAt)
+  return elapsed !== 0 ? elapsed : byRoomId(left, right)
+}
+
+/** フィルタ条件を満たすルームだけを残す。 */
+const filterRooms = (rooms, filters) => {
+  const { selectionStatus } = filters
+  return rooms.filter((room) => {
+    if (selectionStatus.length && !selectionStatus.includes(room.student?.selectionStatus)) {
+      return false
+    }
+    return true
+  })
+}
 
 /** 申し送りメモ（P2-5）の失敗時の既定文言 */
 const MEMO_ERROR = Object.freeze({
@@ -130,15 +182,7 @@ export const useRoomsStore = defineStore('rooms', {
      * filters を適用した結果（並べ替え前）。
      * まず選考ステータスのみ実装（P1-7）。他条件は次のステップ以降で追加する。
      */
-    filteredRooms: (s) => {
-      const { selectionStatus } = s.filters
-      return s.rooms.filter((room) => {
-        if (selectionStatus.length && !selectionStatus.includes(room.student?.selectionStatus)) {
-          return false
-        }
-        return true
-      })
-    },
+    filteredRooms: (s) => filterRooms(s.rooms, s.filters),
 
     /**
      * 表示用の最終リスト。
@@ -147,7 +191,19 @@ export const useRoomsStore = defineStore('rooms', {
      * SORT_KEY.ELAPSED: lastStudentMessageAt ASC（経過時間が長い順）
      * （business-logic.md §6）
      */
-    sortedRooms: (s) => [],
+    sortedRooms: (s) => {
+      const rooms = filterRooms(s.rooms, s.filters)
+
+      switch (s.sortKey) {
+        case SORT_KEY.LAST_MESSAGE:
+          return rooms.sort(byLastMessage)
+        case SORT_KEY.ELAPSED:
+          return rooms.sort(byElapsedTime)
+        case SORT_KEY.DEFAULT:
+        default:
+          return rooms.sort(byDefaultPriority)
+      }
+    },
 
     /** フィルタが1つでも掛かっているか（「条件をクリア」ボタンの活性判定） */
     hasActiveFilters: (s) => false,
@@ -434,7 +490,9 @@ export const useRoomsStore = defineStore('rooms', {
     clearFilters() {},
 
     /** @param {string} sortKey SORT_KEY のいずれか */
-    setSortKey(sortKey) {},
+    setSortKey(sortKey) {
+      if (SORT_KEY_VALUES.includes(sortKey)) this.sortKey = sortKey
+    },
 
     /** 「自分の担当のみ」トグル */
     toggleOnlyMine() {},
