@@ -84,8 +84,19 @@ export const useRoomsStore = defineStore('rooms', {
     /** @returns {(roomId: number) => object|undefined} */
     roomById: (s) => (roomId) => s.rooms.find((room) => room.id === Number(roomId)),
 
-    /** filters を適用した結果（並べ替え前） */
-    filteredRooms: (s) => [],
+    /**
+     * filters を適用した結果（並べ替え前）。
+     * まず選考ステータスのみ実装（P1-7）。他条件は次のステップ以降で追加する。
+     */
+    filteredRooms: (s) => {
+      const { selectionStatus } = s.filters
+      return s.rooms.filter((room) => {
+        if (selectionStatus.length && !selectionStatus.includes(room.student?.selectionStatus)) {
+          return false
+        }
+        return true
+      })
+    },
 
     /**
      * 表示用の最終リスト。
@@ -204,7 +215,9 @@ export const useRoomsStore = defineStore('rooms', {
      * 例：applyFilters({ handlingStatus: [HANDLING_STATUS.NEEDS_REPLY] })
      * @param {object} patch filters の部分オブジェクト
      */
-    applyFilters(patch) {},
+    applyFilters(patch) {
+      this.filters = { ...this.filters, ...patch }
+    },
 
     /** フィルタを初期状態へ戻す（「条件をクリア」） */
     clearFilters() {},
