@@ -134,6 +134,12 @@ const time = computed(() => {
             :value="room.urgency"
             size="sm"
           />
+          <!-- 用件タグ（P1-5）。サーバが最新の学生メッセージから自動判定した値 -->
+          <StatusChip
+            :kind="CHIP_KIND.TOPIC"
+            :value="room.topicTag"
+            size="sm"
+          />
           <ElapsedBadge
             :since="room.lastStudentMessageAt"
             :handling-status="room.handlingStatus"

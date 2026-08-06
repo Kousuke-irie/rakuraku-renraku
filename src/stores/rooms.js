@@ -1,6 +1,11 @@
 /* eslint-disable no-unused-vars -- 空実装のため引数が未使用。実装時にこの行を消すこと */
 import { defineStore } from 'pinia'
-import { DEFAULT_SORT_KEY, SOCKET_EMIT } from '../constants/index.js'
+import {
+  AI_SUMMARY_STATUS,
+  DEFAULT_AI_SUMMARY_STATUS,
+  DEFAULT_SORT_KEY,
+  SOCKET_EMIT,
+} from '../constants/index.js'
 import { roomsApi, toErrorMessage } from '../api/index.js'
 import { emitSocketAck } from '../composables/useSocket.js'
 import { useUiStore } from './ui.js'
@@ -74,6 +79,26 @@ export const useRoomsStore = defineStore('rooms', {
       unassigned: 0,
     },
 
+    /**
+     * ホームの AI 現況サマリー（P3-1a・business-logic.md §7-2）。
+     * サーバ由来のデータなので ui ストアではなくここに置く。
+     * ★中身の生成は P3-1a で実装する。現状は UI の受け皿だけ用意した状態。
+     * @type {{
+     *   status: string,               // AI_SUMMARY_STATUS のいずれか
+     *   situation: string,            // 現状の1〜2文の要約
+     *   todos: {roomId: number, studentName: string, action: string, reason: string}[],
+     *   generatedAt: string|null,     // ISO8601(UTC)
+     *   error: string|null,
+     * }}
+     */
+    aiSummary: {
+      status: DEFAULT_AI_SUMMARY_STATUS,
+      situation: '',
+      todos: [],
+      generatedAt: null,
+      error: null,
+    },
+
     /** @type {Object<number, object[]>} ルームIDごとのメモ一覧（P2-5。個人＋共有） */
     memosByRoomId: {},
 
@@ -89,8 +114,19 @@ export const useRoomsStore = defineStore('rooms', {
     /** @returns {(roomId: number) => object|undefined} */
     roomById: (s) => (roomId) => s.rooms.find((room) => room.id === Number(roomId)),
 
-    /** filters を適用した結果（並べ替え前） */
-    filteredRooms: (s) => [],
+    /**
+     * filters を適用した結果（並べ替え前）。
+     * まず選考ステータスのみ実装（P1-7）。他条件は次のステップ以降で追加する。
+     */
+    filteredRooms: (s) => {
+      const { selectionStatus } = s.filters
+      return s.rooms.filter((room) => {
+        if (selectionStatus.length && !selectionStatus.includes(room.student?.selectionStatus)) {
+          return false
+        }
+        return true
+      })
+    },
 
     /**
      * 表示用の最終リスト。
@@ -136,6 +172,34 @@ export const useRoomsStore = defineStore('rooms', {
 
     /** GET /api/users?role=hr（P2-9 担当者アサイン用） */
     async fetchAssignableUsers() {},
+
+    // ---- AI 現況サマリー（P3-1a） -----------------------------------------
+
+    /**
+     * GET /api/ai/summary。ホーム表示時にキャッシュ済みの要約を取りに行く。
+     * ★P3-1a で実装する。サーバ側（server/services/aiSummary.js）が未実装のため
+     *   今は API を叩かず「準備中」を立てるだけにしてある。
+     *   AI が落ちてもホームの一覧は動き続けること（business-logic.md §7-2）。
+     */
+    async fetchAiSummary() {
+      this.setAiSummary({ status: AI_SUMMARY_STATUS.UNAVAILABLE })
+    },
+
+    /**
+     * POST /api/ai/summary。右下の AI ボタン／カードの更新から呼ぶ強制再生成。
+     * ★P3-1a で実装する。
+     */
+    async regenerateAiSummary() {
+      this.setAiSummary({ status: AI_SUMMARY_STATUS.UNAVAILABLE })
+    },
+
+    /**
+     * AI サマリーを差し替える。REST の応答も socket `ai:summary_updated` も必ずここを通す。
+     * @param {{status?: string, situation?: string, todos?: object[], generatedAt?: string|null, error?: string|null}} summary
+     */
+    setAiSummary(summary) {
+      this.aiSummary = { ...this.aiSummary, ...summary }
+    },
 
     // ---- 反映系（socket / REST 共通の入口） --------------------------------
 
@@ -244,7 +308,9 @@ export const useRoomsStore = defineStore('rooms', {
      * 例：applyFilters({ handlingStatus: [HANDLING_STATUS.NEEDS_REPLY] })
      * @param {object} patch filters の部分オブジェクト
      */
-    applyFilters(patch) {},
+    applyFilters(patch) {
+      this.filters = { ...this.filters, ...patch }
+    },
 
     /** フィルタを初期状態へ戻す（「条件をクリア」） */
     clearFilters() {},
@@ -258,6 +324,13 @@ export const useRoomsStore = defineStore('rooms', {
     reset() {
       this.rooms = []
       this.summary = { needsReply: 0, urgent: 0, overdue24h: 0, unassigned: 0 }
+      this.aiSummary = {
+        status: DEFAULT_AI_SUMMARY_STATUS,
+        situation: '',
+        todos: [],
+        generatedAt: null,
+        error: null,
+      }
       this.memosByRoomId = {}
       this.assignableUsers = []
       this.loading = false

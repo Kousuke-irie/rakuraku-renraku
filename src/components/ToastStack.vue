@@ -89,10 +89,14 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .toasts {
+  /* AI ランチャー（AiLauncherButton の .ai-fab：右下 24px・56px 角）と重ならないよう、
+     同じ右端に揃えたうえで FAB の上に積む */
+  --ai-fab-clearance: calc(var(--space-xxl) + 56px + var(--space-md));
+
   position: fixed;
   z-index: 100;
-  right: var(--space-lg);
-  bottom: var(--space-lg);
+  right: var(--space-xxl);
+  bottom: var(--ai-fab-clearance);
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
