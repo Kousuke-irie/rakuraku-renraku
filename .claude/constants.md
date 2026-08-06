@@ -39,6 +39,28 @@
 
 > **面接は5回**。実データ準拠のため増減させないこと。
 
+### 選考フローに並べるステップ `SELECTION_FLOW_STEP_VALUES`（P2-11 / S-09）
+
+学生のマイページのフロー図に丸として並ぶステップ。
+`SELECTION_STATUS_VALUES` から **`declined`（辞退）を除いた9件**。
+
+辞退は選考の一段階ではなく終端の分岐なので、「エントリー → … → 内定」の線上に置かない。
+`selection_steps` テーブルの CHECK 制約はこの並びと完全に一致させること。
+
+### ステップの状態 `FLOW_STEP_STATE`
+
+| 値 | ラベル | 意味 |
+| --- | --- | --- |
+| `done` | 完了 | 現在ステータスより前。**ここだけ学生にFBが見える** |
+| `current` | 進行中 | 現在ステータスと同じ |
+| `upcoming` | これから | 現在ステータスより後 |
+
+算出は `business-logic.md` §8。**保存せず毎回導出する。**
+
+> 会社が設定できるのは「どのステップを使うか」「表示名」「説明・ポイント」だけ。
+> **ステップ種別そのものは増やせない。** 受信箱・ホーム・全学生・フィルタ・AI要約・
+> 定型文変数がすべて `SELECTION_STATUS` を共有しているため。
+
 ## 3. 用件タグ `TOPIC_TAG`
 
 メッセージの内容分類。**サーバが自動判定**して `messages.topic_tag` に保存する。
@@ -112,14 +134,85 @@
 
 ## 9. SLA 閾値
 
-| 定数 | 既定値 | 環境変数 |
-| --- | --- | --- |
-| `SLA_WARN_HOURS` | 12 | `SLA_WARN_HOURS` |
-| `SLA_ALERT_HOURS` | 24 | `SLA_ALERT_HOURS` |
+**緊急度（P1-6）の閾値と、通知（P4-1）の閾値は別物。流用しないこと。**
+責務が違うため、片方を変えたときにもう片方まで動くのを防ぐ。
+
+| 定数 | 既定値 | 環境変数 | 用途 |
+| --- | --- | --- | --- |
+| `SLA_WARN_HOURS` | 12 | `SLA_WARN_HOURS` | 緊急度：日程調整・合否待ちを `high` にする |
+| `SLA_ALERT_HOURS` | 24 | `SLA_ALERT_HOURS` | 緊急度：要返信・対応中を `high` にする |
+| `SLA_NOTIFY_HOURS` | 24 | `SLA_NOTIFY_HOURS` | 通知（N）：担当者へ通知する |
+| `SLA_ESCALATE_HOURS` | 48 | `SLA_ESCALATE_HOURS` | 通知（2N）：上長へエスカレーションする |
+
+`SLA_NOTIFY_HOURS` と `SLA_ALERT_HOURS` が同値なのは意図した整合。
+**担当者への通知が飛ぶ瞬間と `urgency` が `high` に変わる瞬間が一致する**ので、受信箱の並びと通知が食い違わない。
+
+`SLA_ALERT_EXEMPT_STATUSES`：通知の対象外にする対応ステータス。
+`waiting_student` / `done`（人事が返信済み）と `on_hold`（意図的に止めている）。
 
 ---
 
-## 10. `shared/constants.js` 実装方針
+## 10. 監視イベント `ALERT_KIND` / `ALERT_SEVERITY`（P4-0）
+
+SLA 通知もコンプライアンス警告も `alerts` 1テーブルに集約する。詳細は `monitoring.md` §2。
+
+### `ALERT_KIND`
+
+| 値 | 表示名 | 通知先 |
+| --- | --- | --- |
+| `sla_notify` | 未返信24時間 | 担当者。未アサインなら上長全員 |
+| `sla_escalate` | 上長エスカレーション | `role='admin'` の全員 |
+| `compliance` | コンプライアンス警告 | NULL（本人へは送信前ダイアログで伝える） |
+
+`SLA_ALERT_KINDS` に SLA 系の2つをまとめてある。返信時の解消処理はこれを使う。
+
+### `ALERT_SEVERITY`
+
+| 値 | 表示名 | 意味 |
+| --- | --- | --- |
+| `block` | 要修正 | 送信前に警告ダイアログで止める |
+| `warn` | 要確認 | 注意を促すが止めない |
+| `info` | 参考 | 記録のみ（AI による補助検知など） |
+
+`ALERT_SEVERITY_ORDER` は重い順のソート用（`URGENCY_ORDER` と同じ役割）。
+
+---
+
+## 11. コンプライアンス分類 `COMPLIANCE_CATEGORY`（P4-2）
+
+| 値 | 表示名 |
+| --- | --- |
+| `discrimination` | 就職差別のおそれ |
+| `owahara` | オワハラのおそれ |
+
+- 表示には必ず `COMPLIANCE_DISCLAIMER`（「参考情報です。最終判断は担当者が行ってください。」）を併記する
+- **「検知しました」と断定しない。** 法的判断の代行に見えるため
+
+### `COMPLIANCE_SOURCE`（P4-2b）
+
+検知の出どころ。ダイアログでどちらが拾ったかを示す。
+
+| 値 | 表示名 |
+| --- | --- |
+| `dictionary` | 辞書 |
+| `ai` | AI |
+
+### `COMPLIANCE_AI_STATUS`（P4-2b）
+
+LLM による上乗せ検証が効いたか。**辞書判定は常に動く**ので、これは AI 分だけの状態。
+
+| 値 | 表示名 | 意味 |
+| --- | --- | --- |
+| `ok` | AIによる検証済み | |
+| `error` | AIによる検証はできていません | タイムアウト・APIエラー・レスポンス不正 |
+| `unavailable` | AIによる検証はできていません | `GEMINI_API_KEY` 未設定 |
+
+`ok` 以外のときは、**辞書だけの結果であることを画面に明示する**こと。黙って辞書の結果だけ
+見せると「AIも通した」と誤解される。
+
+---
+
+## 12. `shared/constants.js` 実装方針
 
 ```js
 // 値の配列と表示名マップをセットでエクスポートする

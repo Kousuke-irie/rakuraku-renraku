@@ -3,6 +3,8 @@
 import { computed, onBeforeUnmount, ref } from "vue"
 import { useRoute, useRouter } from "vue-router"
 import { useAuthStore } from "../stores/auth.js"
+// ロゴの円から広がってホームのレールのロゴへ収束する画面転換
+import { useCircleReveal } from "../composables/useCircleReveal.js"
 // 外枠（ブランド面・入力欄の見た目）はユーザー登録画面と共通
 import AuthLayout from "../components/AuthLayout.vue"
 
@@ -10,6 +12,7 @@ import AuthLayout from "../components/AuthLayout.vue"
 const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
+const { revealToHome } = useCircleReveal()
 // #endregion
 
 // #region reactive variable
@@ -53,7 +56,10 @@ const onSubmit = async () => {
     return
   }
 
-  router.replace(resolveRedirectPath())
+  // 失敗時はこの画面にエラーを出したいので、遷移は認証が通ってから。
+  // 画面が円で覆われている間に router.replace が走る（覆えない環境ではそのまま遷移する）
+  const redirectPath = resolveRedirectPath()
+  await revealToHome(() => router.replace(redirectPath))
 }
 // #endregion
 

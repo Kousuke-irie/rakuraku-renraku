@@ -8,6 +8,7 @@
 //   - プロフィール … B-5。編集フォーム自体は ProfileDialog を使い回す（二重実装しない）
 //   - 定型文       … P2-1 拡張。追加・削除・編集は SnippetSettingsPanel に委譲。**人事のみ**
 //   - 会社情報     … P2-10。編集は CompanySettingsPanel に委譲。**人事のみ**
+//   - 選考フロー   … P2-11。編集は SelectionFlowSettingsPanel に委譲。**人事のみ**
 //                    （学生は編集できず、/chat の CompanyPanel で閲覧するだけ）
 //   - アカウント   … ログインIDの表示とログアウトのみ。パスワード変更は要件に無い
 //
@@ -22,6 +23,7 @@ import { useRouter } from "vue-router"
 import { useAuthStore } from "../stores/auth.js"
 import { useUiStore } from "../stores/ui.js"
 import CompanySettingsPanel from "../components/CompanySettingsPanel.vue"
+import SelectionFlowSettingsPanel from "../components/SelectionFlowSettingsPanel.vue"
 import SnippetSettingsPanel from "../components/SnippetSettingsPanel.vue"
 import UserAvatar from "../components/UserAvatar.vue"
 
@@ -40,6 +42,7 @@ const BASE_SECTIONS = Object.freeze([
 const HR_SECTIONS = Object.freeze([
   { key: "snippets", label: "定型文", note: "コマンドと本文" },
   { key: "company", label: "会社情報", note: "学生に見せる自社紹介" },
+  { key: "selection-flow", label: "選考フロー", note: "学生に見せる選考の流れ" },
 ])
 
 const ACCOUNT_SECTION = Object.freeze({ key: "account", label: "アカウント", note: "ログイン情報" })
@@ -180,6 +183,11 @@ const onLogout = async () => {
         <!-- 会社情報（P2-10）。学生の /chat の右パネルに出る内容 -->
         <template v-else-if="activeSection.key === 'company'">
           <CompanySettingsPanel />
+        </template>
+
+        <!-- 選考フロー（P2-11）。学生のマイページのフロー図になる -->
+        <template v-else-if="activeSection.key === 'selection-flow'">
+          <SelectionFlowSettingsPanel />
         </template>
 
         <!-- アカウント -->

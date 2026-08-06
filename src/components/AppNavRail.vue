@@ -10,13 +10,12 @@
 //
 // ★アイコンだけの状態でもラベルは DOM に残す（opacity で消すだけ）。
 //   display:none / visibility:hidden にするとスクリーンリーダーから消える。
-import { computed } from "vue"
+import { computed, onMounted, watch } from "vue"
 import { useRouter } from "vue-router"
-import { HANDLING_STATUS, HANDLING_STATUS_META } from "../constants/index.js"
 import { useAuthStore } from "../stores/auth.js"
-import { useRoomsStore } from "../stores/rooms.js"
 import { useUiStore } from "../stores/ui.js"
 import logoUrl from "../images/logo-rakuraku.png"
+import { LOGO_MARK } from "../utils/logoMark.js"
 import NavIcon from "./NavIcon.vue"
 import UserAvatar from "./UserAvatar.vue"
 
@@ -24,14 +23,15 @@ import UserAvatar from "./UserAvatar.vue"
 /** ワードマークの表記は「楽楽連ラク」に統一する（CLAUDE.md §1） */
 const BRAND_NAME = "楽楽連ラク"
 const INBOX_PATH = "/inbox"
+const CHAT_PATH = "/chat"
 const STUDENTS_PATH = "/students"
 const NOTIFICATIONS_PATH = "/notifications"
+const DASHBOARD_PATH = "/dashboard"
 const SETTINGS_PATH = "/settings/profile"
 // #endregion
 
 // #region global state
 const auth = useAuthStore()
-const rooms = useRoomsStore()
 const ui = useUiStore()
 // #endregion
 
@@ -44,35 +44,53 @@ const router = useRouter()
  * ロールごとのナビ項目（frontend.md §1）。
  * 人事は「ホーム（S-07・自分の担当の俯瞰）」「受信箱（S-03/S-04・返信）」
  * 「全学生（S-08・担当外と未配属の拾い上げ）」を行き来する。
- * 学生は自分のトーク1枚だけ。着地点は必ず auth.homePath から取り、パスを直書きしない。
+ * 学生は「マイページ（S-09・選考状況）」と「チャット（S-05・返信）」の2枚。
+ * 着地点は必ず auth.homePath から取り、パスを直書きしない。
  */
 const navItems = computed(() =>
   auth.isStudent
-    ? [{ to: auth.homePath, icon: "chat", label: "チャット" }]
+    ? [
+        { to: auth.homePath, icon: "home", label: "マイページ" },
+        { to: CHAT_PATH, icon: "chat", label: "チャット" },
+      ]
     : [
         { to: auth.homePath, icon: "home", label: "ホーム" },
         { to: INBOX_PATH, icon: "inbox", label: "受信箱" },
         { to: STUDENTS_PATH, icon: "students", label: "全学生" },
+        { to: DASHBOARD_PATH, icon: "chart", label: "ダッシュボード" },
       ]
 )
 
 /**
- * 通知バッジの件数。
- * ★P1-8 で GET /api/summary が入ったら `rooms.summary.needsReply` に差し替える。
- *   それまでは InboxSidebar と同じ暫定集計（ルーム一覧からの数え上げ）で出す。
- *   受信箱は担当制なので、数えるのは自分の担当ルームだけ（#28・roomsStore.myRooms）。
+ * 通知バッジの件数＝**自分宛の未読通知**（P4-1）。
+ * 以前は「要返信ルーム数」の暫定集計だったが、SLA 通知が入ったので実データにした。
+ * 数えるのはサーバ（GET /api/alerts の unreadCount）で、ここは持ち回すだけ。
  */
-const alertCount = computed(
-  () => rooms.myRooms.filter((room) => room.handlingStatus === HANDLING_STATUS.NEEDS_REPLY).length
-)
+const alertCount = computed(() => ui.alertsUnreadCount)
 
 /** 件数は色でなくテキストでも伝える（CLAUDE.md §6-13） */
-const alertLabel = computed(
-  () => `通知：${HANDLING_STATUS_META[HANDLING_STATUS.NEEDS_REPLY].label} ${alertCount.value}件`
-)
+const alertLabel = computed(() => `通知：未読 ${alertCount.value}件`)
 
 const accountLabel = computed(
   () => `${auth.user?.displayName ?? ""}のプロフィールを編集する`
+)
+// #endregion
+
+// #region lifecycle
+/**
+ * ベルの件数を取りに行く（P4-1）。
+ * 新着は socket（alert:new）で届くので、ここは初回とログインし直したときだけ。
+ * 学生には通知を出さないので取得もしない。
+ */
+onMounted(() => {
+  if (auth.isHr) ui.fetchAlertCount()
+})
+
+watch(
+  () => auth.user?.id,
+  (userId, previousId) => {
+    if (userId && userId !== previousId && auth.isHr) ui.fetchAlertCount()
+  }
 )
 // #endregion
 
@@ -95,7 +113,9 @@ const onLogout = async () => {
       :title="BRAND_NAME"
     >
       <!-- 円マークは画像左端の 227x227px ちょうど。枠幅を高さと同じにすると
-           円だけ、800/227 倍にするとワードマーク全体が現れる -->
+           円だけ、800/227 倍にするとワードマーク全体が現れる。
+           data-logo-mark はログイン直後の円形トランジション（useCircleReveal）が
+           収束先の中心を実測するための目印（utils/logoMark.js） -->
       <span
         class="rail__logo-box"
         aria-hidden="true"
@@ -104,6 +124,7 @@ const onLogout = async () => {
           :src="logoUrl"
           alt=""
           class="rail__logo"
+          :data-logo-mark="LOGO_MARK.RAIL"
           width="800"
           height="227"
         >

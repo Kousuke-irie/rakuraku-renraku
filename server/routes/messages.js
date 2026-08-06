@@ -10,7 +10,20 @@ import { emitMessageNew, emitSummaryUpdated } from '../services/realtime.js';
 import { applyStatusTransition } from '../services/statusTransition.js';
 import { queueStudentMessageAnalysis } from '../services/aiPriority.js';
 import { findScheduleRequest } from '../services/scheduleRequests.js';
-import { MESSAGE_TYPE, ROLE, SCHEDULE_REQUEST_STATUS } from '../../shared/constants.js';
+import {
+  normalizeAcknowledgedCodes,
+  queueAiComplianceRecord,
+  recordComplianceAlerts,
+} from '../services/complianceAlerts.js';
+import { checkCompliance, isCheckedRole } from '../services/complianceChecker.js';
+import { checkComplianceWithAi, mergeFindings } from '../services/complianceAi.js';
+import { resolveSlaAlerts } from '../services/slaMonitor.js';
+import {
+  COMPLIANCE_AI_STATUS,
+  MESSAGE_TYPE,
+  ROLE,
+  SCHEDULE_REQUEST_STATUS,
+} from '../../shared/constants.js';
 
 const router = Router();
 
@@ -80,12 +93,55 @@ router.get('/rooms/:id/messages', requireAuth, (req, res) => {
   res.json({ messages: rows.map(attachScheduleRequest) });
 });
 
+/**
+ * P4-3: 送信前チェック。状態を変えない問い合わせなので REST に置く（api.md §1）。
+ *
+ * 辞書ベースの同期処理のみで、外部通信もDB書き込みも行わない。
+ * ここが遅いと送信ボタンが固まるので、重い処理を足さないこと。
+ *
+ * このAPIはあくまで人事への親切であり、監視の本体ではない。
+ * クライアントが呼ばずに送信しても insertMessage 側で検知・記録される。
+ */
+router.post('/messages/check', requireAuth, async (req, res, next) => {
+  try {
+    const roomId = Number(req.body?.roomId);
+    const { body } = req.body ?? {};
+
+    if (!Number.isInteger(roomId) || roomId <= 0) {
+      return res.status(400).json({ error: 'invalid_request', message: 'roomId が必要です' });
+    }
+    if (typeof body !== 'string') {
+      return res.status(400).json({ error: 'invalid_request', message: '本文が必要です' });
+    }
+
+    // 他人のルームの本文を検査させない（CLAUDE.md §6-6）
+    assertRoomMember(db, req.user.id, roomId);
+
+    // 学生の発言は検査対象外。学生が呼んでも常に空を返す
+    if (!isCheckedRole(req.user.role)) {
+      return res.json({ results: [], ai: { status: COMPLIANCE_AI_STATUS.OK } });
+    }
+
+    // 辞書は必ず動く。AI は繋がるときだけ上乗せする（P4-2b）。
+    // AI が落ちていても status を返すだけで、辞書の結果はそのまま生きる。
+    const dictionaryResults = checkCompliance(db, body);
+    const ai = await checkComplianceWithAi(body);
+
+    res.json({
+      results: mergeFindings(dictionaryResults, ai.results),
+      ai: { status: ai.status },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post('/rooms/:id/messages', requireAuth, async (req, res, next) => {
   try {
     const roomId = Number(req.params.id);
     assertRoomMember(db, req.user.id, roomId);
 
-    const { body, clientMsgId } = req.body;
+    const { body, clientMsgId, acknowledgedCodes } = req.body;
 
     if (typeof body !== 'string' || body.trim() === '') {
       return res.status(400).json({ error: 'invalid_request', message: '本文が空です' });
@@ -100,12 +156,28 @@ router.post('/rooms/:id/messages', requireAuth, async (req, res, next) => {
       return res.status(200).json({ message: existing });
     }
 
-    const message = insertMessage({ roomId, senderId: req.user.id, senderRole: req.user.role, body, clientMsgId });
+    const message = insertMessage({
+      roomId,
+      senderId: req.user.id,
+      senderRole: req.user.role,
+      body,
+      clientMsgId,
+      acknowledgedCodes: normalizeAcknowledgedCodes(acknowledgedCodes),
+    });
 
     const io = req.app.get('io');
     await emitMessageNew(io, db, message);
     emitSummaryUpdated(io, db);
     if (req.user.role === ROLE.STUDENT) queueStudentMessageAnalysis(db, io, message);
+    // 辞書分は insertMessage 内で記録済み。AI 分だけ保存トランザクションの外で追う
+    queueAiComplianceRecord(db, {
+      roomId,
+      messageId: message.id,
+      actorUserId: req.user.id,
+      senderRole: req.user.role,
+      body,
+      acknowledgedCodes: normalizeAcknowledgedCodes(acknowledgedCodes),
+    });
 
     res.status(201).json({ message });
   } catch (error) {
@@ -114,7 +186,10 @@ router.post('/rooms/:id/messages', requireAuth, async (req, res, next) => {
 });
 
 // message.js(Socket)と共有する保存処理。1トランザクションでmessages+roomsを更新する。
-export function insertMessage({ roomId, senderId, senderRole, body, clientMsgId }) {
+//
+// acknowledgedCodes は送信前チェック（P4-3）で人事が承知したルールコード。
+// 未指定なら「チェック未経由」として記録される（monitoring.md §5）。
+export function insertMessage({ roomId, senderId, senderRole, body, clientMsgId, acknowledgedCodes = null }) {
   const now = new Date().toISOString();
 
   const run = db.transaction(() => {
@@ -149,8 +224,23 @@ export function insertMessage({ roomId, senderId, senderRole, body, clientMsgId 
       ).get(roomId, SCHEDULE_REQUEST_STATUS.BOOKED),
     );
     applyStatusTransition(db, roomId, senderRole, { keepInProgress: hasBookedSchedule });
+
+    // P4-1：人事が返信したらこのルームの未解決 SLA 通知を閉じる。
+    // コンプライアンス警告は「起きた事実」なので閉じない。
+    if (isCheckedRole(senderRole)) resolveSlaAlerts(db, roomId);
     const urgency = calculateRoomUrgency(db, roomId);
     db.prepare(`UPDATE rooms SET urgency = ? WHERE id = ?`).run(urgency, roomId);
+
+    // P4-2：人事の発言を検査して alerts に記録する。学生の発言は対象外。
+    // 辞書ベースなので外部通信は発生せず、保存トランザクション内で完結してよい。
+    recordComplianceAlerts(db, {
+      roomId,
+      messageId,
+      actorUserId: senderId,
+      senderRole,
+      body,
+      acknowledgedCodes,
+    });
 
     return db.prepare(`SELECT ${MESSAGE_COLUMNS} FROM messages WHERE id = ?`).get(messageId);
   });

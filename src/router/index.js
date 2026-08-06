@@ -7,6 +7,7 @@ import HomeView from "../views/HomeView.vue"
 import InboxView from "../views/InboxView.vue"
 import StudentsView from "../views/StudentsView.vue"
 import ChatView from "../views/ChatView.vue"
+import StudentHomeView from "../views/StudentHomeView.vue"
 import NotificationsView from "../views/NotificationsView.vue"
 import ProfileSettingsView from "../views/ProfileSettingsView.vue"
 import ScheduleSelectView from "../views/ScheduleSelectView.vue"
@@ -68,6 +69,14 @@ const routes = [
     meta: { requiresAuth: true, roles: [ROLE.HR, ROLE.ADMIN] },
   },
   {
+    // S-09 学生マイページ。学生のログイン後の着地点（frontend.md §1・§7-3）。
+    // 会社情報と選考フローの進捗を見る画面で、返信は /chat で行う。
+    path: "/mypage",
+    name: "mypage",
+    component: StudentHomeView,
+    meta: { requiresAuth: true, roles: [ROLE.STUDENT] },
+  },
+  {
     path: "/chat",
     name: "chat",
     component: ChatView,
@@ -104,6 +113,16 @@ const routes = [
     name: "profile-settings",
     component: ProfileSettingsView,
     meta: { requiresAuth: true },
+  },
+  {
+    // P4-4 監視ダッシュボード。**人事全員が見る**（相互監視のため）。
+    // 学生は roles 不一致で /mypage へ戻され、サーバ側（requireHr）でも弾かれる。
+    path: "/dashboard",
+    name: "dashboard",
+    // chart.js を初期バンドルに載せないため遅延読み込みにする。
+    // 開くのは上長だけなので、大多数のユーザーは読み込まなくて済む
+    component: () => import("../views/DashboardView.vue"),
+    meta: { requiresAuth: true, roles: [ROLE.HR, ROLE.ADMIN] },
   },
   {
     path: "/:pathMatch(.*)*",

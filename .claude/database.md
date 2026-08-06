@@ -25,6 +25,10 @@ tag_rules（キーワード辞書）
 company_info（ルーム非依存・全社共有・必ず1行）
 calendar_interviewers ──< calendar_events
 calendar_interviewers ──< schedule_requests ──1 calendar_bookings
+selection_steps（選考フローの設定：ルーム非依存・全社共有。P2-11）
+users ──< selection_feedbacks（学生×ステップで1件。P2-11）
+alerts（監視イベント：SLA通知・コンプライアンス警告。P4-0）
+compliance_rules（就職差別・オワハラの辞書。P4-2）
 ```
 
 ---
@@ -157,6 +161,48 @@ calendar_interviewers ──< schedule_requests ──1 calendar_bookings
 - **部分更新にしない。** 3項目すべてを受け取る全置換にする（「紹介文を空にする」を表現するため）
 - `recruit_site_url` は**サーバ側で `http:` / `https:` のみ許可**する。学生の画面にリンクとして出るため
 
+### `selection_steps`（選考フローの設定・P2-11）
+
+人事が「どのステップを使うか」「学生にどう見せるか」を決める。
+**ステップの識別子そのものは `shared/constants.js` の `SELECTION_STATUS` が正**で、
+このテーブルは見せ方の設定だけを持つ。行の追加・削除はしない（PK が固定の列挙値）。
+
+| カラム | 型 | 制約 | 説明 |
+| --- | --- | --- | --- |
+| `status_key` | TEXT | PK CHECK(9種) | 選考ステータス。`declined` は含めない |
+| `is_enabled` | INTEGER | NOT NULL CHECK(0/1) DEFAULT 1 | 学生のフローに出すか |
+| `sort_order` | INTEGER | NOT NULL | 並び順 |
+| `label` | TEXT | | 学生画面での表示名の上書き。NULL なら既定ラベル |
+| `description` | TEXT | | この選考の内容（500文字以内） |
+| `points` | TEXT | | 学生へのポイント（500文字以内） |
+| `updated_at` | TEXT | NOT NULL | ISO8601 UTC |
+
+- **`declined`（辞退）を CHECK に含めない。** 辞退は終端の分岐であり選考の一段階ではないため
+- 更新は全ステップの UPSERT による全置換。部分更新は並び順が壊れる
+- **有効なステップを0件にできない**（学生の画面が空になるため、ルート側で 400）
+- 行が1件も無い場合はサービス層が既定値（面接1〜3次のみ有効）を返す
+
+### `selection_feedbacks`（選考フィードバック・P2-11）
+
+学生1名 × ステップで1件。人事が受信箱のプロフィールパネルから書く。
+
+| カラム | 型 | 制約 | 説明 |
+| --- | --- | --- | --- |
+| `id` | INTEGER | PK AUTOINCREMENT | |
+| `student_user_id` | INTEGER | NOT NULL FK users | |
+| `status_key` | TEXT | NOT NULL CHECK(9種) | どのステップへのFBか |
+| `body` | TEXT | NOT NULL | 本文（1000文字以内） |
+| `author_id` | INTEGER | NOT NULL FK users | 書いた人事 |
+| `created_at` / `updated_at` | TEXT | NOT NULL | |
+
+`UNIQUE(student_user_id, status_key)` で1件に固定し、保存は UPSERT。
+本文が空なら行を削除する（「書いたものを取り消す」を表現するため）。
+
+**★学生に返してよいのは「その学生が通過済みのステップ」のぶんだけ。**
+進行中・未到達のFBを返すと、合否連絡より先に評価が本人に漏れる。
+絞り込みは `server/services/selectionFlow.js` の `buildStudentFlow()` が行う。
+クライアント側で隠す作りにしないこと。
+
 ### `tag_rules`（用件タグのキーワード辞書）
 
 | カラム | 型 | 制約 | 説明 |
@@ -165,6 +211,57 @@ calendar_interviewers ──< schedule_requests ──1 calendar_bookings
 | `tag` | TEXT | NOT NULL | 付与するタグ |
 | `keyword` | TEXT | NOT NULL | 部分一致させるキーワード |
 | `priority` | INTEGER | NOT NULL | 小さいほど優先 |
+
+### `alerts`（監視イベント・P4-0）
+
+SLA 通知とコンプライアンス警告を集約する。設計意図は `monitoring.md` §2。
+
+| カラム | 型 | 制約 | 説明 |
+| --- | --- | --- | --- |
+| `id` | INTEGER | PK AUTOINCREMENT | |
+| `kind` | TEXT | NOT NULL CHECK | `sla_notify` / `sla_escalate` / `compliance` |
+| `severity` | TEXT | NOT NULL CHECK | `block` / `warn` / `info` |
+| `room_id` | INTEGER | NOT NULL FK rooms | |
+| `target_user_id` | INTEGER | FK users | 通知先。compliance では NULL |
+| `actor_user_id` | INTEGER | FK users | 原因を作った人（送信者・担当者） |
+| `trigger_message_id` | INTEGER | FK messages | 起点メッセージ。**冪等キーの一部** |
+| `rule_code` | TEXT | | `COMPLIANCE_RULE` のいずれか。SLA では NULL |
+| `source` | TEXT | | `dictionary` / `ai`。SLA では NULL。**`rule_code` に `ai_` 接頭辞を付けて代用しない** |
+| `detail` | TEXT | NOT NULL | 画面用の短文。**本文全体を入れない** |
+| `created_at` | TEXT | NOT NULL | ISO8601 UTC |
+| `read_at` | TEXT | | 既読時刻 |
+| `resolved_at` | TEXT | | SLA：返信した時刻。compliance は常に NULL |
+
+**多重通知は部分 UNIQUE インデックス2本（`idx_alerts_sla_unique` / `idx_alerts_compliance_unique`）で防ぐ。**
+60秒タイマーから `INSERT OR IGNORE` で書き込むこと。アプリ側に「通知済みかどうか」の状態を持たせない。
+学生が新しく発言すれば `trigger_message_id` が変わるので、別イベントとして正しく再通知される。
+
+**テーブルレベルの `UNIQUE(...)` にしないこと。** SQLite は UNIQUE 中の NULL を互いに異なる値として
+扱うため、`target_user_id IS NULL` のコンプライアンス行が重複し放題になる。詳細は `monitoring.md` §2。
+
+### `compliance_rules`（就職差別・オワハラの辞書・P4-2）
+
+| カラム | 型 | 制約 | 説明 |
+| --- | --- | --- | --- |
+| `id` | INTEGER | PK AUTOINCREMENT | |
+| `code` | TEXT | NOT NULL | ルールのグループキー。`alerts.rule_code` から参照される。**UNIQUE にしない** |
+| `category` | TEXT | NOT NULL CHECK | `discrimination` / `owahara` |
+| `keyword` | TEXT | NOT NULL | **正規表現**。1行＝1パターン |
+| `exclude_keyword` | TEXT | | これらのいずれかに一致したら検知しない（カンマ区切りの正規表現・誤検知対策） |
+| `severity` | TEXT | NOT NULL CHECK | `block` / `warn` / `info` |
+| `message` | TEXT | NOT NULL | 人事に見せる警告文 |
+| `priority` | INTEGER | NOT NULL | 小さいほど優先 |
+
+`tag_rules` と違い、**最初のマッチで確定しない**。1通に複数の問題が混ざりうるので全件返す。
+ただし同一 `code` は1件に畳む（同じ観点で2回警告しても判断材料が増えないため）。
+
+`keyword` / `exclude_keyword` は**正規表現**として解釈する。照合は正規化済み本文
+（NFKC・小文字化・空白除去）に対して行うので、**パターンに空白を書かないこと**。
+不正な正規表現はリテラルとして扱われる（辞書1行の typo で検査全体を落とさないため）。
+
+`code` に UNIQUE を張ると1ルール1キーワードしか持てなくなる。P4-0 の初版が誤って
+UNIQUE を付けていたため、`migrate.js` の `dropLegacyComplianceRuleUnique()` が旧定義を
+検出してテーブルを作り直す（辞書は seed で入れ直す前提なのでデータは移送しない）。
 
 ---
 
@@ -177,6 +274,12 @@ CREATE INDEX idx_rooms_status        ON rooms(handling_status);
 CREATE INDEX idx_rooms_assignee      ON rooms(assignee_user_id);
 CREATE INDEX idx_room_members_user   ON room_members(user_id);
 CREATE INDEX idx_memos_room          ON memos(room_id, scope);
+CREATE INDEX idx_selection_steps_order ON selection_steps(is_enabled, sort_order);
+CREATE INDEX idx_selection_feedbacks  ON selection_feedbacks(student_user_id);
+CREATE INDEX idx_alerts_target       ON alerts(target_user_id, read_at, created_at DESC);
+CREATE INDEX idx_alerts_open         ON alerts(kind, resolved_at);
+CREATE INDEX idx_alerts_room         ON alerts(room_id);
+CREATE INDEX idx_compliance_rules    ON compliance_rules(priority, id);
 ```
 
 `idx_messages_room` は無限スクロールのキーセットページネーションに必須。

@@ -143,6 +143,8 @@ function registerHandlers() {
   socket.on(SOCKET_ON.SCHEDULE_SLOT_UPDATED, (payload) => schedules.handleSlotUpdated(payload))
   socket.on(SOCKET_ON.SCHEDULE_REQUEST_UPDATED, ({ request }) => schedules.handleRequestUpdated(request))
   socket.on(SOCKET_ON.SCHEDULE_BOOKED, ({ request }) => schedules.handleBooked(request))
+  // P4-1：SLA通知。宛先本人にだけ届く（サーバが user:{id} ルームへ配信）
+  socket.on(SOCKET_ON.ALERT_NEW, ({ alert }) => ui.receiveAlert(alert))
   socket.on(SOCKET_ON.ERROR, ({ code, message }) => {
     ui.pushToast({ type: 'error', message })
     if (code === 'unauthorized') handleUnauthorized()

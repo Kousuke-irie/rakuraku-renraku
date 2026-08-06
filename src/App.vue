@@ -4,6 +4,7 @@ import { computed } from "vue"
 import { useRoute } from "vue-router"
 import { useAuthStore } from "./stores/auth.js"
 import AppShell from "./components/AppShell.vue"
+import CircleRevealOverlay from "./components/CircleRevealOverlay.vue"
 
 // #region global state
 const auth = useAuthStore()
@@ -28,4 +29,8 @@ const withShell = computed(() => Boolean(route.meta.requiresAuth) && auth.isAuth
     <RouterView />
   </AppShell>
   <RouterView v-else />
+
+  <!-- ログイン → ホームの円形トランジション。ルート切替をまたいで動き続けるので
+       シェルの内側ではなくここに置く（アンマウントされると円が消えてしまう） -->
+  <CircleRevealOverlay />
 </template>

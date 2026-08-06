@@ -62,6 +62,72 @@ export const SELECTION_STATUS_META = Object.freeze({
 
 export const SELECTION_STATUS_VALUES = Object.values(SELECTION_STATUS);
 
+// ---------------------------------------------------------------------------
+// 選考ステータスの区分（P4-4 ダッシュボードの集計軸）
+// 「エントリー」は選考が始まる前、「内定」は選考が終わって確定した状態であり、
+// どちらも“選考中”ではない。辞退だけが離脱。
+// ---------------------------------------------------------------------------
+
+export const SELECTION_PHASE = Object.freeze({
+  /** 選考が始まる前 */
+  PRE: 'pre',
+  /** 選考の途中 */
+  IN_PROGRESS: 'in_progress',
+  /** 選考が終わって確定した */
+  SETTLED: 'settled',
+  /** 選考から離れた */
+  EXITED: 'exited',
+});
+
+export const SELECTION_PHASE_META = Object.freeze({
+  [SELECTION_PHASE.PRE]: { label: '選考前' },
+  [SELECTION_PHASE.IN_PROGRESS]: { label: '選考中' },
+  [SELECTION_PHASE.SETTLED]: { label: '確定' },
+  [SELECTION_PHASE.EXITED]: { label: '離脱' },
+});
+
+export const SELECTION_PHASE_VALUES = Object.values(SELECTION_PHASE);
+
+/** 選考ステータス → 区分。ここに無いものはすべて `in_progress`（書類〜五次面接） */
+export const SELECTION_PHASE_BY_STATUS = Object.freeze({
+  [SELECTION_STATUS.ENTRY]: SELECTION_PHASE.PRE,
+  [SELECTION_STATUS.OFFER]: SELECTION_PHASE.SETTLED,
+  [SELECTION_STATUS.DECLINED]: SELECTION_PHASE.EXITED,
+});
+
+/** @param {string} status @returns {string} SELECTION_PHASE のいずれか */
+export function selectionPhaseOf(status) {
+  return SELECTION_PHASE_BY_STATUS[status] ?? SELECTION_PHASE.IN_PROGRESS;
+}
+
+/**
+ * 選考フロー（S-09 / P2-11）に丸として並べられるステップ。
+ *
+ * **`declined`（辞退）は含めない。** 辞退は選考の一段階ではなく終端の分岐であり、
+ * 「エントリー → 書類 → … → 内定」の線上に置くと進捗の意味が壊れるため。
+ * 学生が辞退のときは、フローを描かず終端表示に切り替える（`business-logic.md` §8）。
+ *
+ * `selection_steps` テーブルの CHECK 制約はこの並びと完全に一致させること。
+ */
+export const SELECTION_FLOW_STEP_VALUES = Object.freeze(
+  SELECTION_STATUS_VALUES.filter((status) => status !== SELECTION_STATUS.DECLINED)
+);
+
+/** 学生から見た各ステップの状態（S-09）。色だけでなくラベルでも伝える */
+export const FLOW_STEP_STATE = Object.freeze({
+  DONE: 'done',
+  CURRENT: 'current',
+  UPCOMING: 'upcoming',
+});
+
+export const FLOW_STEP_STATE_META = Object.freeze({
+  [FLOW_STEP_STATE.DONE]: { label: '完了' },
+  [FLOW_STEP_STATE.CURRENT]: { label: '進行中' },
+  [FLOW_STEP_STATE.UPCOMING]: { label: 'これから' },
+});
+
+export const FLOW_STEP_STATE_VALUES = Object.values(FLOW_STEP_STATE);
+
 export const TOPIC_TAG = Object.freeze({
   ABSENCE_LATE: 'absence_late',
   SCHEDULING: 'scheduling',
@@ -339,11 +405,234 @@ export const DEFAULT_AI_SUMMARY_STATUS = AI_SUMMARY_STATUS.IDLE;
 export const SLA_WARN_HOURS = 12;
 export const SLA_ALERT_HOURS = 24;
 
+// ---------------------------------------------------------------------------
+// SLA 通知の閾値（P4-1 / monitoring.md §3）
+// 上の SLA_WARN/ALERT は「緊急度」の閾値、こちらは「通知」の閾値。責務が別なので
+// 流用しないこと。サーバは SLA_NOTIFY_HOURS / SLA_ESCALATE_HOURS で上書きする。
+// ---------------------------------------------------------------------------
+
+/** N：この時間を超えたら担当者へ通知する */
+export const SLA_NOTIFY_HOURS = 24;
+/** 2N：この時間を超えたら上長（role='admin'）へエスカレーションする */
+export const SLA_ESCALATE_HOURS = 48;
+
+// SLA 通知の対象外にする対応ステータス。
+// waiting_student / done は人事が返信済み、on_hold は意図的に止めている（P1-2 の設計判断）。
+export const SLA_ALERT_EXEMPT_STATUSES = Object.freeze([
+  HANDLING_STATUS.WAITING_STUDENT,
+  HANDLING_STATUS.DONE,
+  HANDLING_STATUS.ON_HOLD,
+]);
+
+// ---------------------------------------------------------------------------
+// 監視ダッシュボード（P4-4 / monitoring.md §6）
+// ---------------------------------------------------------------------------
+
+/** 発生推移グラフの日数。件数0の日もサーバ側で埋めて返す */
+export const DASHBOARD_TREND_DAYS = 14;
+
 // 経過時間バッジを表示しない対応ステータス（返信済み・完了は SLA の対象外）
 export const ELAPSED_BADGE_HIDDEN_STATUSES = Object.freeze([
   HANDLING_STATUS.WAITING_STUDENT,
   HANDLING_STATUS.DONE,
 ]);
+
+// ---------------------------------------------------------------------------
+// 監視イベント（P4-0 / monitoring.md §2）
+// SLA 通知もコンプライアンス警告も `alerts` 1テーブルに集約する。
+// CHECK 制約の文字列と完全に一致させること。
+// ---------------------------------------------------------------------------
+
+export const ALERT_KIND = Object.freeze({
+  /** N=24h 無返信。担当者（未アサインなら上長）へ通知する */
+  SLA_NOTIFY: 'sla_notify',
+  /** 2N=48h 無返信。上長へエスカレーションする */
+  SLA_ESCALATE: 'sla_escalate',
+  /** 人事の発言から就職差別・オワハラ表現を検知した */
+  COMPLIANCE: 'compliance',
+});
+
+export const ALERT_KIND_META = Object.freeze({
+  [ALERT_KIND.SLA_NOTIFY]: { label: '未返信24時間' },
+  [ALERT_KIND.SLA_ESCALATE]: { label: '上長エスカレーション' },
+  [ALERT_KIND.COMPLIANCE]: { label: 'コンプライアンス警告' },
+});
+
+export const ALERT_KIND_VALUES = Object.values(ALERT_KIND);
+
+/** SLA 系の kind。解消処理（返信時の resolved_at 更新）の対象。 */
+export const SLA_ALERT_KINDS = Object.freeze([
+  ALERT_KIND.SLA_NOTIFY,
+  ALERT_KIND.SLA_ESCALATE,
+]);
+
+export const ALERT_SEVERITY = Object.freeze({
+  /** 送信前に警告ダイアログで止める */
+  BLOCK: 'block',
+  /** 注意を促すが止めない */
+  WARN: 'warn',
+  /** 記録のみ */
+  INFO: 'info',
+});
+
+export const ALERT_SEVERITY_META = Object.freeze({
+  [ALERT_SEVERITY.BLOCK]: { label: '要修正' },
+  [ALERT_SEVERITY.WARN]: { label: '要確認' },
+  [ALERT_SEVERITY.INFO]: { label: '参考' },
+});
+
+export const ALERT_SEVERITY_VALUES = Object.values(ALERT_SEVERITY);
+
+/** 重い順。複数検知したときの並び順に使う（monitoring.md §4） */
+export const ALERT_SEVERITY_ORDER = Object.freeze({
+  [ALERT_SEVERITY.BLOCK]: 0,
+  [ALERT_SEVERITY.WARN]: 1,
+  [ALERT_SEVERITY.INFO]: 2,
+});
+
+// ---------------------------------------------------------------------------
+// コンプライアンス検知の分類（P4-2 / monitoring.md §4）
+// ---------------------------------------------------------------------------
+
+export const COMPLIANCE_CATEGORY = Object.freeze({
+  DISCRIMINATION: 'discrimination',
+  OWAHARA: 'owahara',
+});
+
+export const COMPLIANCE_CATEGORY_META = Object.freeze({
+  [COMPLIANCE_CATEGORY.DISCRIMINATION]: { label: '就職差別のおそれ' },
+  [COMPLIANCE_CATEGORY.OWAHARA]: { label: 'オワハラのおそれ' },
+});
+
+export const COMPLIANCE_CATEGORY_VALUES = Object.values(COMPLIANCE_CATEGORY);
+
+/**
+ * 検知結果に必ず添える免責。
+ * 「検知しました」と断定すると法的判断の代行に見えるため（monitoring.md §4）。
+ */
+export const COMPLIANCE_DISCLAIMER = '参考情報です。最終判断は担当者が行ってください。';
+
+/**
+ * コンプライアンス検知のルール（P4-2 / monitoring.md §4）。
+ *
+ * **辞書も AI も同じ語彙を使う。** AI 側だけ `ai_discrimination` のような
+ * 粗い分類にすると、ダッシュボードの内訳で粒度が混ざって比較できなくなる。
+ * AI がどれにも当てはめられなかったときだけ `other_*` に落とす。
+ *
+ * 「辞書が見つけたか AI が見つけたか」は `alerts.source` が持つ。
+ * ルールコードに混ぜないこと。
+ */
+export const COMPLIANCE_RULE = Object.freeze({
+  // 就職差別のおそれ（厚労省「公正な採用選考の基本」の禁止事項）
+  HONSEKI: 'honseki',
+  FAMILY_JOB: 'family_job',
+  FAMILY_EDU: 'family_edu',
+  HOUSING: 'housing',
+  ASSETS: 'assets',
+  RELIGION: 'religion',
+  POLITICS: 'politics',
+  THOUGHT: 'thought',
+  UNION: 'union',
+  NEWSPAPER: 'newspaper',
+  /** 上記のどれにも当てはまらない差別のおそれ（AI のみ） */
+  OTHER_DISCRIMINATION: 'other_discrimination',
+
+  // オワハラのおそれ
+  WITHDRAW_OTHERS: 'withdraw_others',
+  DECIDE_NOW: 'decide_now',
+  OFFER_CONDITION: 'offer_condition',
+  DEADLINE_TODAY: 'deadline_today',
+  PRESSURE_SOFT: 'pressure_soft',
+  /** 上記のどれにも当てはまらないオワハラのおそれ（AI のみ） */
+  OTHER_OWAHARA: 'other_owahara',
+});
+
+/**
+ * 画面に出す短い日本語名。**コードをそのまま見せない。**
+ * `description` は AI にルールを選ばせるときのプロンプトにも使う。
+ */
+export const COMPLIANCE_RULE_META = Object.freeze({
+  [COMPLIANCE_RULE.HONSEKI]: { label: '本籍・出生地', description: '本籍、出生地、国籍を尋ねている' },
+  [COMPLIANCE_RULE.FAMILY_JOB]: { label: '家族の職業', description: '家族の職業、勤務先、家族構成を尋ねている' },
+  [COMPLIANCE_RULE.FAMILY_EDU]: { label: '家族の学歴', description: '家族の学歴や出身校を尋ねている' },
+  [COMPLIANCE_RULE.HOUSING]: { label: '住宅状況', description: '持ち家か賃貸か、間取り、家賃を尋ねている' },
+  [COMPLIANCE_RULE.ASSETS]: { label: '家庭の経済状況', description: '世帯収入、資産、家庭の事情や生活水準を尋ねている' },
+  [COMPLIANCE_RULE.RELIGION]: { label: '宗教・信仰', description: '宗教、信仰、宗派を尋ねている' },
+  [COMPLIANCE_RULE.POLITICS]: { label: '支持政党', description: '支持政党や政治的な考えを尋ねている' },
+  [COMPLIANCE_RULE.THOUGHT]: { label: '思想・信条', description: '尊敬する人物、人生観、信条、座右の銘を尋ねている' },
+  [COMPLIANCE_RULE.UNION]: { label: '労働組合・学生運動', description: '労働組合、学生運動、社会運動への関与を尋ねている' },
+  [COMPLIANCE_RULE.NEWSPAPER]: { label: '購読紙・愛読書', description: '購読新聞や愛読書を尋ねている' },
+  [COMPLIANCE_RULE.OTHER_DISCRIMINATION]: { label: 'その他の差別的質問', description: '上記以外で、本人の適性・能力と関係のない事項を尋ねている' },
+
+  [COMPLIANCE_RULE.WITHDRAW_OTHERS]: { label: '他社辞退の要求', description: '他社の選考辞退や就職活動の終了を求めている' },
+  [COMPLIANCE_RULE.DECIDE_NOW]: { label: '即決の強要', description: 'その場での即答や即決を求めている' },
+  [COMPLIANCE_RULE.OFFER_CONDITION]: { label: '内定の交換条件', description: '内定を交換条件にしている' },
+  [COMPLIANCE_RULE.DEADLINE_TODAY]: { label: '極端に短い回答期限', description: '当日中など極端に短い期限で回答を迫っている' },
+  [COMPLIANCE_RULE.PRESSURE_SOFT]: { label: '判断の急かし', description: '判断を急がせる表現になっている' },
+  [COMPLIANCE_RULE.OTHER_OWAHARA]: { label: 'その他の就活妨害', description: '上記以外で、学生の就職活動の自由を制約している' },
+});
+
+export const COMPLIANCE_RULE_VALUES = Object.values(COMPLIANCE_RULE);
+
+/** ルールコード → カテゴリ。`other_*` も含めて全件そろえる */
+export const COMPLIANCE_RULE_CATEGORY = Object.freeze({
+  [COMPLIANCE_RULE.HONSEKI]: COMPLIANCE_CATEGORY.DISCRIMINATION,
+  [COMPLIANCE_RULE.FAMILY_JOB]: COMPLIANCE_CATEGORY.DISCRIMINATION,
+  [COMPLIANCE_RULE.FAMILY_EDU]: COMPLIANCE_CATEGORY.DISCRIMINATION,
+  [COMPLIANCE_RULE.HOUSING]: COMPLIANCE_CATEGORY.DISCRIMINATION,
+  [COMPLIANCE_RULE.ASSETS]: COMPLIANCE_CATEGORY.DISCRIMINATION,
+  [COMPLIANCE_RULE.RELIGION]: COMPLIANCE_CATEGORY.DISCRIMINATION,
+  [COMPLIANCE_RULE.POLITICS]: COMPLIANCE_CATEGORY.DISCRIMINATION,
+  [COMPLIANCE_RULE.THOUGHT]: COMPLIANCE_CATEGORY.DISCRIMINATION,
+  [COMPLIANCE_RULE.UNION]: COMPLIANCE_CATEGORY.DISCRIMINATION,
+  [COMPLIANCE_RULE.NEWSPAPER]: COMPLIANCE_CATEGORY.DISCRIMINATION,
+  [COMPLIANCE_RULE.OTHER_DISCRIMINATION]: COMPLIANCE_CATEGORY.DISCRIMINATION,
+  [COMPLIANCE_RULE.WITHDRAW_OTHERS]: COMPLIANCE_CATEGORY.OWAHARA,
+  [COMPLIANCE_RULE.DECIDE_NOW]: COMPLIANCE_CATEGORY.OWAHARA,
+  [COMPLIANCE_RULE.OFFER_CONDITION]: COMPLIANCE_CATEGORY.OWAHARA,
+  [COMPLIANCE_RULE.DEADLINE_TODAY]: COMPLIANCE_CATEGORY.OWAHARA,
+  [COMPLIANCE_RULE.PRESSURE_SOFT]: COMPLIANCE_CATEGORY.OWAHARA,
+  [COMPLIANCE_RULE.OTHER_OWAHARA]: COMPLIANCE_CATEGORY.OWAHARA,
+});
+
+/** 未知のコードでも画面が壊れないように、ラベルが無ければコードをそのまま返す */
+export function complianceRuleLabel(code) {
+  return COMPLIANCE_RULE_META[code]?.label ?? code;
+}
+
+/** 検知の出どころ（P4-2b）。ダイアログでどちらが拾ったか示す */
+export const COMPLIANCE_SOURCE = Object.freeze({
+  DICTIONARY: 'dictionary',
+  AI: 'ai',
+});
+
+export const COMPLIANCE_SOURCE_META = Object.freeze({
+  [COMPLIANCE_SOURCE.DICTIONARY]: { label: '辞書' },
+  [COMPLIANCE_SOURCE.AI]: { label: 'AI' },
+});
+
+export const COMPLIANCE_SOURCE_VALUES = Object.values(COMPLIANCE_SOURCE);
+
+/**
+ * LLM による検証の状態（P4-2b）。
+ * 辞書判定は常に動くので、これは「AI の上乗せ分が効いたか」だけを表す。
+ */
+export const COMPLIANCE_AI_STATUS = Object.freeze({
+  /** 検証済み */
+  OK: 'ok',
+  /** タイムアウト・APIエラー・レスポンス不正 */
+  ERROR: 'error',
+  /** GEMINI_API_KEY 未設定。AI 機能自体が使えない */
+  UNAVAILABLE: 'unavailable',
+});
+
+export const COMPLIANCE_AI_STATUS_META = Object.freeze({
+  [COMPLIANCE_AI_STATUS.OK]: { label: 'AIによる検証済み' },
+  [COMPLIANCE_AI_STATUS.ERROR]: { label: 'AIによる検証はできていません' },
+  [COMPLIANCE_AI_STATUS.UNAVAILABLE]: { label: 'AIによる検証はできていません' },
+});
+
+export const COMPLIANCE_AI_STATUS_VALUES = Object.values(COMPLIANCE_AI_STATUS);
 
 // ---------------------------------------------------------------------------
 // Socket.IO イベント名（api.md §3）
@@ -375,6 +664,8 @@ export const SOCKET_ON = Object.freeze({
   SCHEDULE_SLOT_UPDATED: 'schedule:slot_updated',
   SCHEDULE_REQUEST_UPDATED: 'schedule:request_updated',
   SCHEDULE_BOOKED: 'schedule:booked',
+  /** P4-1。通知先（target_user_id）本人にのみ配信する */
+  ALERT_NEW: 'alert:new',
   ERROR: 'error',
 });
 
@@ -397,6 +688,11 @@ export const DELETED_MESSAGE_TEXT = 'メッセージの送信を取り消しま�
 // 未設定変数のプレースホルダ（P2-2 / business-logic.md §5）例：【未設定：面接日時】
 export const UNSET_VARIABLE_PREFIX = '【未設定：';
 export const UNSET_VARIABLE_SUFFIX = '】';
+
+// 選考フロー（P2-11）の入力上限。サーバの検証とフォームの maxlength を必ず揃える
+export const SELECTION_STEP_LABEL_MAX_LENGTH = 30;
+export const SELECTION_STEP_TEXT_MAX_LENGTH = 500;
+export const SELECTION_FEEDBACK_MAX_LENGTH = 1000;
 
 // 定型文の本文に埋め込める変数（P2-1設定画面／P2-2 / business-logic.md §5）。
 // 実データへの置換は P2-2 の責務。設定画面ではこの一覧を「挿入」候補として出す。

@@ -48,6 +48,14 @@ const PATHS = Object.freeze({
     "M8.5 16.5 a2 2 0 1 0 4 0 a2 2 0 1 0-4 0",
     "M12.5 16.5 h7.5",
   ],
+  // 棒グラフ（P4-4 監視ダッシュボード）。3本の縦棒＋ベースラインで、
+  // 他のアイコンと同じ線幅・同じ 24 グリッドに収める
+  chart: [
+    "M4 19.5 h16",
+    "M7.5 19.5 v-5",
+    "M12 19.5 v-9",
+    "M16.5 19.5 v-6.5",
+  ],
   // ドア＋外向き矢印（ログアウト）
   logout: [
     "M13.5 4.5 H6.5 a2 2 0 0 0-2 2 v11 a2 2 0 0 0 2 2 h7",
@@ -60,12 +68,12 @@ const PATHS = Object.freeze({
 // defineProps の既定値・validator はコンパイル時に巻き上げられるため、
 // setup スコープの PATHS を参照できない。ここだけ名前をリテラルで書く。
 const props = defineProps({
-  /** "home" | "inbox" | "students" | "chat" | "bell" | "settings" | "logout" */
+  /** "home" | "inbox" | "students" | "chat" | "bell" | "chart" | "settings" | "logout" */
   name: {
     type: String,
     required: true,
     validator: (value) =>
-      ["home", "inbox", "students", "chat", "bell", "settings", "logout"].includes(value),
+      ["home", "inbox", "students", "chat", "bell", "chart", "settings", "logout"].includes(value),
   },
 })
 

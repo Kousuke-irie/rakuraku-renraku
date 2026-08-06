@@ -31,6 +31,21 @@ export const messagesApi = {
   create: (roomId, payload) => http.post(`/rooms/${roomId}/messages`, payload),
 
   /**
+   * POST /api/messages/check → `{ results: complianceResult[] }`（P4-3）
+   *
+   * 送信前に本文を検査する。**状態は変えない。**
+   * complianceResult の形:
+   * { code, category, severity, message, keyword, matched }
+   *
+   * 空配列なら問題なし。1件でもあれば警告ダイアログを出す。
+   * 学生が呼んだ場合は常に空配列が返る（検査対象は人事のみ）。
+   *
+   * @param {number} roomId
+   * @param {string} body
+   */
+  check: (roomId, body) => http.post('/messages/check', { roomId, body }),
+
+  /**
    * DELETE /api/messages/:id（送信取消。24h以内・自分のみ）
    * 物理削除ではなく `deletedAt` が設定される。
    * @param {number} messageId

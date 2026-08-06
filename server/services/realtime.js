@@ -53,6 +53,15 @@ export function emitMemoUpdated(io, memo) {
   io.to('hr').emit(SOCKET_ON.MEMO_UPDATED, { roomId: memo.roomId, memo });
 }
 
+/**
+ * SLA通知は宛先本人にだけ配信する（P4-1）。
+ * 担当者の通知が他の人事に見えると「誰が遅れているか」が漏れるため。
+ */
+export function emitAlertNew(io, targetUserId, alert) {
+  if (!io || !targetUserId || !alert) return;
+  io.to(`user:${targetUserId}`).emit(SOCKET_ON.ALERT_NEW, { alert });
+}
+
 /** AI要約は生成を依頼した本人にだけ配信する。 */
 export function emitAiSummaryUpdated(io, userId, summary) {
   if (!io) return;

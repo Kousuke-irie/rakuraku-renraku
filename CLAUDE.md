@@ -46,6 +46,7 @@
 | REST エンドポイント・Socket.IO イベントを追加/変更する | `.claude/api.md` |
 | Vue コンポーネント・Pinia ストア・画面 UI を作る | `.claude/frontend.md` |
 | ブランチを切る／PR を出す／タスク分担を確認する | `.claude/workflow.md` |
+| SLA通知・エスカレーション／コンプライアンス検知／ダッシュボードを触る（P4-*） | `.claude/monitoring.md` |
 
 複数該当する場合は**すべて**読むこと。例：「P1-6 緊急度判定を実装して」→ `requirements.md` + `business-logic.md` + `constants.md` + `api.md`。
 

@@ -140,6 +140,42 @@
 - `recruitSiteUrl` は `http:` / `https:` 以外を **400** で弾く（`javascript:` 対策）
 - 更新頻度が低いマスタデータなので **Socket.IO の配信はしない。** 学生の画面には次回の取得時に反映される
 
+### 選考フロー（P2-11 / S-09）
+
+| メソッド | パス | 権限 |
+| --- | --- | --- |
+| GET | `/selection-flow` | 全ロール。無効なステップも含む全件 |
+| PUT | `/selection-flow` | **人事のみ**。全ステップの一括置換 |
+| GET | `/selection-flow/me` | **学生のみ**。自分の進捗＋見せてよいFB |
+| GET | `/students/:userId/feedbacks` | **人事のみ**。完了判定で絞らない全件 |
+| PUT | `/students/:userId/feedbacks/:statusKey` | **人事のみ**。本文が空なら削除 |
+
+```json
+// GET /selection-flow/me
+{
+  "steps": [
+    {
+      "statusKey": "document",
+      "label": "書類選考",
+      "description": "ご提出いただいた…",
+      "points": "「学生時代に力を入れたこと」は…",
+      "state": "done",
+      "feedback": { "body": "志望動機が具体的で…", "updatedAt": "2026-08-06T01:00:00Z" }
+    }
+  ],
+  "selectionStatus": "interview_2",
+  "isDeclined": false
+}
+```
+
+- `state` は `done` / `current` / `upcoming`。算出は `business-logic.md` §8
+- **`GET /selection-flow/me` の対象は `req.user` から引く。** `userId` をクライアントから受け取らない
+- **`feedback` は `state === 'done'` のステップにしか載せない。** サーバ側で落とすこと。
+  進行中の評価が合否連絡より先に本人へ漏れる
+- `PUT /selection-flow` は9件すべてを送る全置換。件数不足・重複・`declined` 指定は **400**
+- 有効なステップが0件になる指定も **400**（学生の画面が空になるため）
+- 更新頻度が低いので Socket.IO では配信しない
+
 ### AI 現況サマリー（P3-1a・未実装）
 
 | メソッド | パス | 説明 |

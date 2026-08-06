@@ -11,11 +11,14 @@ import { registerSocketHandlers } from './sockets/index.js';
 import db from './db/index.js';
 import { recalculateAllUrgencies } from './services/urgencyCalculator.js';
 import {
+  emitAlertNew,
   emitRoomUpdated,
   emitScheduleRequestUpdated,
   emitSummaryUpdated,
 } from './services/realtime.js';
 import { expireWaitingScheduleRequests } from './services/scheduleRequests.js';
+import { detectSlaBreaches } from './services/slaMonitor.js';
+import { findAlertForUser } from './services/alertView.js';
 
 const app = express();
 app.use(cors({ origin: CLIENT_ORIGIN, credentials: true }));
@@ -33,21 +36,32 @@ const io = new Server(httpServer, {
 app.set('io', io);
 registerSocketHandlers(io);
 
-const URGENCY_RECALC_INTERVAL_MS = 60_000;
-const urgencyTimer = setInterval(async () => {
+// 緊急度の再計算（P1-6）と SLA 監視（P4-1）は同じ周期で回す。
+// **タイマーを増やさないこと。** 監視系の処理はここに相乗りさせる。
+const MONITOR_INTERVAL_MS = 60_000;
+const monitorTimer = setInterval(async () => {
   try {
     const changedRoomIds = recalculateAllUrgencies(db);
-    if (changedRoomIds.length === 0) return;
-
-    await Promise.all(changedRoomIds.map((roomId) => emitRoomUpdated(io, db, roomId)));
-    emitSummaryUpdated(io, db);
+    if (changedRoomIds.length > 0) {
+      await Promise.all(changedRoomIds.map((roomId) => emitRoomUpdated(io, db, roomId)));
+      emitSummaryUpdated(io, db);
+    }
   } catch (error) {
     console.error('server: urgency recalculation failed', error.stack);
   }
-}, URGENCY_RECALC_INTERVAL_MS);
-urgencyTimer.unref();
 
-const scheduleExpiryTimer = setInterval(async () => {
+  // 緊急度の更新に失敗しても SLA 監視は独立して動かす（try を分ける）
+  try {
+    // 新規に作られた通知だけが返る。既に通知済みのものは含まない
+    for (const created of detectSlaBreaches(db)) {
+      const alert = findAlertForUser(db, created.targetUserId, created.id);
+      emitAlertNew(io, created.targetUserId, alert);
+    }
+  } catch (error) {
+    console.error('server: SLA monitoring failed', error.stack);
+  }
+
+  // 日程依頼の期限監視も同じ60秒ループに相乗りさせ、監視タイマーを増やさない。
   try {
     const expired = expireWaitingScheduleRequests(db);
     if (expired.length === 0) return;
@@ -59,8 +73,8 @@ const scheduleExpiryTimer = setInterval(async () => {
   } catch (error) {
     console.error('server: schedule expiry update failed', error.stack);
   }
-}, 60_000);
-scheduleExpiryTimer.unref();
+}, MONITOR_INTERVAL_MS);
+monitorTimer.unref();
 
 httpServer.listen(PORT, () => {
   console.log(`server: listening on port ${PORT}`);
