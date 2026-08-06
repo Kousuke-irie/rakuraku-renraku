@@ -185,15 +185,20 @@ SLA 通知とコンプライアンス警告を集約する。設計意図は `mo
 | カラム | 型 | 制約 | 説明 |
 | --- | --- | --- | --- |
 | `id` | INTEGER | PK AUTOINCREMENT | |
-| `code` | TEXT | NOT NULL UNIQUE | `alerts.rule_code` から参照される |
+| `code` | TEXT | NOT NULL | ルールのグループキー。`alerts.rule_code` から参照される。**UNIQUE にしない** |
 | `category` | TEXT | NOT NULL CHECK | `discrimination` / `owahara` |
-| `keyword` | TEXT | NOT NULL | 部分一致させるキーワード |
-| `exclude_keyword` | TEXT | | これを含むなら検知しない（誤検知対策） |
+| `keyword` | TEXT | NOT NULL | 部分一致させるキーワード。**1行＝1キーワード** |
+| `exclude_keyword` | TEXT | | これらのいずれかを含むなら検知しない（カンマ区切り・誤検知対策） |
 | `severity` | TEXT | NOT NULL CHECK | `block` / `warn` / `info` |
 | `message` | TEXT | NOT NULL | 人事に見せる警告文 |
 | `priority` | INTEGER | NOT NULL | 小さいほど優先 |
 
 `tag_rules` と違い、**最初のマッチで確定しない**。1通に複数の問題が混ざりうるので全件返す。
+ただし同一 `code` は1件に畳む（同じ観点で2回警告しても判断材料が増えないため）。
+
+`code` に UNIQUE を張ると1ルール1キーワードしか持てなくなる。P4-0 の初版が誤って
+UNIQUE を付けていたため、`migrate.js` の `dropLegacyComplianceRuleUnique()` が旧定義を
+検出してテーブルを作り直す（辞書は seed で入れ直す前提なのでデータは移送しない）。
 
 ---
 

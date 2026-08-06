@@ -149,13 +149,17 @@ CREATE TABLE IF NOT EXISTS alerts (
   resolved_at TEXT
 );
 
--- 就職差別・オワハラのキーワード辞書（P4-2）。tag_rules と同じ形。
+-- 就職差別・オワハラのキーワード辞書（P4-2）。tag_rules と同じ「1行＝1キーワード」。
+-- code は UNIQUE にしないこと：1つのルール（例 honseki）が
+-- 本籍/出身地/生まれはどこ の複数キーワードを持つため、code は行のグループキーになる。
 CREATE TABLE IF NOT EXISTS compliance_rules (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  code TEXT NOT NULL UNIQUE,
+  code TEXT NOT NULL,
   category TEXT NOT NULL CHECK(category IN ('discrimination', 'owahara')),
   keyword TEXT NOT NULL,
-  -- これが本文に含まれていたら検知しない（誤検知対策。例：「本籍地はお伺いしません」）
+  -- これらのいずれかが本文に含まれていたら検知しない（誤検知対策。
+  -- 例：「本籍地はお伺いしません」）。カンマ区切りで複数指定できる。
+  -- 除外語自体にカンマを含めないこと。
   exclude_keyword TEXT,
   severity TEXT NOT NULL CHECK(severity IN ('block', 'warn', 'info')),
   message TEXT NOT NULL,

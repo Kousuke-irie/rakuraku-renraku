@@ -28,6 +28,29 @@ function addMissingRoomAiColumns(db) {
   }
 }
 
+/**
+ * compliance_rules.code の UNIQUE を落とす（P4-2）。
+ *
+ * P4-0 で `code TEXT NOT NULL UNIQUE` として作ってしまったが、1つのルールが複数の
+ * キーワードを持つため code は行のグループキーでなければならない。SQLite はインラインの
+ * UNIQUE 制約だけを落とせないので、テーブルごと作り直す。
+ * 辞書は seed で入れ直す前提のため、データは移送しない。
+ */
+function dropLegacyComplianceRuleUnique(db) {
+  const exists = db
+    .prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'compliance_rules'`)
+    .get();
+  if (!exists) return;
+
+  const hasUnique = db
+    .prepare(`PRAGMA index_list(compliance_rules)`)
+    .all()
+    .some((index) => index.unique === 1);
+  if (!hasUnique) return;
+
+  db.exec(`DROP TABLE compliance_rules`);
+}
+
 function migrate() {
   const dir = path.dirname(DATABASE_PATH);
   fs.mkdirSync(dir, { recursive: true });
@@ -35,6 +58,9 @@ function migrate() {
   const db = new Database(DATABASE_PATH);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
+
+  // schema.sql は CREATE TABLE IF NOT EXISTS なので、旧定義の取り壊しは適用前に行う。
+  dropLegacyComplianceRuleUnique(db);
 
   const schema = fs.readFileSync(SCHEMA_PATH, 'utf-8');
   db.exec(schema);

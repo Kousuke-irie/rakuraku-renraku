@@ -9,6 +9,7 @@ import { calculateRoomUrgency } from '../services/urgencyCalculator.js';
 import { emitMessageNew, emitSummaryUpdated } from '../services/realtime.js';
 import { applyStatusTransition } from '../services/statusTransition.js';
 import { queueStudentMessageAnalysis } from '../services/aiPriority.js';
+import { recordComplianceAlerts } from '../services/complianceAlerts.js';
 import { MESSAGE_TYPE, ROLE } from '../../shared/constants.js';
 
 const router = Router();
@@ -107,7 +108,10 @@ router.post('/rooms/:id/messages', requireAuth, async (req, res, next) => {
 });
 
 // message.js(Socket)と共有する保存処理。1トランザクションでmessages+roomsを更新する。
-export function insertMessage({ roomId, senderId, senderRole, body, clientMsgId }) {
+//
+// acknowledgedCodes は送信前チェック（P4-3）で人事が承知したルールコード。
+// 未指定なら「チェック未経由」として記録される（monitoring.md §5）。
+export function insertMessage({ roomId, senderId, senderRole, body, clientMsgId, acknowledgedCodes = null }) {
   const now = new Date().toISOString();
 
   const run = db.transaction(() => {
@@ -134,6 +138,17 @@ export function insertMessage({ roomId, senderId, senderRole, body, clientMsgId 
     applyStatusTransition(db, roomId, senderRole);
     const urgency = calculateRoomUrgency(db, roomId);
     db.prepare(`UPDATE rooms SET urgency = ? WHERE id = ?`).run(urgency, roomId);
+
+    // P4-2：人事の発言を検査して alerts に記録する。学生の発言は対象外。
+    // 辞書ベースなので外部通信は発生せず、保存トランザクション内で完結してよい。
+    recordComplianceAlerts(db, {
+      roomId,
+      messageId,
+      actorUserId: senderId,
+      senderRole,
+      body,
+      acknowledgedCodes,
+    });
 
     return db.prepare(`SELECT ${MESSAGE_COLUMNS} FROM messages WHERE id = ?`).get(messageId);
   });

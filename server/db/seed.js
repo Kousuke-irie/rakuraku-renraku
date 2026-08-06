@@ -10,8 +10,11 @@
 import bcrypt from 'bcrypt';
 import db from './index.js';
 import { classifyTopicTag, clearTagRuleCache } from '../services/tagClassifier.js';
+import { clearComplianceRuleCache } from '../services/complianceChecker.js';
 import { calculateUrgency } from '../services/urgencyCalculator.js';
 import {
+  ALERT_SEVERITY,
+  COMPLIANCE_CATEGORY,
   HANDLING_STATUS,
   MESSAGE_TYPE,
   ROLE,
@@ -45,6 +48,124 @@ const TAG_RULES = [
   { tag: 'aptitude_test', priority: 3, keywords: ['適性検査', 'SPI', 'テスト', '受検'] },
   { tag: 'result_waiting', priority: 4, keywords: ['合否', '結果', '通過', '選考状況', 'いつ頃'] },
   { tag: 'question', priority: 5, keywords: ['？', '?', 'でしょうか', '教えて', '伺い'] },
+];
+
+// monitoring.md §4 のコンプライアンス辞書（compliance_rules の投入元）。
+//
+// 出典は厚生労働省「公正な採用選考の基本」で**尋ねてはならない**とされる事項。
+// 根拠が公的基準にあることがこの機能の説得力の源なので、独自解釈で増やさないこと。
+//
+// exclude は誤検知対策。「本籍地はお伺いしません」のような**正しい**文が
+// block になるとこの機能は信用を失う（monitoring.md §4）。
+const COMPLIANCE_RULES = [
+  // --- 就職差別のおそれ（すべて block） ---
+  {
+    code: 'honseki', category: COMPLIANCE_CATEGORY.DISCRIMINATION, priority: 1,
+    severity: ALERT_SEVERITY.BLOCK,
+    keywords: ['本籍', '出身地', '生まれはどこ'],
+    exclude: ['お伺いしません', '伺いません', '質問しません', '不要です', 'お答えいただく必要はありません'],
+    message: '本籍・出生地に関する質問は就職差別に当たるおそれがあります',
+  },
+  {
+    code: 'family_job', category: COMPLIANCE_CATEGORY.DISCRIMINATION, priority: 2,
+    severity: ALERT_SEVERITY.BLOCK,
+    keywords: ['ご両親の職業', '父親の職業', '母親の職業', '家族構成', 'ご家族は何人'],
+    exclude: null,
+    message: '家族に関する質問は本人の適性・能力と関係がありません',
+  },
+  {
+    code: 'family_edu', category: COMPLIANCE_CATEGORY.DISCRIMINATION, priority: 3,
+    severity: ALERT_SEVERITY.BLOCK,
+    keywords: ['ご両親の学歴', '親の学歴'],
+    exclude: null,
+    message: '家族の学歴に関する質問は就職差別に当たるおそれがあります',
+  },
+  {
+    code: 'housing', category: COMPLIANCE_CATEGORY.DISCRIMINATION, priority: 4,
+    severity: ALERT_SEVERITY.BLOCK,
+    keywords: ['持ち家', '間取り', '家賃はいくら', '住宅の広さ'],
+    exclude: null,
+    message: '住宅状況に関する質問は就職差別に当たるおそれがあります',
+  },
+  {
+    code: 'assets', category: COMPLIANCE_CATEGORY.DISCRIMINATION, priority: 5,
+    severity: ALERT_SEVERITY.BLOCK,
+    keywords: ['資産', '世帯収入', 'ご家庭の収入'],
+    exclude: null,
+    message: '生活環境・家庭環境に関する質問は避けてください',
+  },
+  {
+    code: 'religion', category: COMPLIANCE_CATEGORY.DISCRIMINATION, priority: 6,
+    severity: ALERT_SEVERITY.BLOCK,
+    keywords: ['宗教', '信仰'],
+    exclude: null,
+    message: '信条・宗教に関する質問は思想信条の自由を侵すおそれがあります',
+  },
+  {
+    code: 'politics', category: COMPLIANCE_CATEGORY.DISCRIMINATION, priority: 7,
+    severity: ALERT_SEVERITY.BLOCK,
+    keywords: ['支持政党', '政治観', '選挙は'],
+    exclude: null,
+    message: '支持政党に関する質問は就職差別に当たるおそれがあります',
+  },
+  {
+    code: 'thought', category: COMPLIANCE_CATEGORY.DISCRIMINATION, priority: 8,
+    severity: ALERT_SEVERITY.BLOCK,
+    keywords: ['尊敬する人物', '人生観', '信条'],
+    exclude: null,
+    message: '思想信条に関する質問は避けてください',
+  },
+  {
+    code: 'union', category: COMPLIANCE_CATEGORY.DISCRIMINATION, priority: 9,
+    severity: ALERT_SEVERITY.BLOCK,
+    keywords: ['労働組合', '学生運動'],
+    exclude: null,
+    message: '労働組合・学生運動に関する質問は就職差別に当たるおそれがあります',
+  },
+  {
+    code: 'newspaper', category: COMPLIANCE_CATEGORY.DISCRIMINATION, priority: 10,
+    severity: ALERT_SEVERITY.BLOCK,
+    keywords: ['購読新聞', '愛読書'],
+    exclude: null,
+    message: '購読紙・愛読書に関する質問は思想信条の把握につながります',
+  },
+
+  // --- オワハラのおそれ ---
+  {
+    code: 'withdraw_others', category: COMPLIANCE_CATEGORY.OWAHARA, priority: 20,
+    severity: ALERT_SEVERITY.BLOCK,
+    keywords: ['他社は辞退', '他社を辞退', '他社の選考を止め', '就活を終わらせ', '就職活動を終了'],
+    exclude: null,
+    message: '他社選考の辞退を条件にすることはオワハラに当たります',
+  },
+  {
+    code: 'decide_now', category: COMPLIANCE_CATEGORY.OWAHARA, priority: 21,
+    severity: ALERT_SEVERITY.BLOCK,
+    keywords: ['今この場で決めて', '今ここで決めて', '今すぐ決めて', 'この場で返事'],
+    exclude: null,
+    message: 'その場での意思決定の強要はオワハラに当たります',
+  },
+  {
+    code: 'offer_condition', category: COMPLIANCE_CATEGORY.OWAHARA, priority: 22,
+    severity: ALERT_SEVERITY.BLOCK,
+    keywords: ['内定を出す代わりに', '内定の条件として'],
+    exclude: null,
+    message: '内定を交換条件にすることは避けてください',
+  },
+  {
+    code: 'deadline_today', category: COMPLIANCE_CATEGORY.OWAHARA, priority: 23,
+    severity: ALERT_SEVERITY.WARN,
+    keywords: ['返事は今日中', '本日中にご返答', '今日中に決めて'],
+    exclude: null,
+    message: '極端に短い回答期限は圧力と受け取られます',
+  },
+  {
+    code: 'pressure_soft', category: COMPLIANCE_CATEGORY.OWAHARA, priority: 24,
+    severity: ALERT_SEVERITY.WARN,
+    keywords: ['早めに返事を', 'すぐに決めて', '早急にご判断'],
+    exclude: null,
+    message: '判断を急がせる表現になっていないか確認してください',
+  },
 ];
 
 const FILLER_LINES = {
@@ -519,7 +640,8 @@ const STUDENTS = [...SHOWCASE_STUDENTS, ...buildGeneratedStudents()];
 function clearExistingData() {
   // rooms.last_message_id が messages を参照する循環FKがあるため、先にNULL化してから削除する。
   db.prepare(`UPDATE rooms SET last_message_id = NULL, ai_analyzed_message_id = NULL`).run();
-  const tables = ['read_receipts', 'memos', 'room_members', 'messages', 'rooms', 'students', 'users', 'tag_rules', 'snippets', 'company_info'];
+  // alerts は messages/rooms を参照するので、それらより先に消す
+  const tables = ['alerts', 'read_receipts', 'memos', 'room_members', 'messages', 'rooms', 'students', 'users', 'tag_rules', 'compliance_rules', 'snippets', 'company_info'];
   for (const table of tables) {
     db.prepare(`DELETE FROM ${table}`).run();
   }
@@ -551,6 +673,21 @@ function insertTagRules() {
   }
   // 入れ直した辞書を tagClassifier に読み直させる（プロセス内キャッシュを持つため）
   clearTagRuleCache();
+}
+
+function insertComplianceRules() {
+  for (const rule of COMPLIANCE_RULES) {
+    // tag_rules と同じく1行＝1キーワード。除外語はルール単位なので全行に同じ値を複写する
+    // （カンマ区切り。checkCompliance が split して「いずれかを含めば検知しない」を判定する）。
+    const excludeKeyword = rule.exclude ? rule.exclude.join(',') : null;
+    for (const keyword of rule.keywords) {
+      db.prepare(
+        `INSERT INTO compliance_rules (code, category, keyword, exclude_keyword, severity, message, priority)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ).run(rule.code, rule.category, keyword, excludeKeyword, rule.severity, rule.message, rule.priority);
+    }
+  }
+  clearComplianceRuleCache();
 }
 
 function insertSnippets() {
@@ -654,6 +791,7 @@ function seed() {
     clearExistingData();
     // 用件タグ判定が tag_rules を読むので、学生より先に投入する
     insertTagRules();
+    insertComplianceRules();
     insertSnippets();
     insertCompanyInfo();
 
@@ -675,6 +813,7 @@ function seed() {
     rooms: db.prepare('SELECT COUNT(*) AS c FROM rooms').get().c,
     messages: db.prepare('SELECT COUNT(*) AS c FROM messages').get().c,
     tagRules: db.prepare('SELECT COUNT(*) AS c FROM tag_rules').get().c,
+    complianceRules: db.prepare('SELECT COUNT(*) AS c FROM compliance_rules').get().c,
     snippets: db.prepare('SELECT COUNT(*) AS c FROM snippets').get().c,
   };
   const perAssignee = db

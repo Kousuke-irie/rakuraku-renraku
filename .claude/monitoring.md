@@ -340,14 +340,24 @@ admin1 自身が担当する学生でやると「自分から自分へ」の絵�
 - 検査対象は **`hr` / `admin` の発言のみ**。学生の発言は検査しない
 - クライアントとサーバで**同一の検査関数**を使う。判定がズレると「ダイアログは出なかったのに記録された」が起きる
 
-### 辞書テーブル（`schema.sql` に追記）
+### 実装の分割
 
-`tag_rules` と同じ形にする。
+| ファイル | 責務 |
+| --- | --- |
+| `services/complianceChecker.js` | 検知のみ。DB は辞書の読み出しだけ。`checkCompliance` / `isExcluded` / `hasBlocking` / `extractMatchContext` |
+| `services/complianceAlerts.js` | 検知結果を `alerts` に記録。`recordComplianceAlerts` / `resolveAckNote` |
+
+記録は `routes/messages.js` の `insertMessage` から呼ぶ。REST と socket の共通経路なので、
+どちらから送っても記録される。保存トランザクション内で完結してよい（外部通信が無いため）。
+
+### 辞書テーブル（`schema.sql`）
+
+`tag_rules` と同じ**1行＝1キーワード**。
 
 ```sql
 CREATE TABLE IF NOT EXISTS compliance_rules (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  code TEXT NOT NULL UNIQUE,
+  code TEXT NOT NULL,
   category TEXT NOT NULL CHECK(category IN ('discrimination', 'owahara')),
   keyword TEXT NOT NULL,
   exclude_keyword TEXT,
@@ -357,7 +367,19 @@ CREATE TABLE IF NOT EXISTS compliance_rules (
 );
 ```
 
-`tagClassifier.js` と同じくプロセス内キャッシュ + `clearComplianceRuleCache()` を用意する。
+- **`code` を UNIQUE にしないこと。** 1つのルール（例 `honseki`）が
+  本籍／出身地／生まれはどこ の複数キーワードを持つので、`code` は行のグループキーになる。
+  P4-0 で誤って UNIQUE を付けたため、`migrate.js` の `dropLegacyComplianceRuleUnique()` が
+  旧定義を検出してテーブルを作り直す
+- `exclude_keyword` は**カンマ区切りで複数指定**できる。いずれか1つでも本文にあれば検知しない。
+  除外語自体にカンマを含めないこと
+- `tagClassifier.js` と同じくプロセス内キャッシュ + `clearComplianceRuleCache()` を持つ
+
+### 既知の限界
+
+除外語は**ルール単位**なので、1通に「正しい断り書き」と「実際の違反」が同じ code で同居すると
+検知できない。例：「本籍はお伺いしませんが、出身地はどちらですか」は `honseki` ごと除外される。
+辞書ベースの構造的な限界であり、拾うなら AI 併用（下記）の役目にする。
 
 ### 判定
 
