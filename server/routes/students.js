@@ -4,9 +4,12 @@ import { requireAuth } from '../middleware/auth.js';
 import { assertRoomMember } from '../services/roomAuth.js';
 import { emitRoomUpdated } from '../services/realtime.js';
 import { findRoomIdByStudent, findStudent, updateStudent } from '../services/studentProfile.js';
+import { listFeedbacksForHr, saveFeedback } from '../services/selectionFlow.js';
 import {
   ROLE,
   SCHEDULE_STATE_VALUES,
+  SELECTION_FEEDBACK_MAX_LENGTH,
+  SELECTION_FLOW_STEP_VALUES,
   SELECTION_STATUS_VALUES,
 } from '../../shared/constants.js';
 
@@ -124,6 +127,63 @@ router.patch('/:userId', requireAuth, requireHr, async (req, res, next) => {
     await emitRoomUpdated(req.app.get('io'), db, roomId);
 
     res.json({ student });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * 選考フィードバック（P2-11）。人事が受信箱のプロフィールパネルから書く。
+ *
+ * 学生本人がここを叩くことはない。学生は GET /selection-flow/me から
+ * **完了済みステップのぶんだけ**受け取る（進行中の評価が合否連絡より先に漏れないように）。
+ */
+router.get('/:userId/feedbacks', requireAuth, requireHr, (req, res, next) => {
+  try {
+    const userId = Number(req.params.userId);
+    if (!findStudent(db, userId) || assertStudentAccess(userId, req) === null) {
+      return res.status(404).json({ error: 'not_found', message: '学生が存在しません' });
+    }
+
+    res.json({ feedbacks: listFeedbacksForHr(db, userId) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.put('/:userId/feedbacks/:statusKey', requireAuth, requireHr, (req, res, next) => {
+  try {
+    const userId = Number(req.params.userId);
+    if (!findStudent(db, userId) || assertStudentAccess(userId, req) === null) {
+      return res.status(404).json({ error: 'not_found', message: '学生が存在しません' });
+    }
+
+    const { statusKey } = req.params;
+    if (!SELECTION_FLOW_STEP_VALUES.includes(statusKey)) {
+      return invalidRequest(res, '選考ステップの指定が不正です');
+    }
+
+    if (req.body?.body !== undefined && typeof req.body.body !== 'string') {
+      return invalidRequest(res, 'フィードバックは文字列で指定してください');
+    }
+
+    // 空文字は「取り消し」。saveFeedback 側で行を削除する
+    const body = (req.body?.body ?? '').trim();
+    if (body.length > SELECTION_FEEDBACK_MAX_LENGTH) {
+      return invalidRequest(
+        res,
+        `フィードバックは${SELECTION_FEEDBACK_MAX_LENGTH}文字以内で入力してください`
+      );
+    }
+
+    const feedback = saveFeedback(db, {
+      studentUserId: userId,
+      statusKey,
+      body,
+      authorId: req.user.id,
+    });
+
+    res.json({ feedback });
   } catch (error) {
     next(error);
   }

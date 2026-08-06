@@ -62,6 +62,34 @@ export const SELECTION_STATUS_META = Object.freeze({
 
 export const SELECTION_STATUS_VALUES = Object.values(SELECTION_STATUS);
 
+/**
+ * 選考フロー（S-09 / P2-11）に丸として並べられるステップ。
+ *
+ * **`declined`（辞退）は含めない。** 辞退は選考の一段階ではなく終端の分岐であり、
+ * 「エントリー → 書類 → … → 内定」の線上に置くと進捗の意味が壊れるため。
+ * 学生が辞退のときは、フローを描かず終端表示に切り替える（`business-logic.md` §8）。
+ *
+ * `selection_steps` テーブルの CHECK 制約はこの並びと完全に一致させること。
+ */
+export const SELECTION_FLOW_STEP_VALUES = Object.freeze(
+  SELECTION_STATUS_VALUES.filter((status) => status !== SELECTION_STATUS.DECLINED)
+);
+
+/** 学生から見た各ステップの状態（S-09）。色だけでなくラベルでも伝える */
+export const FLOW_STEP_STATE = Object.freeze({
+  DONE: 'done',
+  CURRENT: 'current',
+  UPCOMING: 'upcoming',
+});
+
+export const FLOW_STEP_STATE_META = Object.freeze({
+  [FLOW_STEP_STATE.DONE]: { label: '完了' },
+  [FLOW_STEP_STATE.CURRENT]: { label: '進行中' },
+  [FLOW_STEP_STATE.UPCOMING]: { label: 'これから' },
+});
+
+export const FLOW_STEP_STATE_VALUES = Object.values(FLOW_STEP_STATE);
+
 export const TOPIC_TAG = Object.freeze({
   ABSENCE_LATE: 'absence_late',
   SCHEDULING: 'scheduling',
@@ -443,6 +471,11 @@ export const DELETED_MESSAGE_TEXT = 'メッセージの送信を取り消しま�
 // 未設定変数のプレースホルダ（P2-2 / business-logic.md §5）例：【未設定：面接日時】
 export const UNSET_VARIABLE_PREFIX = '【未設定：';
 export const UNSET_VARIABLE_SUFFIX = '】';
+
+// 選考フロー（P2-11）の入力上限。サーバの検証とフォームの maxlength を必ず揃える
+export const SELECTION_STEP_LABEL_MAX_LENGTH = 30;
+export const SELECTION_STEP_TEXT_MAX_LENGTH = 500;
+export const SELECTION_FEEDBACK_MAX_LENGTH = 1000;
 
 // 定型文の本文に埋め込める変数（P2-1設定画面／P2-2 / business-logic.md §5）。
 // 実データへの置換は P2-2 の責務。設定画面ではこの一覧を「挿入」候補として出す。

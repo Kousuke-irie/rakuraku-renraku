@@ -7,6 +7,7 @@ import HomeView from "../views/HomeView.vue"
 import InboxView from "../views/InboxView.vue"
 import StudentsView from "../views/StudentsView.vue"
 import ChatView from "../views/ChatView.vue"
+import StudentHomeView from "../views/StudentHomeView.vue"
 import NotificationsView from "../views/NotificationsView.vue"
 import ProfileSettingsView from "../views/ProfileSettingsView.vue"
 
@@ -63,6 +64,14 @@ const routes = [
     name: "students",
     component: StudentsView,
     meta: { requiresAuth: true, roles: [ROLE.HR, ROLE.ADMIN] },
+  },
+  {
+    // S-09 学生マイページ。学生のログイン後の着地点（frontend.md §1・§7-3）。
+    // 会社情報と選考フローの進捗を見る画面で、返信は /chat で行う。
+    path: "/mypage",
+    name: "mypage",
+    component: StudentHomeView,
+    meta: { requiresAuth: true, roles: [ROLE.STUDENT] },
   },
   {
     path: "/chat",
