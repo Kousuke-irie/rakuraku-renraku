@@ -3,7 +3,7 @@
 //
 // フロー図で選んだ1ステップの中身を、2カラムで並べる。
 //   左  … 学生が「読む」もの（この選考について・ポイント）。会社から与えられた情報
-//   右  … 学生が「受け取る／書く」もの（企業からのFB）。自分に固有の情報
+//   右  … 学生が「受け取る／書く」もの（企業からのFB・自分のメモ）。自分に固有の情報
 // 縦に積むと会社の説明と自分への評価が同じ流れに見えてしまうため、性質で列を割る。
 //
 // ★FB は完了済みのぶんしかサーバが返さない（server/services/selectionFlow.js）。
@@ -11,10 +11,12 @@
 //   見せてよいかの判断はサーバが持つ。
 import { computed } from "vue"
 import { FLOW_STEP_STATE, FLOW_STEP_STATE_META } from "../constants/index.js"
+import StudentNoteEditor from "./StudentNoteEditor.vue"
 
 const props = defineProps({
   /** @type {{statusKey: string, label: string, description: string|null,
-   *           points: string|null, state: string, feedback: object|null}|null} */
+   *           points: string|null, state: string, feedback: object|null,
+   *           note: object|null}|null} */
   step: { type: Object, default: null },
 })
 
@@ -38,13 +40,6 @@ const feedbackParagraphs = computed(() => toParagraphs(props.step?.feedback?.bod
 const hasAnyContent = computed(
   () => descriptionParagraphs.value.length > 0 || pointsParagraphs.value.length > 0
 )
-
-/**
- * 右カラムを立てるか。
- * FB が届いているか、完了済みで「これから届く」と言えるときだけ。
- * 未到達のステップで空の枠を置いても、学生には何の情報にもならない。
- */
-const hasAside = computed(() => feedbackParagraphs.value.length > 0 || isDone.value)
 // #endregion
 
 // #region local methods
@@ -78,10 +73,7 @@ const formatUpdatedAt = (isoString) =>
       >{{ stateLabel }}</span>
     </header>
 
-    <div
-      class="detail__body"
-      :class="{ 'detail__body--single': !hasAside }"
-    >
+    <div class="detail__body">
       <!-- 左：会社が用意した「読むもの」 -->
       <div class="detail__main">
         <p
@@ -128,11 +120,8 @@ const formatUpdatedAt = (isoString) =>
         </section>
       </div>
 
-      <!-- 右：この学生に固有のもの -->
-      <aside
-        v-if="hasAside"
-        class="detail__aside"
-      >
+      <!-- 右：この学生に固有のもの（会社から届いたもの／自分が書くもの） -->
+      <aside class="detail__aside">
         <section
           v-if="feedbackParagraphs.length > 0"
           class="feedback"
@@ -156,11 +145,19 @@ const formatUpdatedAt = (isoString) =>
         </section>
 
         <p
-          v-else
+          v-else-if="isDone"
           class="detail__pending"
         >
           フィードバックが届くとここに表示されます。
         </p>
+
+        <!-- 自分用のメモ（S-10）。人事には見えない -->
+        <StudentNoteEditor
+          :note-key="step.statusKey"
+          :note="step.note"
+          label="このステップのメモ"
+          placeholder="聞きたいこと・準備したこと・終わったあとの振り返りなど（自分にだけ見えます）"
+        />
       </aside>
     </div>
   </section>
@@ -226,10 +223,6 @@ const formatUpdatedAt = (isoString) =>
   grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
   gap: var(--space-xl) var(--space-xxl);
   padding: var(--space-lg) var(--space-xxl) var(--space-xxl);
-}
-
-.detail__body--single {
-  grid-template-columns: minmax(0, 1fr);
 }
 
 /* 左カラムの中は、細い区切り線で「説明」と「ポイント」を分ける。

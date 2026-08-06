@@ -9,12 +9,13 @@
 // データは1回の GET /selection-flow/me でまとめて取る（往復を増やさない）。
 // ★見せてよいフィードバックの判断はサーバが持つ。ここでは受け取ったものを描くだけ。
 import { computed, onMounted, ref, watch } from "vue"
-import { FLOW_STEP_STATE } from "../constants/index.js"
+import { FLOW_STEP_STATE, STUDENT_NOTE_OVERALL_KEY } from "../constants/index.js"
 import { useAuthStore } from "../stores/auth.js"
 import { useUiStore } from "../stores/ui.js"
 import CompanyPanel from "../components/CompanyPanel.vue"
 import SelectionFlow from "../components/SelectionFlow.vue"
 import SelectionStepDetail from "../components/SelectionStepDetail.vue"
+import StudentNoteEditor from "../components/StudentNoteEditor.vue"
 
 // #region global state
 const auth = useAuthStore()
@@ -40,6 +41,13 @@ const currentStep = computed(
 const selectedStep = computed(
   () => steps.value.find((step) => step.statusKey === selectedKey.value) ?? null
 )
+
+/**
+ * 選考全体のメモ（S-10）。ステップに属さない「志望動機の軸」「企業研究」の置き場。
+ * 辞退している場合は出さない（書く相手のいないメモを残しても意味がないため）。
+ */
+const overallNote = computed(() => flow.value?.overallNote ?? null)
+const showOverallNote = computed(() => Boolean(flow.value) && !isDeclined.value)
 
 // 「いまは○○の段階です」という一文は置かない。
 // 現在地はフロー図（持ち上がった山の頂上＋オレンジ）が示すので、同じことを
@@ -128,6 +136,20 @@ const onSelect = (statusKey) => {
         選考フローの公開をお待ちください。
       </p>
     </section>
+
+    <!-- 選考全体のメモ（S-10）。ステップに紐づかない考えごとの置き場 -->
+    <section
+      v-if="showOverallNote"
+      class="overall"
+    >
+      <StudentNoteEditor
+        :note-key="STUDENT_NOTE_OVERALL_KEY"
+        :note="overallNote"
+        label="選考全体のメモ"
+        placeholder="志望動機の軸、企業研究、選考を通して感じたことなど（自分にだけ見えます）"
+        :rows="6"
+      />
+    </section>
   </div>
 </template>
 
@@ -180,6 +202,13 @@ const onSelect = (statusKey) => {
   margin: var(--space-sm) 0 0;
   color: var(--color-ink-mute);
   font-size: 12px;
+}
+
+/* 全体メモは選考フローのカードとは別の紙にする。
+   会社が用意した情報（上）と自分が書くもの（下）を、カードの境目で分ける */
+.overall {
+  flex: none;
+  padding-bottom: var(--space-sm);
 }
 
 .board__closed {
