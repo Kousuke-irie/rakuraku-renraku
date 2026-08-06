@@ -11,7 +11,12 @@
 //   （コンセプト「返信すべき学生が、上から順に並んでいる」・CLAUDE.md §1）。
 //   どのボードでも同じ並びになるよう、この並べ替えはここに集約する。
 import { computed } from "vue"
-import { URGENCY_ORDER } from "../constants/index.js"
+import {
+  AI_ANALYSIS_STATUS,
+  AI_RECOMMENDED_PRIORITY,
+  HANDLING_STATUS,
+  URGENCY_ORDER,
+} from "../constants/index.js"
 import StudentCard from "./StudentCard.vue"
 
 // #region constants
@@ -34,12 +39,24 @@ const props = defineProps({
 
 // #region local methods
 /**
- * 列の中の並び：緊急度（高→低）→ 経過時間の長い順。
+ * 列の中の並び：ルール緊急 → AI対応推奨度「高」 → 通常 → 低 → 経過時間。
  * 経過時間は「学生の最終メッセージが古いほど長い」ので昇順に並べる。
  */
 const byPriority = (a, b) => {
-  const urgency = (URGENCY_ORDER[a.urgency] ?? 9) - (URGENCY_ORDER[b.urgency] ?? 9)
-  if (urgency !== 0) return urgency
+  const rank = (room) => {
+    if (URGENCY_ORDER[room.urgency] === 0) return 0
+    if (
+      room.aiRecommendation?.status === AI_ANALYSIS_STATUS.COMPLETED &&
+      room.aiRecommendation?.priority === AI_RECOMMENDED_PRIORITY.HIGH &&
+      [HANDLING_STATUS.NEEDS_REPLY, HANDLING_STATUS.IN_PROGRESS].includes(room.handlingStatus)
+    ) {
+      return 1
+    }
+    return (URGENCY_ORDER[room.urgency] ?? 8) + 1
+  }
+
+  const priority = rank(a) - rank(b)
+  if (priority !== 0) return priority
 
   // 未受信（null）は経過時間が測れないので最後に回す
   const left = a.lastStudentMessageAt ? Date.parse(a.lastStudentMessageAt) : Infinity

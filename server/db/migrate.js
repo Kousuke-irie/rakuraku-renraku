@@ -5,6 +5,29 @@ import Database from 'better-sqlite3';
 const DATABASE_PATH = process.env.DATABASE_PATH || './data/app.db';
 const SCHEMA_PATH = path.resolve(import.meta.dirname, 'schema.sql');
 
+const ROOM_AI_COLUMNS = Object.freeze([
+  ['ai_priority', `TEXT CHECK(ai_priority IN ('high', 'normal', 'low') OR ai_priority IS NULL)`],
+  ['ai_priority_reason', 'TEXT'],
+  ['ai_requested_action', 'TEXT'],
+  ['ai_context_summary', 'TEXT'],
+  ['ai_analyzed_message_id', 'INTEGER REFERENCES messages(id)'],
+  ['ai_analyzed_at', 'TEXT'],
+  ['ai_model', 'TEXT'],
+  [
+    'ai_analysis_status',
+    `TEXT NOT NULL DEFAULT 'skipped' CHECK(ai_analysis_status IN ('pending', 'completed', 'failed', 'skipped'))`,
+  ],
+]);
+
+function addMissingRoomAiColumns(db) {
+  const columns = new Set(db.prepare(`PRAGMA table_info(rooms)`).all().map((column) => column.name));
+
+  for (const [name, definition] of ROOM_AI_COLUMNS) {
+    if (columns.has(name)) continue;
+    db.exec(`ALTER TABLE rooms ADD COLUMN ${name} ${definition}`);
+  }
+}
+
 function migrate() {
   const dir = path.dirname(DATABASE_PATH);
   fs.mkdirSync(dir, { recursive: true });
@@ -15,6 +38,7 @@ function migrate() {
 
   const schema = fs.readFileSync(SCHEMA_PATH, 'utf-8');
   db.exec(schema);
+  addMissingRoomAiColumns(db);
 
   db.close();
 }

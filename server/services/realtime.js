@@ -53,6 +53,12 @@ export function emitMemoUpdated(io, memo) {
   io.to('hr').emit(SOCKET_ON.MEMO_UPDATED, { roomId: memo.roomId, memo });
 }
 
+/** AI要約は生成を依頼した本人にだけ配信する。 */
+export function emitAiSummaryUpdated(io, userId, summary) {
+  if (!io) return;
+  io.to(`user:${userId}`).emit(SOCKET_ON.AI_SUMMARY_UPDATED, summary);
+}
+
 export function emitReadUpdated(io, payload) {
   if (!io) return;
   io.to(`room:${payload.roomId}`).emit(SOCKET_ON.READ_UPDATED, payload);

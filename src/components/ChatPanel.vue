@@ -7,6 +7,7 @@
 // - ヘッダのステータスチップは**表示のみ**。1クリック変更（P1-2）は RoomListItem の責務
 // - 定型文パレット（P2-1）の開閉・絞り込み状態は useUiStore が持つ。ここでは
 //   入力欄のキー操作をストアの action に取り次ぐだけ
+// - 変数展開（P2-2）のロジックは utils/snippetRenderer.js に集約する（business-logic.md §5）
 // - socket の購読は composables/useSocket.js に集約されている（CLAUDE.md §6-12）
 import { computed, watch } from "vue"
 import { useComposerHeight } from "../composables/useComposerHeight.js"
@@ -15,6 +16,8 @@ import { useAuthStore } from "../stores/auth.js"
 import { useMessagesStore } from "../stores/messages.js"
 import { useRoomsStore } from "../stores/rooms.js"
 import { useUiStore } from "../stores/ui.js"
+import { hasUnsetVariable, renderSnippetBody } from "../utils/snippetRenderer.js"
+import AiConversationInsight from "./AiConversationInsight.vue"
 import ComposerResizeHandle from "./ComposerResizeHandle.vue"
 import MessageList from "./MessageList.vue"
 import SnippetPalette from "./SnippetPalette.vue"
@@ -79,6 +82,9 @@ const draft = computed({
 
 const canSend = computed(() => draft.value.trim().length > 0)
 
+/** 展開した定型文に未設定の変数が残っているか（P2-2。送信前に気づけるよう赤字で警告する） */
+const hasUnsetSnippetVariable = computed(() => hasUnsetVariable(draft.value))
+
 /** 先頭が "/" で、改行・空白を含まない間だけ定型文コマンドとして扱う（frontend.md §8） */
 const snippetCommandQuery = computed(() => {
   const match = /^\/(\S*)$/.exec(draft.value)
@@ -121,8 +127,17 @@ watch(snippetCommandQuery, (query) => {
 
 watch(roomId, () => ui.closeSnippetPalette())
 
+/**
+ * 定型文を展開して入力欄へ挿入する（P2-1）。
+ * 変数プレースホルダは実データへ置換するが、**送信はしない**。未設定の項目は
+ * 【未設定：◯◯】のまま残るので、そのまま送っても気づけるように warning を出す（P2-2）
+ */
 const expandSnippet = (snippet) => {
-  messages.setDraft(roomId.value, snippet.body)
+  const rendered = renderSnippetBody(snippet.body, {
+    student: student.value,
+    currentUserDisplayName: auth.user?.displayName,
+  })
+  messages.setDraft(roomId.value, rendered)
   ui.closeSnippetPalette()
   textareaRef.value?.focus()
 }
@@ -212,6 +227,8 @@ const onSubmit = async () => {
       </div>
     </header>
 
+    <AiConversationInsight :recommendation="room.aiRecommendation" />
+
     <MessageList
       :room-id="roomId"
       :senders="senders"
@@ -250,6 +267,14 @@ const onSubmit = async () => {
           placeholder="メッセージを入力（「/」で定型文を呼び出せます）"
           @keydown="onComposerKeydown"
         />
+        <!-- 定型文展開で埋まらなかった変数への警告（P2-2）。textarea 内は色を付けられないため欄外に出す -->
+        <p
+          v-if="hasUnsetSnippetVariable"
+          class="composer__warning"
+          role="alert"
+        >
+          未設定の項目が残っています。内容を確認してから送信してください。
+        </p>
         <div class="composer__actions">
           <p class="composer__hint">
             ⌘ / Ctrl + Enter で送信
@@ -381,5 +406,12 @@ const onSubmit = async () => {
 .composer__hint {
   color: var(--color-ink-mute);
   font-size: 11px;
+}
+
+.composer__warning {
+  padding: 0 var(--space-lg);
+  color: var(--color-error);
+  font-size: 12px;
+  font-weight: 700;
 }
 </style>

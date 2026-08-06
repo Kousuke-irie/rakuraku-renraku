@@ -1,4 +1,8 @@
 import {
+  AI_ANALYSIS_STATUS,
+  AI_RECOMMENDED_PRIORITY,
+  HANDLING_STATUS,
+  ROLE,
   SORT_KEY,
   URGENCY,
 } from '../../shared/constants.js';
@@ -9,6 +13,14 @@ const ROOM_SELECT_SQL = `
     r.handling_status          AS handlingStatus,
     r.urgency,
     r.last_student_message_at  AS lastStudentMessageAt,
+    r.ai_priority              AS aiPriority,
+    r.ai_priority_reason       AS aiPriorityReason,
+    r.ai_requested_action      AS aiRequestedAction,
+    r.ai_context_summary       AS aiContextSummary,
+    r.ai_analyzed_message_id   AS aiAnalyzedMessageId,
+    r.ai_analyzed_at           AS aiAnalyzedAt,
+    r.ai_analysis_status       AS aiAnalysisStatus,
+    viewer.role                AS viewerRole,
     su.id                      AS studentUserId,
     su.display_name            AS studentDisplayName,
     su.avatar_color            AS studentAvatarColor,
@@ -37,6 +49,7 @@ const ROOM_SELECT_SQL = `
     ) AS unreadCount
   FROM rooms r
   JOIN room_members rm ON rm.room_id = r.id
+  JOIN users viewer ON viewer.id = rm.user_id
   LEFT JOIN users su ON su.id = r.student_user_id
   LEFT JOIN students st ON st.user_id = su.id
   LEFT JOIN users au ON au.id = r.assignee_user_id
@@ -82,11 +95,14 @@ const ROOM_LIST_SQL = `${ROOM_SELECT_SQL}
     )
   ORDER BY
     CASE WHEN @sort = @defaultSort THEN
-      CASE r.urgency
-        WHEN @highUrgency THEN 0
-        WHEN @normalUrgency THEN 1
-        WHEN @lowUrgency THEN 2
-        ELSE 3
+      CASE
+        WHEN r.urgency = @highUrgency THEN 0
+        WHEN r.ai_analysis_status = @completedAiStatus
+          AND r.ai_priority = @highAiPriority
+          AND r.handling_status IN (@needsReplyStatus, @inProgressStatus) THEN 1
+        WHEN r.urgency = @normalUrgency THEN 2
+        WHEN r.urgency = @lowUrgency THEN 3
+        ELSE 4
       END
     END ASC,
     CASE WHEN @sort = @defaultSort THEN r.last_student_message_at END ASC,
@@ -107,6 +123,8 @@ function elapsedHours(isoString) {
 
 export function toRoom(row) {
   if (!row) return null;
+
+  const canViewAiRecommendation = row.viewerRole === ROLE.HR || row.viewerRole === ROLE.ADMIN;
 
   return {
     id: row.id,
@@ -140,6 +158,25 @@ export function toRoom(row) {
       : null,
     lastStudentMessageAt: row.lastStudentMessageAt,
     elapsedHours: elapsedHours(row.lastStudentMessageAt),
+    aiRecommendation: canViewAiRecommendation
+      ? {
+          status: row.aiAnalysisStatus ?? AI_ANALYSIS_STATUS.SKIPPED,
+          priority: row.aiPriority ?? null,
+          reason: row.aiPriorityReason ?? null,
+          requestedAction: row.aiRequestedAction ?? null,
+          contextSummary: row.aiContextSummary ?? null,
+          analyzedMessageId: row.aiAnalyzedMessageId ?? null,
+          analyzedAt: row.aiAnalyzedAt ?? null,
+        }
+      : {
+          status: AI_ANALYSIS_STATUS.SKIPPED,
+          priority: null,
+          reason: null,
+          requestedAction: null,
+          contextSummary: null,
+          analyzedMessageId: null,
+          analyzedAt: null,
+        },
   };
 }
 
@@ -152,6 +189,10 @@ export function listRoomsForUser(db, filters) {
     highUrgency: URGENCY.HIGH,
     normalUrgency: URGENCY.NORMAL,
     lowUrgency: URGENCY.LOW,
+    completedAiStatus: AI_ANALYSIS_STATUS.COMPLETED,
+    highAiPriority: AI_RECOMMENDED_PRIORITY.HIGH,
+    needsReplyStatus: HANDLING_STATUS.NEEDS_REPLY,
+    inProgressStatus: HANDLING_STATUS.IN_PROGRESS,
     unassignedMode: 'unassigned',
     assignedMode: 'assigned',
   };
