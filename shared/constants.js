@@ -62,6 +62,44 @@ export const SELECTION_STATUS_META = Object.freeze({
 
 export const SELECTION_STATUS_VALUES = Object.values(SELECTION_STATUS);
 
+// ---------------------------------------------------------------------------
+// 選考ステータスの区分（P4-4 ダッシュボードの集計軸）
+// 「エントリー」は選考が始まる前、「内定」は選考が終わって確定した状態であり、
+// どちらも“選考中”ではない。辞退だけが離脱。
+// ---------------------------------------------------------------------------
+
+export const SELECTION_PHASE = Object.freeze({
+  /** 選考が始まる前 */
+  PRE: 'pre',
+  /** 選考の途中 */
+  IN_PROGRESS: 'in_progress',
+  /** 選考が終わって確定した */
+  SETTLED: 'settled',
+  /** 選考から離れた */
+  EXITED: 'exited',
+});
+
+export const SELECTION_PHASE_META = Object.freeze({
+  [SELECTION_PHASE.PRE]: { label: '選考前' },
+  [SELECTION_PHASE.IN_PROGRESS]: { label: '選考中' },
+  [SELECTION_PHASE.SETTLED]: { label: '確定' },
+  [SELECTION_PHASE.EXITED]: { label: '離脱' },
+});
+
+export const SELECTION_PHASE_VALUES = Object.values(SELECTION_PHASE);
+
+/** 選考ステータス → 区分。ここに無いものはすべて `in_progress`（書類〜五次面接） */
+export const SELECTION_PHASE_BY_STATUS = Object.freeze({
+  [SELECTION_STATUS.ENTRY]: SELECTION_PHASE.PRE,
+  [SELECTION_STATUS.OFFER]: SELECTION_PHASE.SETTLED,
+  [SELECTION_STATUS.DECLINED]: SELECTION_PHASE.EXITED,
+});
+
+/** @param {string} status @returns {string} SELECTION_PHASE のいずれか */
+export function selectionPhaseOf(status) {
+  return SELECTION_PHASE_BY_STATUS[status] ?? SELECTION_PHASE.IN_PROGRESS;
+}
+
 /**
  * 選考フロー（S-09 / P2-11）に丸として並べられるステップ。
  *

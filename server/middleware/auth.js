@@ -24,13 +24,12 @@ export function requireAuth(req, res, next) {
 }
 
 /**
- * 上長（admin）専用エンドポイントのガード（P4-4）。
- * 担当者別の遵守率は評価につながる情報なので、人事全員には開放しない。
- * **requireAuth の後に置くこと。**
+ * 人事（hr / admin）専用エンドポイントのガード。
+ * 学生に社内の集計を見せないためのもの。**requireAuth の後に置くこと。**
  */
-export function requireAdmin(req, res, next) {
-  if (req.user?.role !== ROLE.ADMIN) {
-    return res.status(403).json({ error: 'forbidden', message: 'この画面は管理者のみ閲覧できます' });
+export function requireHr(req, res, next) {
+  if (req.user?.role !== ROLE.HR && req.user?.role !== ROLE.ADMIN) {
+    return res.status(403).json({ error: 'forbidden', message: 'この画面は人事のみ閲覧できます' });
   }
   next();
 }

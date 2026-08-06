@@ -1,8 +1,9 @@
 <script setup>
 // 監視ダッシュボード（P4-4 / monitoring.md §6）
 //
-// 閲覧は上長（admin）限定。担当者別の遵守率は評価につながる情報なので
-// 人事全員には開放しない。ルーターガードとサーバ側の両方で弾く。
+// 閲覧は人事全員（hr / admin）。担当者別の集計も共有する。**相互監視のため**で、
+// 隠すと「取りこぼしの拾い上げ」が個人の努力に戻ってしまう。
+// 学生には出さない（ルーターガードとサーバ側の requireHr の両方で弾く）。
 //
 // ★受信箱のサマリーバー（P1-8）と数字が重なる部分があるが、
 //   こちらは**全社**が母数。ラベルに明記して混同を避ける。
@@ -16,6 +17,8 @@ import {
   ALERT_KIND_META,
   ALERT_KIND,
   COMPLIANCE_CATEGORY_META,
+  SELECTION_PHASE,
+  SELECTION_PHASE_META,
   SELECTION_STATUS_META,
 } from "../constants/index.js"
 import {
@@ -73,7 +76,11 @@ const kpiTiles = computed(() => {
 
 // --- ② 選考ステータス別 ---
 // 10段階を10色にしない。段階の違いはバーの位置が示すので色に仕事はない。
-// 辞退だけは進行段階ではなく離脱なので赤で塗り分ける
+//
+// ★区分は4種類（選考前／選考中／確定／離脱）だが、**色は2色に留める**。
+//   4色にすると「確定(緑)」と「離脱(赤)」が隣り合い、P型・D型色覚で
+//   区別できなくなる（実測 ΔE 5.2）。色は「選考に残っているか / 離れたか」
+//   だけを担い、4区分は表の「区分」列とツールチップで示す。
 const selectionChart = computed(() => {
   const rows = data.value?.selectionBreakdown ?? []
 
@@ -82,37 +89,49 @@ const selectionChart = computed(() => {
     datasets: [
       {
         data: rows.map((row) => row.count),
-        backgroundColor: rows.map((row) => (row.isExit ? CHART_COLOR.EXIT : CHART_COLOR.PRIMARY)),
+        backgroundColor: rows.map((row) =>
+          row.phase === SELECTION_PHASE.EXITED ? CHART_COLOR.EXIT : CHART_COLOR.PRIMARY,
+        ),
         ...BAR_STYLE,
       },
     ],
   }
 })
 
+const selectionLegend = [
+  { label: "選考に残っている", color: CHART_COLOR.PRIMARY },
+  { label: SELECTION_PHASE_META[SELECTION_PHASE.EXITED].label, color: CHART_COLOR.EXIT },
+]
+
 const selectionRows = computed(() =>
   (data.value?.selectionBreakdown ?? []).map((row) => [
     SELECTION_STATUS_META[row.status]?.label ?? row.status,
     `${row.count}名`,
-    row.isExit ? "離脱" : "選考中",
+    SELECTION_PHASE_META[row.phase]?.label ?? row.phase,
   ]),
 )
 
 // --- ③ 担当者別 SLA ---
-const slaChart = computed(() => {
-  const rows = data.value?.slaByAssignee ?? []
-  const segments = [
+const slaSegments = computed(() => [
     { key: "within", label: `${thresholds.value.notifyHours}時間以内`, color: CHART_COLOR.SLA_WITHIN },
     {
       key: "over24h",
       label: `${thresholds.value.notifyHours}〜${thresholds.value.escalateHours}時間`,
       color: CHART_COLOR.SLA_OVER_24H,
     },
-    { key: "over48h", label: `${thresholds.value.escalateHours}時間超`, color: CHART_COLOR.SLA_OVER_48H },
-  ]
+  { key: "over48h", label: `${thresholds.value.escalateHours}時間超`, color: CHART_COLOR.SLA_OVER_48H },
+])
+
+const slaLegend = computed(() =>
+  slaSegments.value.map((segment) => ({ label: segment.label, color: segment.color })),
+)
+
+const slaChart = computed(() => {
+  const rows = data.value?.slaByAssignee ?? []
 
   return {
     labels: rows.map((row) => row.displayName),
-    datasets: segments.map((segment) => ({
+    datasets: slaSegments.value.map((segment) => ({
       label: segment.label,
       data: rows.map((row) => row[segment.key]),
       backgroundColor: segment.color,
@@ -207,7 +226,12 @@ const onOpenRoom = (roomId) => router.push(`/inbox/${roomId}`)
           監視ダッシュボード
         </h1>
         <p class="dashboard__note">
-          全社の対応状況です。担当者別の集計を含むため、管理者のみ閲覧できます。
+          全社の対応状況です。互いの状況を確認できるよう、人事全員に公開しています。
+        </p>
+        <!-- 「SLA」という略語は画面に出さない。何時間で何が起きるかを直接書く -->
+        <p class="dashboard__note">
+          学生の最後の発言から <strong>{{ thresholds.notifyHours }}時間</strong> で担当者へ通知、
+          <strong>{{ thresholds.escalateHours }}時間</strong> で上長へエスカレーションします。
         </p>
       </div>
       <button
@@ -243,9 +267,10 @@ const onOpenRoom = (roomId) => router.push(`/inbox/${roomId}`)
     <div class="grid">
       <ChartPanel
         title="選考ステータス別 学生数"
-        note="全学生。進行順に並べています（辞退は離脱）"
+        note="全学生。進行順に並べています"
         :columns="['選考ステータス', '人数', '区分']"
         :rows="selectionRows"
+        :legend="selectionLegend"
         :height="chartHeight(selectionRows.length, 260)"
       >
         <Bar
@@ -255,8 +280,9 @@ const onOpenRoom = (roomId) => router.push(`/inbox/${roomId}`)
       </ChartPanel>
 
       <ChartPanel
-        title="担当者別 SLA 遵守状況"
-        note="現在の滞留件数。返信済み・完了・保留は遵守側に数えます"
+        :title="`担当者別 返信状況（返信期限 ${thresholds.notifyHours}時間）`"
+        note="学生の最後の発言からの経過時間で数えます。返信済み・完了・保留は「期限内」に含みます"
+        :legend="slaLegend"
         :columns="['担当者', `${thresholds.notifyHours}時間以内`, `${thresholds.notifyHours}〜${thresholds.escalateHours}時間`, `${thresholds.escalateHours}時間超`]"
         :rows="slaRows"
         :height="chartHeight(slaRows.length, 260)"
@@ -268,8 +294,8 @@ const onOpenRoom = (roomId) => router.push(`/inbox/${roomId}`)
       </ChartPanel>
 
       <ChartPanel
-        title="SLA通知の発生推移"
-        note="直近14日・日別"
+        title="返信遅れ通知の発生推移"
+        :note="`学生の発言から${thresholds.notifyHours}時間を超えた件数。直近14日・日別`"
         :columns="['日付', '発生件数']"
         :rows="trendRows"
         :height="220"

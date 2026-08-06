@@ -56,8 +56,7 @@ const navItems = computed(() =>
         { to: auth.homePath, icon: "home", label: "ホーム" },
         { to: INBOX_PATH, icon: "inbox", label: "受信箱" },
         { to: STUDENTS_PATH, icon: "students", label: "全学生" },
-        // 監視ダッシュボードは上長だけ。担当者別の遵守率を含むため（P4-4）
-        ...(auth.isAdmin ? [{ to: DASHBOARD_PATH, icon: "chart", label: "ダッシュボード" }] : []),
+        { to: DASHBOARD_PATH, icon: "chart", label: "ダッシュボード" },
       ]
 )
 

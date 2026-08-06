@@ -7,8 +7,8 @@ import {
   DASHBOARD_TREND_DAYS,
   HANDLING_STATUS,
   ROLE,
-  SELECTION_STATUS,
   SELECTION_STATUS_VALUES,
+  selectionPhaseOf,
 } from '../../shared/constants.js';
 import { ACK_NOTE } from './complianceAlerts.js';
 import { SLA_ESCALATE_HOURS, SLA_NOTIFY_HOURS } from './slaMonitor.js';
@@ -58,8 +58,8 @@ function buildSelectionBreakdown(db) {
   return SELECTION_STATUS_VALUES.map((status) => ({
     status,
     count: counts.get(status) ?? 0,
-    // 辞退は進行段階ではなく離脱。グラフ側で罫線を挟んで別扱いにする
-    isExit: status === SELECTION_STATUS.DECLINED,
+    // 選考前（エントリー）／選考中／確定（内定）／離脱（辞退）の4区分
+    phase: selectionPhaseOf(status),
   }));
 }
 

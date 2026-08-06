@@ -17,6 +17,12 @@ defineProps({
   rows: { type: Array, required: true },
   /** データが1件も無いときの文言 */
   emptyText: { type: String, default: "データがありません" },
+  /**
+   * 凡例。**色が2種類以上あるチャートには必ず渡すこと。**
+   * `[{ label, color }]`。Chart.js の Legend は使わず HTML で描く
+   * （canvas 内だと読み上げできないため。ChartPanel の趣旨と同じ）。
+   */
+  legend: { type: Array, default: () => [] },
   /** チャートの高さ（px）。行数で変わるので呼び出し側が決める */
   height: { type: Number, default: 220 },
 })
@@ -42,7 +48,7 @@ const showTable = ref(false)
       </div>
       <button
         type="button"
-        class="chip"
+        class="chip panel__toggle"
         :aria-pressed="showTable"
         @click="showTable = !showTable"
       >
@@ -89,13 +95,34 @@ const showTable = ref(false)
       </table>
     </div>
 
-    <div
-      v-else
-      class="panel__chart"
-      :style="{ height: `${height}px` }"
-    >
-      <slot />
-    </div>
+    <template v-else>
+      <!-- 凡例は canvas の外に HTML で置く。色の隣に必ずテキストを添えるので、
+           色が判別できなくても意味が取れる（CLAUDE.md §6-13） -->
+      <ul
+        v-if="legend.length > 0"
+        class="legend"
+      >
+        <li
+          v-for="item in legend"
+          :key="item.label"
+          class="legend__item"
+        >
+          <span
+            class="legend__swatch"
+            :style="{ backgroundColor: item.color }"
+            aria-hidden="true"
+          />
+          {{ item.label }}
+        </li>
+      </ul>
+
+      <div
+        class="panel__chart"
+        :style="{ height: `${height}px` }"
+      >
+        <slot />
+      </div>
+    </template>
   </section>
 </template>
 
@@ -123,6 +150,12 @@ const showTable = ref(false)
   font-weight: 600;
 }
 
+/* タイトルが長いと押し潰されて「表で見 る」と折り返すので縮ませない */
+.panel__toggle {
+  flex: none;
+  white-space: nowrap;
+}
+
 .panel__note {
   margin: 2px 0 0;
   color: var(--color-ink-mute);
@@ -132,6 +165,29 @@ const showTable = ref(false)
 .panel__chart {
   position: relative;
   min-width: 0;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.legend__item {
+  display: flex;
+  gap: var(--space-xs);
+  align-items: center;
+  color: var(--color-ink-mute);
+  font-size: 11px;
+}
+
+.legend__swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-xs);
 }
 
 .panel__empty {

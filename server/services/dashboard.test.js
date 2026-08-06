@@ -6,6 +6,7 @@ import {
   DASHBOARD_TREND_DAYS,
   HANDLING_STATUS,
   ROLE,
+  SELECTION_PHASE,
   SELECTION_STATUS,
   SELECTION_STATUS_VALUES,
 } from '../../shared/constants.js';
@@ -133,7 +134,14 @@ test('★選考ステータスは0人の段階も返す（ファネルの段が�
   );
   assert.equal(selectionBreakdown.find((r) => r.status === SELECTION_STATUS.INTERVIEW_1).count, 2);
   assert.equal(selectionBreakdown.find((r) => r.status === SELECTION_STATUS.ENTRY).count, 0);
-  assert.equal(selectionBreakdown.find((r) => r.status === SELECTION_STATUS.DECLINED).isExit, true);
+
+  // 区分は4種類。エントリーは「選考前」、内定は「確定」で、どちらも選考中ではない
+  const phaseOf = (status) => selectionBreakdown.find((r) => r.status === status).phase;
+  assert.equal(phaseOf(SELECTION_STATUS.ENTRY), SELECTION_PHASE.PRE);
+  assert.equal(phaseOf(SELECTION_STATUS.DOCUMENT), SELECTION_PHASE.IN_PROGRESS);
+  assert.equal(phaseOf(SELECTION_STATUS.INTERVIEW_5), SELECTION_PHASE.IN_PROGRESS);
+  assert.equal(phaseOf(SELECTION_STATUS.OFFER), SELECTION_PHASE.SETTLED);
+  assert.equal(phaseOf(SELECTION_STATUS.DECLINED), SELECTION_PHASE.EXITED);
 
   db.close();
 });
