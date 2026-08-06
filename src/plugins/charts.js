@@ -28,6 +28,19 @@ export const CHART_COLOR = Object.freeze({
   PRIMARY: '#3B7FC4',
   /** 辞退（進行段階ではなく離脱） */
   EXIT: '#D03B3B',
+
+  /**
+   * 選考ステータスの4区分（SELECTION_PHASE）。
+   * 検証済み：全項目 PASS（隣接 CVD ΔE 15.0 / 通常視 17.7）。
+   *
+   * ★「確定＝緑」にできない。バーの並び順で確定(内定)と離脱(辞退)が隣接するため、
+   *   緑と赤を当てると P型・D型色覚で潰れる（実測 CVD ΔE 5.2）。
+   *   代わりに紫を当てている。**この4色は勝手に変えないこと。**
+   */
+  PHASE_PRE: '#C98500',
+  PHASE_IN_PROGRESS: '#3B7FC4',
+  PHASE_SETTLED: '#4a3aa7',
+  PHASE_EXITED: '#D03B3B',
   /** SLA 3段。CVD分離のみ WARN 7.0 → 直接ラベル＋2pxギャップで充足 */
   SLA_WITHIN: '#2F8F5B',
   SLA_OVER_24H: '#C98500',

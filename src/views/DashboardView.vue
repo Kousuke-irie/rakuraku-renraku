@@ -19,6 +19,7 @@ import {
   COMPLIANCE_CATEGORY_META,
   SELECTION_PHASE,
   SELECTION_PHASE_META,
+  SELECTION_PHASE_VALUES,
   SELECTION_STATUS_META,
 } from "../constants/index.js"
 import {
@@ -76,11 +77,18 @@ const kpiTiles = computed(() => {
 
 // --- ② 選考ステータス別 ---
 // 10段階を10色にしない。段階の違いはバーの位置が示すので色に仕事はない。
+// 色が担うのは**4区分**（選考前／選考中／確定／離脱）だけ。
 //
-// ★区分は4種類（選考前／選考中／確定／離脱）だが、**色は2色に留める**。
-//   4色にすると「確定(緑)」と「離脱(赤)」が隣り合い、P型・D型色覚で
-//   区別できなくなる（実測 ΔE 5.2）。色は「選考に残っているか / 離れたか」
-//   だけを担い、4区分は表の「区分」列とツールチップで示す。
+// ★「確定＝緑」にはできない。バーの並びで確定(内定)と離脱(辞退)が隣接するため、
+//   緑と赤を当てると P型・D型色覚で潰れる（実測 CVD ΔE 5.2）。紫を当てている。
+//   採用した4色は全項目 PASS（隣接 CVD 15.0 / 通常視 17.7）。
+const PHASE_COLOR = {
+  [SELECTION_PHASE.PRE]: CHART_COLOR.PHASE_PRE,
+  [SELECTION_PHASE.IN_PROGRESS]: CHART_COLOR.PHASE_IN_PROGRESS,
+  [SELECTION_PHASE.SETTLED]: CHART_COLOR.PHASE_SETTLED,
+  [SELECTION_PHASE.EXITED]: CHART_COLOR.PHASE_EXITED,
+}
+
 const selectionChart = computed(() => {
   const rows = data.value?.selectionBreakdown ?? []
 
@@ -89,19 +97,18 @@ const selectionChart = computed(() => {
     datasets: [
       {
         data: rows.map((row) => row.count),
-        backgroundColor: rows.map((row) =>
-          row.phase === SELECTION_PHASE.EXITED ? CHART_COLOR.EXIT : CHART_COLOR.PRIMARY,
-        ),
+        backgroundColor: rows.map((row) => PHASE_COLOR[row.phase] ?? CHART_COLOR.PRIMARY),
         ...BAR_STYLE,
       },
     ],
   }
 })
 
-const selectionLegend = [
-  { label: "選考に残っている", color: CHART_COLOR.PRIMARY },
-  { label: SELECTION_PHASE_META[SELECTION_PHASE.EXITED].label, color: CHART_COLOR.EXIT },
-]
+/** 凡例は4区分ぶん。色の隣に必ず区分名を置く */
+const selectionLegend = SELECTION_PHASE_VALUES.map((phase) => ({
+  label: SELECTION_PHASE_META[phase].label,
+  color: PHASE_COLOR[phase],
+}))
 
 const selectionRows = computed(() =>
   (data.value?.selectionBreakdown ?? []).map((row) => [
