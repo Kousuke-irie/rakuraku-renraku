@@ -116,6 +116,17 @@
 | `private` | 個人メモ。作成者のみ閲覧可 |
 | `shared` | チーム共有メモ。ルームの全人事が閲覧可 |
 
+これは**人事の申し送りメモ**（P2-5）のスコープ。学生本人の選考メモ（S-10）は
+別テーブル・別エンドポイントで、スコープの概念を持たない（常に本人のみ）。
+
+### 学生メモのキー `STUDENT_NOTE_KEY_VALUES`（S-10）
+
+`['overall', ...SELECTION_FLOW_STEP_VALUES]`。`'overall'` は選考全体のメモを表し、
+それ以外は選考ステップに紐づく。`STUDENT_NOTE_OVERALL_KEY` で参照すること。
+
+`student_notes.note_key` の CHECK 制約はこの並びと完全に一致させること。
+本文の上限は `STUDENT_NOTE_MAX_LENGTH`（2000）。
+
 ---
 
 ## 9. SLA 閾値

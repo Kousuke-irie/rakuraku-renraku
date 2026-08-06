@@ -160,11 +160,13 @@
       "description": "ご提出いただいた…",
       "points": "「学生時代に力を入れたこと」は…",
       "state": "done",
-      "feedback": { "body": "志望動機が具体的で…", "updatedAt": "2026-08-06T01:00:00Z" }
+      "feedback": { "body": "志望動機が具体的で…", "updatedAt": "2026-08-06T01:00:00Z" },
+      "note": { "noteKey": "document", "body": "ガクチカは…", "updatedAt": "2026-08-06T02:00:00Z" }
     }
   ],
   "selectionStatus": "interview_2",
-  "isDeclined": false
+  "isDeclined": false,
+  "overallNote": { "noteKey": "overall", "body": "志望動機の軸…", "updatedAt": "…" }
 }
 ```
 
@@ -175,6 +177,31 @@
 - `PUT /selection-flow` は9件すべてを送る全置換。件数不足・重複・`declined` 指定は **400**
 - 有効なステップが0件になる指定も **400**（学生の画面が空になるため）
 - 更新頻度が低いので Socket.IO では配信しない
+- `note` / `overallNote` は**本人のメモ**（S-10）。読み取りの往復を増やさないためここに載せる
+
+### 学生の選考メモ（S-10）
+
+| メソッド | パス | 権限 |
+| --- | --- | --- |
+| PUT | `/student-notes/:noteKey` | **学生のみ**。本文が空なら削除 |
+
+読み取りは専用エンドポイントを作らず、`GET /selection-flow/me` に相乗りさせる
+（マイページを1往復で描くため）。各ステップに `note`、トップレベルに `overallNote` が載る。
+
+```json
+// PUT /student-notes/interview_2  { "body": "逆質問：評価制度について聞く" }
+{ "note": { "noteKey": "interview_2", "body": "逆質問：…", "updatedAt": "2026-08-06T…" } }
+
+// 本文が空 → 削除
+{ "note": null }
+```
+
+- **対象は常に `req.user.id`。** `userId` をクライアントから受け取らない
+- 学生以外のロールは **403**。`noteKey` が `STUDENT_NOTE_KEY_VALUES` 以外なら **400**
+- 本文が `STUDENT_NOTE_MAX_LENGTH`（2000）超なら **400**
+- **人事向けの読み取りエンドポイントを作らない。** 学生本人にしか見えないことが
+  この機能の前提であり、覗ける経路を1つでも作ると機能ごと意味を失う
+- 本人しか書かないので Socket.IO では配信しない
 
 ### AI 現況サマリー（P3-1a・未実装）
 
