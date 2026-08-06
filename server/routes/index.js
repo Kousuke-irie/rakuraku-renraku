@@ -9,6 +9,7 @@ import snippetsRouter from './snippets.js';
 import summaryRouter from './summary.js';
 import companyRouter from './company.js';
 import selectionFlowRouter from './selectionFlow.js';
+import studentNotesRouter from './studentNotes.js';
 import aiSummaryRouter from './aiSummary.js';
 
 const router = Router();
@@ -25,6 +26,7 @@ router.use('/snippets', snippetsRouter);
 router.use('/summary', summaryRouter);
 router.use('/company', companyRouter);
 router.use('/selection-flow', selectionFlowRouter);
+router.use('/student-notes', studentNotesRouter);
 router.use('/ai/summary', aiSummaryRouter);
 
 export default router;

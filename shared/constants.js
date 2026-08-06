@@ -189,6 +189,24 @@ export const MEMO_SCOPE_META = Object.freeze({
 
 export const MEMO_SCOPE_VALUES = Object.values(MEMO_SCOPE);
 
+/**
+ * 学生本人だけが読み書きする選考メモのキー（S-10）。
+ *
+ * `'overall'` は選考全体のメモ、それ以外は選考ステップに紐づくメモ。
+ *
+ * **NULL 許容の status_key にしない。** SQLite の UNIQUE 制約は NULL 同士を重複と
+ * 見なさないため、全体メモが学生1人につき何行でも作れてしまう。明示のキーにすることで
+ * `UNIQUE(student_user_id, note_key)` だけで1件に固定できる。
+ *
+ * `student_notes.note_key` の CHECK 制約はこの並びと完全に一致させること。
+ */
+export const STUDENT_NOTE_OVERALL_KEY = 'overall';
+
+export const STUDENT_NOTE_KEY_VALUES = Object.freeze([
+  STUDENT_NOTE_OVERALL_KEY,
+  ...SELECTION_FLOW_STEP_VALUES,
+]);
+
 // ---------------------------------------------------------------------------
 // 一覧の並び順（P1-7 / business-logic.md §6）
 // ---------------------------------------------------------------------------
@@ -476,6 +494,9 @@ export const UNSET_VARIABLE_SUFFIX = '】';
 export const SELECTION_STEP_LABEL_MAX_LENGTH = 30;
 export const SELECTION_STEP_TEXT_MAX_LENGTH = 500;
 export const SELECTION_FEEDBACK_MAX_LENGTH = 1000;
+
+// 学生の選考メモ（S-10）の本文上限。サーバの検証と textarea の maxlength を必ず揃える
+export const STUDENT_NOTE_MAX_LENGTH = 2000;
 
 // 定型文の本文に埋め込める変数（P2-1設定画面／P2-2 / business-logic.md §5）。
 // 実データへの置換は P2-2 の責務。設定画面ではこの一覧を「挿入」候補として出す。

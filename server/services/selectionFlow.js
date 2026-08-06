@@ -15,6 +15,7 @@ import {
   SELECTION_STATUS,
   SELECTION_STATUS_META,
 } from '../../shared/constants.js';
+import { findNotesByStudent, findOverallNote } from './studentNotes.js';
 
 const STEP_SELECT_SQL = `
   SELECT status_key AS statusKey, is_enabled AS isEnabled, sort_order AS sortOrder,
@@ -158,7 +159,8 @@ function findFeedbacksByStudent(db, studentUserId) {
 
 /**
  * 学生のマイページ（S-09）が必要とするものを1回で返す。
- * ステップ設定・自分の現在位置・見せてよいFB をまとめ、画面側の往復を1回にする。
+ * ステップ設定・自分の現在位置・見せてよいFB・本人のメモ（S-10）をまとめ、
+ * 画面側の往復を1回にする。
  *
  * @param {number} studentUserId 認証済みの本人。クライアントから受け取らないこと
  */
@@ -177,6 +179,8 @@ export function buildStudentFlow(db, studentUserId) {
     : resolveStepStates(selectionStatus, enabledSteps);
 
   const feedbacks = findFeedbacksByStudent(db, studentUserId);
+  // 本人のメモ（S-10）。FB と違い完了判定で絞らない（本人が書いたものを本人に返すだけ）
+  const notes = findNotesByStudent(db, studentUserId);
 
   const steps = enabledSteps.map((step, index) => {
     const state = states[index];
@@ -190,10 +194,11 @@ export function buildStudentFlow(db, studentUserId) {
       points: step.points,
       state,
       feedback: feedback ? { body: feedback.body, updatedAt: feedback.updatedAt } : null,
+      note: notes.get(step.statusKey) ?? null,
     };
   });
 
-  return { steps, selectionStatus, isDeclined };
+  return { steps, selectionStatus, isDeclined, overallNote: findOverallNote(db, studentUserId) };
 }
 
 /** 人事が見るフィードバック一覧（全ステップぶん。完了判定で絞らない） */

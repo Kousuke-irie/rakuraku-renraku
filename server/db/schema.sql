@@ -200,6 +200,26 @@ CREATE TABLE IF NOT EXISTS selection_feedbacks (
   UNIQUE(student_user_id, status_key)
 );
 
+-- 学生本人だけが読み書きする選考メモ（S-10）。人事の申し送りメモ（memos）とは別物。
+-- ★人事向けの読み取りクエリ・エンドポイントを作らないこと。本人しか見ないと分かって
+--   いるから率直に書ける、というのがこの機能の価値そのもの。
+-- note_key は 'overall'（選考全体）＋ 選考ステップ。並びは STUDENT_NOTE_KEY_VALUES と
+-- 完全に一致させること。NULL 許容にすると UNIQUE が効かず全体メモが重複する。
+CREATE TABLE IF NOT EXISTS student_notes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  student_user_id INTEGER NOT NULL REFERENCES users(id),
+  note_key TEXT NOT NULL CHECK(note_key IN (
+    'overall',
+    'entry', 'document', 'aptitude',
+    'interview_1', 'interview_2', 'interview_3', 'interview_4', 'interview_5',
+    'offer'
+  )),
+  body TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(student_user_id, note_key)
+);
+
 CREATE INDEX IF NOT EXISTS idx_messages_room       ON messages(room_id, id DESC);
 CREATE INDEX IF NOT EXISTS idx_rooms_sort          ON rooms(urgency, last_student_message_at);
 CREATE INDEX IF NOT EXISTS idx_rooms_status        ON rooms(handling_status);
@@ -208,6 +228,7 @@ CREATE INDEX IF NOT EXISTS idx_room_members_user   ON room_members(user_id);
 CREATE INDEX IF NOT EXISTS idx_memos_room          ON memos(room_id, scope);
 CREATE INDEX IF NOT EXISTS idx_selection_steps_order ON selection_steps(is_enabled, sort_order);
 CREATE INDEX IF NOT EXISTS idx_selection_feedbacks  ON selection_feedbacks(student_user_id);
+CREATE INDEX IF NOT EXISTS idx_student_notes        ON student_notes(student_user_id);
 -- ★多重通知を防ぐ唯一の仕組み。60秒タイマーはこれに依存している。
 -- SLA：1ルーム×1起点メッセージ×1宛先×1種別につき1件だけ。
 CREATE UNIQUE INDEX IF NOT EXISTS idx_alerts_sla_unique
