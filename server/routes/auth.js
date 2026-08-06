@@ -6,6 +6,8 @@ import db from '../db/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { JWT_SECRET, JWT_EXPIRES_IN, IS_PRODUCTION } from '../config/env.js';
 import { ROLE, ROLE_VALUES } from '../../shared/constants.js';
+import { generateAiSummary } from '../services/aiSummary.js';
+import { emitAiSummaryUpdated } from '../services/realtime.js';
 
 const router = Router();
 
@@ -104,6 +106,15 @@ router.post('/login', loginRateLimit, async (req, res) => {
 
   issueTokenCookie(res, user);
   res.json({ user: toPublicUser(user) });
+
+  // ログイン応答は待たせず、人事のAI現況サマリーを裏で生成する。
+  // 同じプロセス内に生成済みキャッシュがあれば再利用し、無料枠の消費を抑える。
+  if (user.role === ROLE.HR || user.role === ROLE.ADMIN) {
+    const io = req.app.get('io');
+    void generateAiSummary(db, { userId: user.id }).then((summary) => {
+      emitAiSummaryUpdated(io, user.id, summary);
+    });
+  }
 });
 
 router.post('/logout', (req, res) => {

@@ -1,11 +1,6 @@
 <script setup>
 // ホーム右カラムの AI 現況サマリー／TODO（P3-1a・business-logic.md §7-2）
 //
-// ★中身の生成はまだ実装していない。
-//   roomsStore.fetchAiSummary() / regenerateAiSummary() がサーバ未実装のため
-//   常に unavailable（準備中）を返す。P3-1a で GET/POST /api/ai/summary を繋げば
-//   このコンポーネントは**変更なしで**動くよう、5状態すべてを描き分けてある。
-//
 // AI が落ちてもホームの一覧は動き続けること（business-logic.md §7-2）。
 // このカードはエラーを表示するだけで、例外を外へ投げない。
 import { computed } from "vue"
@@ -42,7 +37,7 @@ const canGenerate = computed(() => !isLoading.value && !isUnavailable.value)
 
 /** 未生成・準備中に出す案内文 */
 const placeholderText = computed(() => {
-  if (isUnavailable.value) return "AI 要約は準備中です。実装後、ログイン時に自動で生成されます。"
+  if (isUnavailable.value) return "Gemini APIキーが未設定のため、AI要約を利用できません。"
   if (isError.value) return summary.value.error || "要約の生成に失敗しました。"
   return "「要約を生成」を押すと、いま対応すべき学生を AI がまとめます。"
 })
@@ -170,7 +165,7 @@ const onGenerate = () => rooms.regenerateAiSummary()
         type="button"
         class="button-normal ai-card__generate"
         :disabled="!canGenerate"
-        :title="isUnavailable ? 'AI 機能は未実装です' : undefined"
+        :title="isUnavailable ? 'Gemini APIキーが未設定です' : undefined"
         @click="onGenerate"
       >
         {{ isReady ? "更新" : "要約を生成" }}

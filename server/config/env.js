@@ -21,3 +21,4 @@ export const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 export const PORT = Number(process.env.PORT) || 3000;
 export const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
 export const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+export { GEMINI_API_KEY, GEMINI_MODEL } from './gemini.js';

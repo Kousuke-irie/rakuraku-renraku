@@ -1,4 +1,4 @@
-/* eslint-disable no-unused-vars -- 空実装のため引数が未使用。実装時にこの行を消すこと */
+/* eslint-disable no-unused-vars -- 他機能の段階実装用スタブが同居しているため */
 import { defineStore } from 'pinia'
 import {
   AI_ANALYSIS_STATUS,
@@ -16,7 +16,7 @@ import {
   SORT_KEY_VALUES,
   URGENCY_ORDER,
 } from '../constants/index.js'
-import { memosApi, roomsApi, studentsApi, toErrorMessage, usersApi } from '../api/index.js'
+import { aiSummaryApi, memosApi, roomsApi, studentsApi, toErrorMessage, usersApi } from '../api/index.js'
 import { emitSocketAck } from '../composables/useSocket.js'
 import { useAuthStore } from './auth.js'
 import { useUiStore } from './ui.js'
@@ -206,7 +206,6 @@ export const useRoomsStore = defineStore('rooms', {
     /**
      * ホームの AI 現況サマリー（P3-1a・business-logic.md §7-2）。
      * サーバ由来のデータなので ui ストアではなくここに置く。
-     * ★中身の生成は P3-1a で実装する。現状は UI の受け皿だけ用意した状態。
      * @type {{
      *   status: string,               // AI_SUMMARY_STATUS のいずれか
      *   situation: string,            // 現状の1〜2文の要約
@@ -338,20 +337,40 @@ export const useRoomsStore = defineStore('rooms', {
 
     /**
      * GET /api/ai/summary。ホーム表示時にキャッシュ済みの要約を取りに行く。
-     * ★P3-1a で実装する。サーバ側（server/services/aiSummary.js）が未実装のため
-     *   今は API を叩かず「準備中」を立てるだけにしてある。
-     *   AI が落ちてもホームの一覧は動き続けること（business-logic.md §7-2）。
+     * AI が落ちてもホームの一覧は動き続けること（business-logic.md §7-2）。
      */
     async fetchAiSummary() {
-      this.setAiSummary({ status: AI_SUMMARY_STATUS.UNAVAILABLE })
+      try {
+        const { data } = await aiSummaryApi.get()
+        this.setAiSummary(data)
+      } catch (error) {
+        this.setAiSummary({
+          status: AI_SUMMARY_STATUS.ERROR,
+          error: toErrorMessage(error, 'AIサマリーを取得できませんでした'),
+        })
+      }
     },
 
     /**
      * POST /api/ai/summary。右下の AI ボタン／カードの更新から呼ぶ強制再生成。
-     * ★P3-1a で実装する。
      */
     async regenerateAiSummary() {
-      this.setAiSummary({ status: AI_SUMMARY_STATUS.UNAVAILABLE })
+      this.setAiSummary({
+        status: AI_SUMMARY_STATUS.LOADING,
+        situation: '',
+        todos: [],
+        generatedAt: null,
+        error: null,
+      })
+      try {
+        const { data } = await aiSummaryApi.regenerate()
+        this.setAiSummary(data)
+      } catch (error) {
+        this.setAiSummary({
+          status: AI_SUMMARY_STATUS.ERROR,
+          error: toErrorMessage(error, 'AIサマリーを生成できませんでした'),
+        })
+      }
     },
 
     /**
