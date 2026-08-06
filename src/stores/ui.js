@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { companyApi, snippetsApi, toErrorMessage } from '../api/index.js'
+import { companyApi, selectionFlowApi, snippetsApi, toErrorMessage } from '../api/index.js'
 import {
   COMPLIANCE_AI_STATUS,
   DEFAULT_BOARD_GROUP_BY,
@@ -22,6 +22,12 @@ const SNIPPET_ERROR = Object.freeze({
 const COMPANY_ERROR = Object.freeze({
   FETCH: '会社情報の取得に失敗しました',
   SAVE: '会社情報の保存に失敗しました',
+})
+
+/** 選考フロー（P2-11 / S-09）での失敗時の既定文言 */
+const SELECTION_FLOW_ERROR = Object.freeze({
+  FETCH: '選考フローの取得に失敗しました',
+  SAVE: '選考フローの保存に失敗しました',
 })
 
 /**
@@ -54,8 +60,9 @@ const PANE_WIDTH_KEY = Object.freeze({
  * 「どのルームを選んでいるか」「どのパネルが開いているか」など、
  * サーバのデータではない画面状態だけを持つ。データそのものは rooms / messages に置く。
  *
- * 定型文（snippets）・会社情報（company）はルームに紐づかないマスタデータなので、
- * パレットの表示状態と合わせてここで保持する（ストアは4つに固定するため）。
+ * 定型文（snippets）・会社情報（company）・選考フロー（selectionSteps）は
+ * ルームに紐づかないマスタデータなので、パレットの表示状態と合わせてここで保持する
+ * （ストアは4つに固定するため）。
  */
 export const useUiStore = defineStore('ui', {
   state: () => ({
@@ -105,6 +112,20 @@ export const useUiStore = defineStore('ui', {
     company: null,
     /** company は未設定でも null なので、取得済みかどうかを別に持つ */
     companyLoaded: false,
+
+    /**
+     * @type {object[]} 選考フローのステップ設定（P2-11）。人事の設定画面が使う。
+     * 会社情報と同じくルーム非依存のマスタデータなのでここに置く
+     */
+    selectionSteps: [],
+    selectionStepsLoaded: false,
+
+    /**
+     * @type {{steps: object[], selectionStatus: string|null, isDeclined: boolean}|null}
+     * 学生のマイページ（S-09）用。自分の進捗つきのステップ。
+     * ★FB は完了済みステップのぶんだけサーバが載せてくる
+     */
+    myFlow: null,
 
     /**
      * 送信前チェックの警告ダイアログ（P4-3）。
@@ -304,6 +325,56 @@ export const useUiStore = defineStore('ui', {
       }
     },
 
+    /**
+     * GET /api/selection-flow（P2-11・人事の設定画面）。
+     * 更新頻度の低いマスタデータなので、画面を開くたびには取り直さない。
+     */
+    async fetchSelectionSteps() {
+      if (this.selectionStepsLoaded) return
+      await this.reloadSelectionSteps()
+    },
+
+    async reloadSelectionSteps() {
+      try {
+        const { data } = await selectionFlowApi.list()
+        this.selectionSteps = data.steps
+        this.selectionStepsLoaded = true
+      } catch (error) {
+        this.pushToast({ type: 'error', message: toErrorMessage(error, SELECTION_FLOW_ERROR.FETCH) })
+      }
+    },
+
+    /**
+     * PUT /api/selection-flow（人事のみ）
+     * @param {object[]} steps 全ステップ（全置換）
+     * @returns {Promise<object[]|null>} 保存後のステップ。失敗時は null
+     */
+    async saveSelectionSteps(steps) {
+      try {
+        const { data } = await selectionFlowApi.save(steps)
+        this.selectionSteps = data.steps
+        this.selectionStepsLoaded = true
+        this.pushToast({ type: 'info', message: '選考フローを保存しました' })
+        return data.steps
+      } catch (error) {
+        this.pushToast({ type: 'error', message: toErrorMessage(error, SELECTION_FLOW_ERROR.SAVE) })
+        return null
+      }
+    },
+
+    /**
+     * GET /api/selection-flow/me（学生のマイページ・S-09）。
+     * 選考ステータスは人事がいつでも変えうるので、こちらは開くたびに取り直す。
+     */
+    async fetchMyFlow() {
+      try {
+        const { data } = await selectionFlowApi.me()
+        this.myFlow = data
+      } catch (error) {
+        this.pushToast({ type: 'error', message: toErrorMessage(error, SELECTION_FLOW_ERROR.FETCH) })
+      }
+    },
+
     /** "/" 入力でパレットを開く */
     async openSnippetPalette() {
       this.snippetPaletteOpen = true
@@ -379,6 +450,9 @@ export const useUiStore = defineStore('ui', {
       this.snippets = []
       this.company = null
       this.companyLoaded = false
+      this.selectionSteps = []
+      this.selectionStepsLoaded = false
+      this.myFlow = null
       this.complianceResults = []
       this.complianceDialogOpen = false
       this.complianceAiStatus = COMPLIANCE_AI_STATUS.OK

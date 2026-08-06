@@ -21,6 +21,7 @@ import {
   SELECTION_STATUS_VALUES,
 } from "../constants/index.js"
 import { useRoomsStore } from "../stores/rooms.js"
+import StudentFeedbackPanel from "./StudentFeedbackPanel.vue"
 
 // #region constants
 const UNASSIGNED_VALUE = ""
@@ -246,10 +247,24 @@ watch(() => props.room, syncFromRoom, { immediate: true, deep: true })
       @change="saveInterviewer"
       @keyup.esc="syncFromRoom"
     >
+
+    <!-- 選考フィードバック（P2-11）。面接直後にこの学生の文脈のまま書けるようここに置く -->
+    <StudentFeedbackPanel
+      v-if="student.userId"
+      class="profile__feedback"
+      :student-user-id="student.userId"
+      :selection-status="student.selectionStatus"
+    />
   </div>
 </template>
 
 <style scoped>
+/* プロフィールは2カラムのグリッド。FBパネルは行全体を使う */
+.profile__feedback {
+  grid-column: 1 / -1;
+  margin-top: var(--space-md);
+}
+
 .profile {
   display: grid;
   grid-template-columns: 84px minmax(0, 1fr);
