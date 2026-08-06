@@ -5,15 +5,17 @@
 // InboxView 側の差分を小さく保つために切り出している（一覧 P1-1・プロフィール P2-4 は別コンポーネント）。
 //
 // - ヘッダのステータスチップは**表示のみ**。1クリック変更（P1-2）は RoomListItem の責務
-// - 定型文パレット（P2-1）はこのコンポーネントの責務ではない
+// - 定型文パレット（P2-1）の開閉・絞り込み状態は useUiStore が持つ。ここでは
+//   入力欄のキー操作をストアの action に取り次ぐだけ
 // - socket の購読は composables/useSocket.js に集約されている（CLAUDE.md §6-12）
-import { computed, watch } from "vue"
+import { computed, ref, watch } from "vue"
 import { SELECTION_STATUS_META } from "../constants/index.js"
 import { useAuthStore } from "../stores/auth.js"
 import { useMessagesStore } from "../stores/messages.js"
 import { useRoomsStore } from "../stores/rooms.js"
 import { useUiStore } from "../stores/ui.js"
 import MessageList from "./MessageList.vue"
+import SnippetPalette from "./SnippetPalette.vue"
 import StatusChip, { CHIP_KIND } from "./StatusChip.vue"
 import UserAvatar from "./UserAvatar.vue"
 
@@ -75,6 +77,12 @@ const draft = computed({
 
 const canSend = computed(() => draft.value.trim().length > 0)
 
+/** 先頭が "/" で、改行・空白を含まない間だけ定型文コマンドとして扱う（frontend.md §8） */
+const snippetCommandQuery = computed(() => {
+  const match = /^\/(\S*)$/.exec(draft.value)
+  return match ? match[1] : null
+})
+
 /** 既読を送る基準になる最新メッセージID（楽観描画中のものは id が無いので除く） */
 const lastMessageId = computed(() => {
   const list = messages.messagesOf(roomId.value)
@@ -83,6 +91,52 @@ const lastMessageId = computed(() => {
   }
   return null
 })
+// #endregion
+
+// #region snippet palette（P2-1）
+const textareaRef = ref(null)
+
+watch(snippetCommandQuery, (query) => {
+  if (query === null) {
+    if (ui.snippetPaletteOpen) ui.closeSnippetPalette()
+    return
+  }
+
+  if (!ui.snippetPaletteOpen) ui.openSnippetPalette()
+  ui.setSnippetQuery(query)
+})
+
+watch(roomId, () => ui.closeSnippetPalette())
+
+const expandSnippet = (snippet) => {
+  messages.setDraft(roomId.value, snippet.body)
+  ui.closeSnippetPalette()
+  textareaRef.value?.focus()
+}
+
+const onComposerKeydown = (event) => {
+  if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+    event.preventDefault()
+    onSubmit()
+    return
+  }
+
+  if (!ui.snippetPaletteOpen) return
+
+  if (event.key === "ArrowDown") {
+    event.preventDefault()
+    ui.moveSnippetHighlight(1)
+  } else if (event.key === "ArrowUp") {
+    event.preventDefault()
+    ui.moveSnippetHighlight(-1)
+  } else if (event.key === "Enter") {
+    event.preventDefault()
+    if (ui.highlightedSnippet) expandSnippet(ui.highlightedSnippet)
+  } else if (event.key === "Escape") {
+    event.preventDefault()
+    ui.closeSnippetPalette()
+  }
+}
 // #endregion
 
 // #region lifecycle
@@ -163,13 +217,17 @@ const onSubmit = async () => {
       @submit.prevent="onSubmit"
     >
       <div class="composer__box">
+        <SnippetPalette
+          v-if="ui.snippetPaletteOpen"
+          @select="expandSnippet"
+        />
         <textarea
+          ref="textareaRef"
           v-model="draft"
           class="composer__input"
           rows="3"
-          placeholder="メッセージを入力"
-          @keydown.enter.meta.exact.prevent="onSubmit"
-          @keydown.enter.ctrl.exact.prevent="onSubmit"
+          placeholder="メッセージを入力（「/」で定型文を呼び出せます）"
+          @keydown="onComposerKeydown"
         />
         <div class="composer__actions">
           <p class="composer__hint">
@@ -255,6 +313,7 @@ const onSubmit = async () => {
 /* 入力欄はカードとして扱い、枠の中にアクション行まで収める（添付レイアウト準拠）。
    幅はメッセージ列（MessageList の .list__items）と揃える */
 .composer__box {
+  position: relative;
   max-width: var(--chat-column-max);
   margin: 0 auto;
   border: 1px solid var(--color-hairline);
