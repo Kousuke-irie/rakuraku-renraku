@@ -19,8 +19,6 @@ import {
   SELECTION_STATUS_VALUES,
   SORT_KEY_META,
   SORT_KEY_VALUES,
-  TOPIC_TAG_META,
-  TOPIC_TAG_VALUES,
   URGENCY_META,
   URGENCY_VALUES,
 } from "../constants/index.js"
@@ -35,7 +33,6 @@ import { useRoomsStore } from "../stores/rooms.js"
 const MULTI_FILTERS = Object.freeze([
   { key: "handlingStatus", label: "対応", values: HANDLING_STATUS_VALUES, meta: HANDLING_STATUS_META },
   { key: "selectionStatus", label: "選考", values: SELECTION_STATUS_VALUES, meta: SELECTION_STATUS_META },
-  { key: "topicTag", label: "タグ", values: TOPIC_TAG_VALUES, meta: TOPIC_TAG_META },
   { key: "urgency", label: "緊急度", values: URGENCY_VALUES, meta: URGENCY_META },
 ])
 // #endregion
