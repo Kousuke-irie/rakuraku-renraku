@@ -40,23 +40,34 @@ router.get('/rooms/:id/messages', requireAuth, (req, res) => {
   const limit = Math.min(Number(req.query.limit) || DEFAULT_LIMIT, DEFAULT_LIMIT);
   const before = req.query.before ? Number(req.query.before) : null;
 
+  // 対応ステータスの変更履歴（type='system'・P1-2）は人事の社内情報なので学生には返さない。
+  // リアルタイム配信側の除外は services/realtime.js が担う。
+  const params = {
+    roomId,
+    limit,
+    includeSystem: req.user.role === ROLE.STUDENT ? 0 : 1,
+    systemType: MESSAGE_TYPE.SYSTEM,
+  };
+
   const rows = before
     ? db
         .prepare(
           `SELECT ${MESSAGE_COLUMNS}
            FROM messages
-           WHERE room_id = ? AND id < ? AND deleted_at IS NULL
-           ORDER BY id DESC LIMIT ?`,
+           WHERE room_id = @roomId AND id < @before AND deleted_at IS NULL
+             AND (@includeSystem = 1 OR type != @systemType)
+           ORDER BY id DESC LIMIT @limit`,
         )
-        .all(roomId, before, limit)
+        .all({ ...params, before })
     : db
         .prepare(
           `SELECT ${MESSAGE_COLUMNS}
            FROM messages
-           WHERE room_id = ? AND deleted_at IS NULL
-           ORDER BY id DESC LIMIT ?`,
+           WHERE room_id = @roomId AND deleted_at IS NULL
+             AND (@includeSystem = 1 OR type != @systemType)
+           ORDER BY id DESC LIMIT @limit`,
         )
-        .all(roomId, limit);
+        .all(params);
 
   res.json({ messages: rows });
 });
