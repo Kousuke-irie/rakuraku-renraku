@@ -1,7 +1,15 @@
 import { HANDLING_STATUS, ROLE } from '../../shared/constants.js';
 
-export function nextHandlingStatus(currentStatus, senderRole) {
+export function nextHandlingStatus(currentStatus, senderRole, { keepInProgress = false } = {}) {
   if (currentStatus === HANDLING_STATUS.ON_HOLD) return currentStatus;
+
+  if (
+    keepInProgress &&
+    currentStatus === HANDLING_STATUS.IN_PROGRESS &&
+    (senderRole === ROLE.HR || senderRole === ROLE.ADMIN)
+  ) {
+    return currentStatus;
+  }
 
   if (senderRole === ROLE.STUDENT) {
     return [HANDLING_STATUS.WAITING_STUDENT, HANDLING_STATUS.DONE].includes(currentStatus)
@@ -18,13 +26,13 @@ export function nextHandlingStatus(currentStatus, senderRole) {
   return currentStatus;
 }
 
-export function applyStatusTransition(db, roomId, senderRole) {
+export function applyStatusTransition(db, roomId, senderRole, { keepInProgress = false } = {}) {
   const room = db
     .prepare(`SELECT handling_status AS handlingStatus FROM rooms WHERE id = ?`)
     .get(roomId);
   if (!room) return null;
 
-  const handlingStatus = nextHandlingStatus(room.handlingStatus, senderRole);
+  const handlingStatus = nextHandlingStatus(room.handlingStatus, senderRole, { keepInProgress });
   if (handlingStatus !== room.handlingStatus) {
     db.prepare(`UPDATE rooms SET handling_status = ? WHERE id = ?`).run(handlingStatus, roomId);
   }

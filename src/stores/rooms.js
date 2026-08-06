@@ -1,20 +1,17 @@
 /* eslint-disable no-unused-vars -- 他機能の段階実装用スタブが同居しているため */
 import { defineStore } from 'pinia'
 import {
-  AI_ANALYSIS_STATUS,
-  AI_RECOMMENDED_PRIORITY,
+  AI_RECOMMENDED_PRIORITY_ORDER,
   AI_SUMMARY_STATUS,
   DEFAULT_AI_SUMMARY_STATUS,
   DEFAULT_SORT_KEY,
   DEFAULT_TOPIC_TAG,
   ELAPSED_BADGE_HIDDEN_STATUSES,
-  HANDLING_STATUS,
   ROLE,
   SLA_ALERT_HOURS,
   SOCKET_EMIT,
   SORT_KEY,
   SORT_KEY_VALUES,
-  URGENCY_ORDER,
 } from '../constants/index.js'
 import { aiSummaryApi, memosApi, roomsApi, studentsApi, toErrorMessage, usersApi } from '../api/index.js'
 import { emitSocketAck } from '../composables/useSocket.js'
@@ -35,20 +32,14 @@ const timestampOf = (value) => {
 /** 比較結果が同じときにも表示順を安定させる。 */
 const byRoomId = (left, right) => Number(left.id) - Number(right.id)
 
-const isActiveAiHigh = (room) =>
-  room.aiRecommendation?.status === AI_ANALYSIS_STATUS.COMPLETED &&
-  room.aiRecommendation?.priority === AI_RECOMMENDED_PRIORITY.HIGH &&
-  [HANDLING_STATUS.NEEDS_REPLY, HANDLING_STATUS.IN_PROGRESS].includes(room.handlingStatus)
-
 const priorityRank = (room) => {
-  if ((URGENCY_ORDER[room.urgency] ?? Infinity) === 0) return 0
-  if (isActiveAiHigh(room)) return 1
-  const urgencyRank = URGENCY_ORDER[room.urgency]
-  return Number.isFinite(urgencyRank) ? urgencyRank + 1 : Infinity
+  const priority = room.priority ?? room.urgency
+  return AI_RECOMMENDED_PRIORITY_ORDER[priority] ?? Infinity
 }
 
 /**
- * 既定の優先順位。ルール緊急 → AI対応推奨度「高」 → 通常 → 低。
+ * 既定の優先順位。AI推奨度（高→通常→低）。AI未判定時はサーバがルール判定を
+ * priority にフォールバックしているため、欠席・遅刻などを見落とさない。
  * 時刻がないルームは経過時間を算出できないため、同条件の末尾に置く。
  */
 const byDefaultPriority = (left, right) => {
@@ -103,7 +94,7 @@ const filterRooms = (rooms, filters) => {
     handlingStatus,
     selectionStatus,
     topicTag,
-    urgency,
+    priority,
     overdueOnly,
     q,
   } = filters
@@ -116,7 +107,7 @@ const filterRooms = (rooms, filters) => {
     }
     // 用件タグはサーバが最新の学生メッセージから導出する。まだ発言が無いルームは null
     if (topicTag.length && !topicTag.includes(room.topicTag ?? DEFAULT_TOPIC_TAG)) return false
-    if (urgency.length && !urgency.includes(room.urgency)) return false
+    if (priority.length && !priority.includes(room.priority ?? room.urgency)) return false
 
     // 24h超（P1-8 のサマリーからの絞り込み用）。返信済み・完了は SLA の対象外
     if (
@@ -160,8 +151,8 @@ function initialFilters() {
     selectionStatus: [],
     /** @type {string[]} TOPIC_TAG の配列 */
     topicTag: [],
-    /** @type {string[]} URGENCY の配列 */
-    urgency: [],
+    /** @type {string[]} AI_RECOMMENDED_PRIORITY の配列 */
+    priority: [],
     /** 24h超のみ（サマリーバーからの絞り込み用） */
     overdueOnly: false,
     /** 氏名・大学の部分一致検索 */
@@ -184,7 +175,7 @@ function initialFilters() {
  *     scheduleState: SCHEDULE_STATE,     // P3-4
  *   },
  *   handlingStatus: HANDLING_STATUS,
- *   urgency: URGENCY,
+ *   priority: AI_RECOMMENDED_PRIORITY, // AI未判定時はルール判定のフォールバック
  *   topicTag: TOPIC_TAG,
  *   assignee: { id: number, displayName: string } | null,   // null = 未割当
  *   unreadCount: number,
@@ -277,7 +268,7 @@ export const useRoomsStore = defineStore('rooms', {
 
     /**
      * 表示用の最終リスト。
-     * SORT_KEY.DEFAULT: urgency（high→normal→low）→ lastStudentMessageAt ASC
+     * SORT_KEY.DEFAULT: priority（high→normal→low）→ lastStudentMessageAt ASC
      * SORT_KEY.LAST_MESSAGE: lastMessage.createdAt DESC
      * SORT_KEY.ELAPSED: lastStudentMessageAt ASC（経過時間が長い順）
      * （business-logic.md §6）
@@ -605,7 +596,7 @@ export const useRoomsStore = defineStore('rooms', {
 
     /**
      * 配列フィルタの1項目をトグルする（チェックボックスからの入口）。
-     * @param {'handlingStatus'|'selectionStatus'|'topicTag'|'urgency'} key
+     * @param {'handlingStatus'|'selectionStatus'|'topicTag'|'priority'} key
      * @param {string} value 対応する列挙値
      */
     toggleFilterValue(key, value) {

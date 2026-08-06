@@ -10,7 +10,7 @@ import { emitMessageNew, emitSummaryUpdated } from '../services/realtime.js';
 import { applyStatusTransition } from '../services/statusTransition.js';
 import { queueStudentMessageAnalysis } from '../services/aiPriority.js';
 import { findScheduleRequest } from '../services/scheduleRequests.js';
-import { MESSAGE_TYPE, ROLE } from '../../shared/constants.js';
+import { MESSAGE_TYPE, ROLE, SCHEDULE_REQUEST_STATUS } from '../../shared/constants.js';
 
 const router = Router();
 
@@ -138,7 +138,17 @@ export function insertMessage({ roomId, senderId, senderRole, body, clientMsgId 
       );
     }
 
-    applyStatusTransition(db, roomId, senderRole);
+    // 日程確定後の学生向け確定連絡は、学生の返答を求めない運用にする。
+    // そのため、人事がテンプレートで連絡しても「対応中」を「返信待ち」へ戻さない。
+    const hasBookedSchedule = (senderRole === ROLE.HR || senderRole === ROLE.ADMIN) && Boolean(
+      db.prepare(
+        `SELECT 1
+         FROM schedule_requests
+         WHERE room_id = ? AND status = ?
+         LIMIT 1`,
+      ).get(roomId, SCHEDULE_REQUEST_STATUS.BOOKED),
+    );
+    applyStatusTransition(db, roomId, senderRole, { keepInProgress: hasBookedSchedule });
     const urgency = calculateRoomUrgency(db, roomId);
     db.prepare(`UPDATE rooms SET urgency = ? WHERE id = ?`).run(urgency, roomId);
 

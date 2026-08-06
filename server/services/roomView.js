@@ -1,7 +1,7 @@
 import {
   AI_ANALYSIS_STATUS,
   AI_RECOMMENDED_PRIORITY,
-  HANDLING_STATUS,
+  MESSAGE_TYPE,
   ROLE,
   SORT_KEY,
   URGENCY,
@@ -12,6 +12,11 @@ const ROOM_SELECT_SQL = `
     r.id,
     r.handling_status          AS handlingStatus,
     r.urgency,
+    CASE
+      WHEN r.ai_analysis_status = '${AI_ANALYSIS_STATUS.COMPLETED}' AND r.ai_priority IS NOT NULL
+        THEN r.ai_priority
+      ELSE r.urgency
+    END                        AS priority,
     r.last_student_message_at  AS lastStudentMessageAt,
     r.ai_priority              AS aiPriority,
     r.ai_priority_reason       AS aiPriorityReason,
@@ -69,7 +74,16 @@ const ROOM_SELECT_SQL = `
   )
   LEFT JOIN calendar_interviewers ci ON ci.id = sr.interviewer_id
   LEFT JOIN users au ON au.id = r.assignee_user_id
-  LEFT JOIN messages lm ON lm.id = r.last_message_id
+  -- 人事向けのシステム通知は学生の一覧プレビューに出さない。
+  LEFT JOIN messages lm ON lm.id = (
+    SELECT m.id
+    FROM messages m
+    WHERE m.room_id = r.id
+      AND m.deleted_at IS NULL
+      AND (viewer.role != '${ROLE.STUDENT}' OR m.type != '${MESSAGE_TYPE.SYSTEM}')
+    ORDER BY m.id DESC
+    LIMIT 1
+  )
   LEFT JOIN messages sm ON sm.id = (
     SELECT m.id
     FROM messages m
@@ -96,8 +110,14 @@ const ROOM_LIST_SQL = `${ROOM_SELECT_SQL}
       OR sm.topic_tag IN (SELECT value FROM json_each(@topicTags))
     )
     AND (
-      @urgencies IS NULL
-      OR r.urgency IN (SELECT value FROM json_each(@urgencies))
+      @priorities IS NULL
+      OR (
+        CASE
+          WHEN r.ai_analysis_status = '${AI_ANALYSIS_STATUS.COMPLETED}' AND r.ai_priority IS NOT NULL
+            THEN r.ai_priority
+          ELSE r.urgency
+        END
+      ) IN (SELECT value FROM json_each(@priorities))
     )
     AND (
       @assigneeMode IS NULL
@@ -112,12 +132,12 @@ const ROOM_LIST_SQL = `${ROOM_SELECT_SQL}
   ORDER BY
     CASE WHEN @sort = @defaultSort THEN
       CASE
-        WHEN r.urgency = @highUrgency THEN 0
-        WHEN r.ai_analysis_status = @completedAiStatus
-          AND r.ai_priority = @highAiPriority
-          AND r.handling_status IN (@needsReplyStatus, @inProgressStatus) THEN 1
-        WHEN r.urgency = @normalUrgency THEN 2
-        WHEN r.urgency = @lowUrgency THEN 3
+        WHEN (CASE WHEN r.ai_analysis_status = @completedAiStatus AND r.ai_priority IS NOT NULL
+          THEN r.ai_priority ELSE r.urgency END) = @highAiPriority THEN 0
+        WHEN (CASE WHEN r.ai_analysis_status = @completedAiStatus AND r.ai_priority IS NOT NULL
+          THEN r.ai_priority ELSE r.urgency END) = @normalUrgency THEN 1
+        WHEN (CASE WHEN r.ai_analysis_status = @completedAiStatus AND r.ai_priority IS NOT NULL
+          THEN r.ai_priority ELSE r.urgency END) = @lowUrgency THEN 2
         ELSE 4
       END
     END ASC,
@@ -159,6 +179,7 @@ export function toRoom(row) {
     },
     handlingStatus: row.handlingStatus,
     urgency: row.urgency,
+    priority: row.priority,
     topicTag: row.topicTag,
     assignee: row.assigneeId
       ? { id: row.assigneeId, displayName: row.assigneeDisplayName }
@@ -219,8 +240,6 @@ export function listRoomsForUser(db, filters) {
     lowUrgency: URGENCY.LOW,
     completedAiStatus: AI_ANALYSIS_STATUS.COMPLETED,
     highAiPriority: AI_RECOMMENDED_PRIORITY.HIGH,
-    needsReplyStatus: HANDLING_STATUS.NEEDS_REPLY,
-    inProgressStatus: HANDLING_STATUS.IN_PROGRESS,
     unassignedMode: 'unassigned',
     assignedMode: 'assigned',
   };

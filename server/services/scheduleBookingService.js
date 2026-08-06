@@ -1,4 +1,5 @@
 import {
+  HANDLING_STATUS,
   MESSAGE_TYPE,
   SCHEDULE_REQUEST_STATUS,
   SCHEDULE_STATE,
@@ -20,6 +21,24 @@ function conflictError() {
     'この日時は受付終了しました。別の日時を選択してください。',
     409,
   );
+}
+
+function formatBookedSlot(slot) {
+  const start = new Date(slot.startsAt);
+  const end = new Date(slot.endsAt);
+  const date = new Intl.DateTimeFormat('ja-JP', {
+    timeZone: 'Asia/Tokyo',
+    month: 'long',
+    day: 'numeric',
+    weekday: 'short',
+  }).format(start);
+  const time = (value) => new Intl.DateTimeFormat('ja-JP', {
+    timeZone: 'Asia/Tokyo',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(value);
+  return `${date} ${time(start)}〜${time(end)}`;
 }
 
 export function bookScheduleRequest(db, { requestId, studentUserId, slotId }) {
@@ -97,19 +116,21 @@ export function bookScheduleRequest(db, { requestId, studentUserId, slotId }) {
       record.studentUserId,
     );
 
-    const body = `${record.selectionStage}の日程が確定しました。`;
+    // 学生には既存の日程カードを更新して確定日時を見せる。ここは人事だけが見える
+    // 社内通知なので、面接官への連絡・会議室決定という次の作業を埋もれさせない。
+    const body = `日程が確定しました（${formatBookedSlot(slot)}）。面接担当の方に連絡し、会議室を決定してください。`;
     const messageResult = db
       .prepare(
         `INSERT INTO messages (room_id, sender_id, body, type, created_at)
          VALUES (?, ?, ?, ?, ?)`,
       )
-      .run(record.roomId, record.createdByUserId, body, MESSAGE_TYPE.TEXT, now);
+      .run(record.roomId, record.createdByUserId, body, MESSAGE_TYPE.SYSTEM, now);
     const messageId = Number(messageResult.lastInsertRowid);
-    db.prepare(`UPDATE rooms SET last_message_id = ?, last_message_at = ? WHERE id = ?`).run(
-      messageId,
-      now,
-      record.roomId,
-    );
+    db.prepare(
+      `UPDATE rooms
+       SET last_message_id = ?, last_message_at = ?, handling_status = ?
+       WHERE id = ?`,
+    ).run(messageId, now, HANDLING_STATUS.IN_PROGRESS, record.roomId);
 
     const message = db
       .prepare(

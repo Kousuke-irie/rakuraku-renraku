@@ -14,6 +14,7 @@ const props = defineProps({
 
 const auth = useAuthStore()
 const isStudent = computed(() => auth.user?.role === ROLE.STUDENT)
+const isHr = computed(() => auth.user?.role === ROLE.HR || auth.user?.role === ROLE.ADMIN)
 const canSelect = computed(
   () => isStudent.value && props.request.status === SCHEDULE_REQUEST_STATUS.WAITING_STUDENT,
 )
@@ -63,6 +64,15 @@ const bookedTime = computed(() => {
         <div><dt>面接官</dt><dd>{{ request.interviewer.displayName }}</dd></div>
         <div><dt>形式</dt><dd>{{ INTERVIEW_FORMAT_META[request.interviewFormat]?.label }}</dd></div>
       </dl>
+      <aside
+        v-if="isHr"
+        class="schedule-card__next-action"
+        aria-label="人事の次の対応"
+      >
+        <strong>次の対応</strong>
+        <p>面接担当の方に連絡し、会議室を決定してください。</p>
+        <small>対応ステータスは「対応中」です。</small>
+      </aside>
     </template>
 
     <template v-else>
@@ -158,6 +168,31 @@ const bookedTime = computed(() => {
   color: var(--color-error);
   font-size: 13px;
   font-weight: 700;
+}
+
+.schedule-card__next-action {
+  margin-top: var(--space-lg);
+  padding: var(--space-md);
+  border-radius: var(--radius-md);
+  background: var(--color-orange-soft);
+  color: var(--color-ink);
+}
+
+.schedule-card__next-action strong,
+.schedule-card__next-action p,
+.schedule-card__next-action small {
+  display: block;
+}
+
+.schedule-card__next-action p {
+  margin: var(--space-xs) 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.schedule-card__next-action small {
+  color: var(--color-ink-mute);
+  font-size: 12px;
 }
 
 .schedule-card__button {

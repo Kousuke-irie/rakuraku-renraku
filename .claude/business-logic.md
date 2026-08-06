@@ -137,8 +137,9 @@ classify(body: string): TopicTag
 last_message.created_at DESC   -- 最終メッセージの新しい順
 ```
 
-- 切替可能なソート：緊急度順 / 経過時間順
-- 「緊急度順」は `1. urgency（high → normal → low）` → `2. last_student_message_at ASC（経過時間が長い順）`
+- 切替可能なソート：AI推奨度順 / 経過時間順
+- 「AI推奨度順」は `1. priority（high → normal → low）` → `2. last_student_message_at ASC（経過時間が長い順）`
+- `priority` はAI判定が完了していれば `ai_priority` を使い、未判定・失敗時はルールベースの `urgency` を使う。
 - フィルタ条件とソート条件は Pinia に保持し、ルーム切替で失われないこと
 
 ---

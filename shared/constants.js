@@ -97,9 +97,12 @@ export const URGENCY_META = Object.freeze({
 export const URGENCY_VALUES = Object.values(URGENCY);
 
 // ---------------------------------------------------------------------------
-// AI対応推奨度（P3-1改訂）
-// ルール緊急度とは別の補助情報であり、既存の urgency を変更しない。
+// AI推奨度（P3-1改訂）
+// 人事画面の優先表示にはAI判定を使う。AIが未判定・失敗時だけ既存の urgency を
+// フォールバックとして使うため、欠席・遅刻などの即時検知は維持される。
 // ---------------------------------------------------------------------------
+
+export const AI_RECOMMENDED_PRIORITY_TITLE = 'AI推奨度';
 
 export const AI_RECOMMENDED_PRIORITY = Object.freeze({
   HIGH: 'high',
@@ -114,6 +117,12 @@ export const AI_RECOMMENDED_PRIORITY_META = Object.freeze({
 });
 
 export const AI_RECOMMENDED_PRIORITY_VALUES = Object.values(AI_RECOMMENDED_PRIORITY);
+
+export const AI_RECOMMENDED_PRIORITY_ORDER = Object.freeze({
+  [AI_RECOMMENDED_PRIORITY.HIGH]: 0,
+  [AI_RECOMMENDED_PRIORITY.NORMAL]: 1,
+  [AI_RECOMMENDED_PRIORITY.LOW]: 2,
+});
 
 export const AI_ANALYSIS_STATUS = Object.freeze({
   PENDING: 'pending',
@@ -216,7 +225,7 @@ export const SORT_KEY = Object.freeze({
 });
 
 export const SORT_KEY_META = Object.freeze({
-  [SORT_KEY.DEFAULT]: { label: '緊急度順' },
+  [SORT_KEY.DEFAULT]: { label: 'AI推奨度順' },
   [SORT_KEY.LAST_MESSAGE]: { label: '最終メッセージ順' },
   [SORT_KEY.ELAPSED]: { label: '経過時間順' },
 });
@@ -262,13 +271,13 @@ export const SEND_STATUS_VALUES = Object.values(SEND_STATUS);
 export const BOARD_GROUP_BY = Object.freeze({
   HANDLING: 'handling',
   SELECTION: 'selection',
-  URGENCY: 'urgency',
+  AI_PRIORITY: 'ai_priority',
 });
 
 export const BOARD_GROUP_BY_META = Object.freeze({
   [BOARD_GROUP_BY.HANDLING]: { label: '対応' },
   [BOARD_GROUP_BY.SELECTION]: { label: '選考' },
-  [BOARD_GROUP_BY.URGENCY]: { label: '緊急度' },
+  [BOARD_GROUP_BY.AI_PRIORITY]: { label: AI_RECOMMENDED_PRIORITY_TITLE },
 });
 
 export const BOARD_GROUP_BY_VALUES = Object.values(BOARD_GROUP_BY);

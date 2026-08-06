@@ -5,6 +5,7 @@ import Database from 'better-sqlite3';
 import {
   HANDLING_STATUS,
   INTERVIEW_FORMAT,
+  MESSAGE_TYPE,
   ROLE,
   ROOM_TYPE,
   SCHEDULE_REQUEST_STATUS,
@@ -127,6 +128,15 @@ test('同じ枠への同時相当の予約は一方だけ成功し、プロフ�
     slotId: slot.slotId,
   });
   assert.equal(booked.request.status, SCHEDULE_REQUEST_STATUS.BOOKED);
+  assert.equal(
+    db.prepare(`SELECT handling_status AS handlingStatus FROM rooms WHERE id = ?`).get(booked.request.roomId).handlingStatus,
+    HANDLING_STATUS.IN_PROGRESS,
+  );
+  const notification = db
+    .prepare(`SELECT body, type FROM messages WHERE room_id = ? ORDER BY id DESC LIMIT 1`)
+    .get(booked.request.roomId);
+  assert.equal(notification.type, MESSAGE_TYPE.SYSTEM);
+  assert.match(notification.body, /面接担当の方に連絡し、会議室を決定してください。/);
   assert.equal(db.prepare(`SELECT COUNT(*) AS count FROM calendar_bookings`).get().count, 1);
   assert.equal(
     db.prepare(`SELECT next_interview_at AS nextInterviewAt FROM students WHERE user_id = ?`).get(studentIds[0]).nextInterviewAt,

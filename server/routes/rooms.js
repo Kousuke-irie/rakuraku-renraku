@@ -14,12 +14,12 @@ import { markRoomRead } from '../services/readReceipt.js';
 import { expireWaitingScheduleRequests } from '../services/scheduleRequests.js';
 import {
   DEFAULT_SORT_KEY,
+  AI_RECOMMENDED_PRIORITY_VALUES,
   HANDLING_STATUS_VALUES,
   ROLE,
   SELECTION_STATUS_VALUES,
   SORT_KEY_VALUES,
   TOPIC_TAG_VALUES,
-  URGENCY_VALUES,
 } from '../../shared/constants.js';
 
 const router = Router();
@@ -48,14 +48,14 @@ function parseRoomFilters(query, userId) {
   const handlingStatus = parseEnumList(query.handlingStatus, HANDLING_STATUS_VALUES);
   const selectionStatus = parseEnumList(query.selectionStatus, SELECTION_STATUS_VALUES);
   const topicTag = parseEnumList(query.topicTag, TOPIC_TAG_VALUES);
-  const urgency = parseEnumList(query.urgency, URGENCY_VALUES);
+  const priority = parseEnumList(query.priority, AI_RECOMMENDED_PRIORITY_VALUES);
   const sort = query.sort ?? DEFAULT_SORT_KEY;
 
   if (
     handlingStatus === null ||
     selectionStatus === null ||
     topicTag === null ||
-    urgency === null ||
+    priority === null ||
     !SORT_KEY_VALUES.includes(sort)
   ) {
     return null;
@@ -82,7 +82,7 @@ function parseRoomFilters(query, userId) {
     handlingStatuses: jsonOrNull(handlingStatus),
     selectionStatuses: jsonOrNull(selectionStatus),
     topicTags: jsonOrNull(topicTag),
-    urgencies: jsonOrNull(urgency),
+    priorities: jsonOrNull(priority),
     assigneeMode,
     assigneeId,
     queryPattern: search ? `%${search}%` : null,
