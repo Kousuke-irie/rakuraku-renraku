@@ -4,12 +4,16 @@
 // 2カード構成。左が設定内のナビゲーション、右が選んだ項目の詳細。
 // 画面全体の固定レイヤは AppShell が持つので、ここはセルを height:100% で埋めるだけ。
 //
-// ★このビューは**雛形**である。セクションを増やすときは SECTIONS に足す。
+// ★このビューは**雛形**である。セクションを増やすときは BASE_SECTIONS / HR_SECTIONS に足す。
 //   - プロフィール … B-5。編集フォーム自体は ProfileDialog を使い回す（二重実装しない）
-//   - 定型文       … P2-1 拡張。追加・削除・編集は SnippetSettingsPanel に委譲
+//   - 定型文       … P2-1 拡張。追加・削除・編集は SnippetSettingsPanel に委譲。**人事のみ**
 //   - 会社情報     … P2-10。編集は CompanySettingsPanel に委譲。**人事のみ**
 //                    （学生は編集できず、/chat の CompanyPanel で閲覧するだけ）
 //   - アカウント   … ログインIDの表示とログアウトのみ。パスワード変更は要件に無い
+//
+// ★セクションを足すときは「学生に出してよいか」を必ず判断すること。
+//   この画面は全ロールが入れる（router の meta は requiresAuth のみ）ため、
+//   人事限定の API を叩くセクションを BASE_SECTIONS に置くと学生の画面で 403 になる。
 //
 // セクションの切替はローカル state で持つ。URL に載せる必要が出たら
 // /settings/:section のルートに昇格させる（今は S-06 = /settings/profile 単一）。
@@ -22,14 +26,19 @@ import SnippetSettingsPanel from "../components/SnippetSettingsPanel.vue"
 import UserAvatar from "../components/UserAvatar.vue"
 
 // #region constants
-/** 設定内のナビゲーション。key は下の v-if と対応する */
+/** 全ロールに出すセクション。key は下の v-if と対応する */
 const BASE_SECTIONS = Object.freeze([
   { key: "profile", label: "プロフィール", note: "表示名・ステータス" },
-  { key: "snippets", label: "定型文", note: "コマンドと本文" },
 ])
 
-/** 人事だけに出すセクション（P2-10）。学生は会社情報を閲覧するだけで編集できない */
+/**
+ * 人事（hr / admin）だけに出すセクション。
+ * どちらも参照する API が人事限定なので、学生に出すと 403 になる。
+ *   - 定型文（P2-1）  … GET /api/snippets が人事限定（routes/snippets.js）
+ *   - 会社情報（P2-10）… PUT /api/company が人事限定。学生は /chat の CompanyPanel で閲覧するだけ
+ */
 const HR_SECTIONS = Object.freeze([
+  { key: "snippets", label: "定型文", note: "コマンドと本文" },
   { key: "company", label: "会社情報", note: "学生に見せる自社紹介" },
 ])
 
@@ -58,6 +67,11 @@ const sections = computed(() => [
   ACCOUNT_SECTION,
 ])
 
+/**
+ * 表示中のセクション。自分に出ていない key は先頭（プロフィール）に落とす。
+ * 見出しと中身は必ずこの `activeSection.key` で描き分ける。`activeKey` を直接見ると、
+ * 出ていないセクションの中身だけが描画されて見出しとずれる余地が残る。
+ */
 const activeSection = computed(
   () => sections.value.find((section) => section.key === activeKey.value) ?? sections.value[0]
 )
@@ -92,8 +106,8 @@ const onLogout = async () => {
           <button
             type="button"
             class="menu__item"
-            :class="{ 'menu__item--active': section.key === activeKey }"
-            :aria-current="section.key === activeKey ? 'true' : undefined"
+            :class="{ 'menu__item--active': section.key === activeSection.key }"
+            :aria-current="section.key === activeSection.key ? 'true' : undefined"
             @click="activeKey = section.key"
           >
             <span class="menu__label">{{ section.label }}</span>
@@ -113,7 +127,7 @@ const onLogout = async () => {
 
       <div class="card__body">
         <!-- プロフィール（B-5）。編集は ProfileDialog に寄せる -->
-        <template v-if="activeKey === 'profile'">
+        <template v-if="activeSection.key === 'profile'">
           <div class="identity">
             <UserAvatar
               :display-name="auth.user?.displayName ?? ''"
@@ -159,12 +173,12 @@ const onLogout = async () => {
         </template>
 
         <!-- 定型文（P2-1 拡張：コマンドの追加・削除・編集） -->
-        <template v-else-if="activeKey === 'snippets'">
+        <template v-else-if="activeSection.key === 'snippets'">
           <SnippetSettingsPanel />
         </template>
 
         <!-- 会社情報（P2-10）。学生の /chat の右パネルに出る内容 -->
-        <template v-else-if="activeKey === 'company'">
+        <template v-else-if="activeSection.key === 'company'">
           <CompanySettingsPanel />
         </template>
 
