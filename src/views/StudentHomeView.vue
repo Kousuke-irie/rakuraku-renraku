@@ -91,9 +91,11 @@ onMounted(() => {
   ui.fetchCompany()
   ui.fetchMyFlow()
 
-  // チャットカードの未読件数と最新メッセージ。既に取得済みなら往復を増やさない
-  // （チャット画面から戻ってきた場合。socket 側が最新に保っている）
-  if (rooms.rooms.length === 0) rooms.fetchRooms()
+  // チャットカードの未読件数と最新メッセージ。
+  // ★取得済みでも必ず取り直す。`room:updated` はサーバが `io.in('hr')` にしか配信して
+  //   おらず（services/realtime.js）、学生のストアは socket では最新化されない。
+  //   チャットで既読にして戻ってきたときに、古い未読件数を出さないため。
+  rooms.fetchRooms()
 })
 
 // 既定で現在地の詳細を開いておく。学生がまず知りたいのは「いま」のことなので、

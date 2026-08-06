@@ -72,7 +72,7 @@ onMounted(load)
 // 対象の学生が変わったとき（ルーム切り替え）と、
 // 選考ステータスが進んだとき（本人に見えるFBが増える）に取り直す
 watch(
-  () => [props.studentUserId, props.selectionStatus],
+  [() => props.studentUserId, () => props.selectionStatus],
   () => {
     editingKey.value = null
     load()

@@ -24,6 +24,12 @@ export function useFeedbackReads(userId) {
   /** @type {import('vue').Ref<Record<string, string>>} statusKey → 読んだFBの updatedAt */
   const reads = ref({})
 
+  /**
+   * 書き込みが使えるか。プライベートブラウジングや容量超過では localStorage への
+   * 書き込みが例外になる。一度失敗したら以降は試さない（毎回 throw させない）。
+   */
+  let isPersistable = true
+
   // #region local methods
   const load = () => {
     try {
@@ -37,12 +43,14 @@ export function useFeedbackReads(userId) {
   }
 
   const persist = () => {
+    if (!isPersistable) return
+
     try {
       localStorage.setItem(storageKey, JSON.stringify(reads.value))
     } catch {
-      // 容量超過やプライベートブラウジングでの書き込み拒否。
-      // 既読が残らないだけで画面は動くので、ここで学生に何かを見せる必要はない
-      reads.value = { ...reads.value }
+      // 既読がこの端末に残らないだけで画面は動く。
+      // 学生に見せる意味のある失敗ではないのでトーストも出さない
+      isPersistable = false
     }
   }
 
