@@ -22,6 +22,8 @@ export default [
         window: 'readonly',
         // 受信箱3ペインの幅の追従（InboxView・ドラッグの上限計算）
         ResizeObserver: 'readonly',
+        // 採用サイトURLのスキーム検証（routes/company.js）。Node 20+ とブラウザの両方で使える
+        URL: 'readonly',
       },
     },
   },
