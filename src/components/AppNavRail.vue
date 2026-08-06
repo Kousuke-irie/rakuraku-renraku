@@ -10,11 +10,9 @@
 //
 // ★アイコンだけの状態でもラベルは DOM に残す（opacity で消すだけ）。
 //   display:none / visibility:hidden にするとスクリーンリーダーから消える。
-import { computed } from "vue"
+import { computed, onMounted, watch } from "vue"
 import { useRouter } from "vue-router"
-import { HANDLING_STATUS, HANDLING_STATUS_META } from "../constants/index.js"
 import { useAuthStore } from "../stores/auth.js"
-import { useRoomsStore } from "../stores/rooms.js"
 import { useUiStore } from "../stores/ui.js"
 import logoUrl from "../images/logo-rakuraku.png"
 import NavIcon from "./NavIcon.vue"
@@ -32,7 +30,6 @@ const SETTINGS_PATH = "/settings/profile"
 
 // #region global state
 const auth = useAuthStore()
-const rooms = useRoomsStore()
 const ui = useUiStore()
 // #endregion
 
@@ -62,22 +59,35 @@ const navItems = computed(() =>
 )
 
 /**
- * 通知バッジの件数。
- * ★P1-8 で GET /api/summary が入ったら `rooms.summary.needsReply` に差し替える。
- *   それまでは InboxSidebar と同じ暫定集計（ルーム一覧からの数え上げ）で出す。
- *   受信箱は担当制なので、数えるのは自分の担当ルームだけ（#28・roomsStore.myRooms）。
+ * 通知バッジの件数＝**自分宛の未読通知**（P4-1）。
+ * 以前は「要返信ルーム数」の暫定集計だったが、SLA 通知が入ったので実データにした。
+ * 数えるのはサーバ（GET /api/alerts の unreadCount）で、ここは持ち回すだけ。
  */
-const alertCount = computed(
-  () => rooms.myRooms.filter((room) => room.handlingStatus === HANDLING_STATUS.NEEDS_REPLY).length
-)
+const alertCount = computed(() => ui.alertsUnreadCount)
 
 /** 件数は色でなくテキストでも伝える（CLAUDE.md §6-13） */
-const alertLabel = computed(
-  () => `通知：${HANDLING_STATUS_META[HANDLING_STATUS.NEEDS_REPLY].label} ${alertCount.value}件`
-)
+const alertLabel = computed(() => `通知：未読 ${alertCount.value}件`)
 
 const accountLabel = computed(
   () => `${auth.user?.displayName ?? ""}のプロフィールを編集する`
+)
+// #endregion
+
+// #region lifecycle
+/**
+ * ベルの件数を取りに行く（P4-1）。
+ * 新着は socket（alert:new）で届くので、ここは初回とログインし直したときだけ。
+ * 学生には通知を出さないので取得もしない。
+ */
+onMounted(() => {
+  if (auth.isHr) ui.fetchAlertCount()
+})
+
+watch(
+  () => auth.user?.id,
+  (userId, previousId) => {
+    if (userId && userId !== previousId && auth.isHr) ui.fetchAlertCount()
+  }
 )
 // #endregion
 

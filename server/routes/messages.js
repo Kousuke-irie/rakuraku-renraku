@@ -16,6 +16,7 @@ import {
 } from '../services/complianceAlerts.js';
 import { checkCompliance, isCheckedRole } from '../services/complianceChecker.js';
 import { checkComplianceWithAi, mergeFindings } from '../services/complianceAi.js';
+import { resolveSlaAlerts } from '../services/slaMonitor.js';
 import { COMPLIANCE_AI_STATUS, MESSAGE_TYPE, ROLE } from '../../shared/constants.js';
 
 const router = Router();
@@ -201,6 +202,11 @@ export function insertMessage({ roomId, senderId, senderRole, body, clientMsgId,
     }
 
     applyStatusTransition(db, roomId, senderRole);
+
+    // P4-1：人事が返信したらこのルームの未解決 SLA 通知を閉じる。
+    // コンプライアンス警告は「起きた事実」なので閉じない。
+    if (isCheckedRole(senderRole)) resolveSlaAlerts(db, roomId);
+
     const urgency = calculateRoomUrgency(db, roomId);
     db.prepare(`UPDATE rooms SET urgency = ? WHERE id = ?`).run(urgency, roomId);
 

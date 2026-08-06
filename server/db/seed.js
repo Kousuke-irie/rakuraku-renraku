@@ -279,6 +279,19 @@ const SHOWCASE_STUDENTS = [
       { sender: 'student', hoursAgo: 26, body: '申し訳ございません、明日の面接ですが体調不良のため欠席させてください。' },
     ],
   },
+  // ★P4-1 のデモ用。48時間を超えて上長エスカレーションが立つ唯一のルーム。
+  //   担当は hr1（admin1 にすると「上長が自分自身へ」の絵になり意図が伝わらない）。
+  //   閾値を短縮しないデモでも、シード直後からエスカレーション済みで見せられる。
+  {
+    loginId: 'student11', displayName: '長谷川 遥', avatarColor: '#BF8C7C',
+    university: '名古屋大学', faculty: '法学部', gradYear: 2027, selectionStatus: SELECTION_STATUS.INTERVIEW_3,
+    assignee: 'hr1', handlingStatus: HANDLING_STATUS.NEEDS_REPLY,
+    fillerCount: 6,
+    thread: [
+      { sender: 'hr', hoursAgo: 72, body: '三次面接の結果は追ってご連絡いたします。' },
+      { sender: 'student', hoursAgo: 50, body: '先日の面接の結果はいつ頃わかりますでしょうか。他社の選考もあり、ご連絡をお待ちしています。' },
+    ],
+  },
   {
     loginId: 'student2', displayName: '佐藤 花子', avatarColor: '#BFB27C',
     university: '早稲田大学', faculty: '商学部', gradYear: 2027, selectionStatus: SELECTION_STATUS.INTERVIEW_4,

@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { companyApi, selectionFlowApi, snippetsApi, toErrorMessage } from '../api/index.js'
+import { alertsApi, companyApi, selectionFlowApi, snippetsApi, toErrorMessage } from '../api/index.js'
 import {
   COMPLIANCE_AI_STATUS,
   DEFAULT_BOARD_GROUP_BY,
@@ -22,6 +22,12 @@ const SNIPPET_ERROR = Object.freeze({
 const COMPANY_ERROR = Object.freeze({
   FETCH: '会社情報の取得に失敗しました',
   SAVE: '会社情報の保存に失敗しました',
+})
+
+/** 通知（P4-1）での失敗時の既定文言 */
+const ALERT_ERROR = Object.freeze({
+  FETCH: '通知の取得に失敗しました',
+  READ: '通知の既読化に失敗しました',
 })
 
 /** 選考フロー（P2-11 / S-09）での失敗時の既定文言 */
@@ -140,6 +146,16 @@ export const useUiStore = defineStore('ui', {
      * ok 以外なら「AIによる検証はできていません」と明示する（P4-2b）。
      */
     complianceAiStatus: COMPLIANCE_AI_STATUS.OK,
+
+    /**
+     * @type {object[]} 自分宛の通知（P4-1）。GET /api/alerts の結果。新しい順。
+     * 解消済み（返信して片付いたもの）は既定で含まれない。
+     * ★ストアは4つに固定する決まりなのでここに置く（frontend.md §3）
+     */
+    alerts: [],
+    /** ナビレールのベルバッジ用。サーバが数えた未読件数をそのまま持つ */
+    alertsUnreadCount: 0,
+    alertsLoaded: false,
 
     /** @type {'connected'|'connecting'|'disconnected'} socket の接続状態バナー用 */
     connectionState: 'connecting',
@@ -423,6 +439,67 @@ export const useUiStore = defineStore('ui', {
       this.complianceAiStatus = status
     },
 
+    /** GET /api/alerts（P4-1）。画面を開くたびに取り直す（件数が変わるため） */
+    async fetchAlerts() {
+      try {
+        const { data } = await alertsApi.list()
+        this.alerts = data.alerts
+        this.alertsUnreadCount = data.unreadCount
+        this.alertsLoaded = true
+      } catch (error) {
+        this.pushToast({ type: 'error', message: toErrorMessage(error, ALERT_ERROR.FETCH) })
+      }
+    },
+
+    /** バッジだけ欲しいとき（ナビレール）。一覧は取りに行かない */
+    async fetchAlertCount() {
+      try {
+        const { data } = await alertsApi.list({ unread: true, limit: 1 })
+        this.alertsUnreadCount = data.unreadCount
+      } catch {
+        // バッジが出ないだけなので黙って諦める。トーストを出すほどではない
+      }
+    },
+
+    /**
+     * socket `alert:new` で届いた通知を先頭に積む（P4-1）。
+     * 同じ id が既にあれば無視する（再接続時の重複配信対策）。
+     */
+    receiveAlert(alert) {
+      if (!alert?.id) return
+      if (this.alerts.some((existing) => existing.id === alert.id)) return
+
+      this.alerts = [alert, ...this.alerts]
+      if (!alert.readAt) this.alertsUnreadCount += 1
+    },
+
+    /** 行クリック時。既読化して一覧からは消さない（誤クリックで見失わないため） */
+    async markAlertRead(alertId) {
+      const target = this.alerts.find((alert) => alert.id === alertId)
+      if (!target || target.readAt) return
+
+      try {
+        const { data } = await alertsApi.markRead(alertId)
+        target.readAt = new Date().toISOString()
+        this.alertsUnreadCount = data.unreadCount
+      } catch (error) {
+        this.pushToast({ type: 'error', message: toErrorMessage(error, ALERT_ERROR.READ) })
+      }
+    },
+
+    async markAllAlertsRead() {
+      try {
+        const { data } = await alertsApi.markAllRead()
+        const now = new Date().toISOString()
+        for (const alert of this.alerts) {
+          if (!alert.readAt) alert.readAt = now
+        }
+        this.alertsUnreadCount = data.unreadCount
+      } catch (error) {
+        this.pushToast({ type: 'error', message: toErrorMessage(error, ALERT_ERROR.READ) })
+      }
+    },
+
     /** @param {'connected'|'connecting'|'disconnected'} state */
     setConnectionState(state) {
       this.connectionState = state
@@ -456,6 +533,9 @@ export const useUiStore = defineStore('ui', {
       this.complianceResults = []
       this.complianceDialogOpen = false
       this.complianceAiStatus = COMPLIANCE_AI_STATUS.OK
+      this.alerts = []
+      this.alertsUnreadCount = 0
+      this.alertsLoaded = false
       this.connectionState = 'connecting'
       this.toasts = []
     },

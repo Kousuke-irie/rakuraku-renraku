@@ -137,6 +137,8 @@ function registerHandlers() {
   socket.on(SOCKET_ON.MEMO_UPDATED, ({ roomId, memo }) => rooms.upsertMemo(roomId, memo))
   socket.on(SOCKET_ON.SUMMARY_UPDATED, (payload) => rooms.setSummary(payload))
   socket.on(SOCKET_ON.AI_SUMMARY_UPDATED, (payload) => rooms.setAiSummary(payload))
+  // P4-1：SLA通知。宛先本人にだけ届く（サーバが user:{id} ルームへ配信）
+  socket.on(SOCKET_ON.ALERT_NEW, ({ alert }) => ui.receiveAlert(alert))
   socket.on(SOCKET_ON.ERROR, ({ code, message }) => {
     ui.pushToast({ type: 'error', message })
     if (code === 'unauthorized') handleUnauthorized()

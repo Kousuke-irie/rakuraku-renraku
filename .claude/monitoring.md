@@ -296,7 +296,11 @@ export function emitAlertNew(io, targetUserId, alert) {
 - `sla_escalate` は「上長エスカレーション」ラベルを併記する
 - ナビレールのベルバッジ（`AppNavRail.vue`）の件数を、暫定集計から `GET /api/alerts?unread=true` の件数へ差し替える
 
-ハンドラは `composables/useSocket.js` に集約する（CLAUDE.md §6-12）。ストアは `stores/alerts.js` を新設。
+ハンドラは `composables/useSocket.js` に集約する（CLAUDE.md §6-12）。
+
+**`stores/alerts.js` は作らない。** `frontend.md` §3 が「ストアは4つに固定」と定めているため、
+通知の状態（`alerts` / `alertsUnreadCount`）は `useUiStore` に置く。
+定型文・会社情報・選考フローと同じ扱い。
 
 ### ★デモ用の時間短縮
 
@@ -309,8 +313,13 @@ SLA_ESCALATE_HOURS=0.04    # 144秒
 
 60秒タイマーと合わせて「学生が発言 → 約1分後に担当者へ通知 → 約2.5分後に上長へエスカレーション」がライブで流れる。
 
-**保険として seed も用意する。** `last_student_message_at` を25時間前・49時間前にした学生を各1名仕込み、
-サーバ起動から60秒以内に通知が出揃う状態を作っておく。ライブ演出が失敗しても画面は埋まる。
+**保険として seed も用意済み。** `student11`（長谷川 遥・担当 hr1・50時間経過）が
+**エスカレーションを見せるための固定シナリオ**。担当を hr1 にしてあるのは、
+admin1 にすると「上長が自分自身へ」の絵になり意図が伝わらないため。
+生成分の学生にも60時間超が数名いるので、シード直後から通知一覧が埋まる。
+
+`detail` の経過時間は1時間未満なら「1 時間未満」と出す。
+**閾値を秒単位に短縮すると 0 になり「0 時間ありません」と壊れる**ため（実測で踏んだ）。
 
 ### 上長も学生を担当する（決定事項）
 
