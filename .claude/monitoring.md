@@ -485,7 +485,7 @@ checkCompliance(db, body): { code, category, severity, message, matched }[]
 
 ### クライアント実装
 
-差し込み口は `src/components/ChatPanel.vue` の `onSubmit`。
+差し込み口は `src/components/ChatPanel.vue` の `onSubmit`。ダイアログは `ComplianceDialog.vue`。
 
 ```js
 const onSubmit = async () => {
@@ -520,6 +520,9 @@ const onSubmit = async () => {
 
 - **「修正する」を既定フォーカス**にする（誤って Enter を押しても送信されない）
 - 既存の `composer__warning`（P2-2 の未設定変数警告）と同じ見た目の語彙に揃える
+- `ProfileDialog.vue` と同じく native `<dialog>` + `showModal()`。
+  **`margin: auto` を必ず書くこと**（無いと top layer でも中央に来ず左上に寄る）
+- 検知が多いと縦に伸びるので、リストだけ `overflow-y: auto` にしてボタンを常に見せる
 
 ---
 

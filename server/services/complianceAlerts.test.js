@@ -8,7 +8,12 @@ import {
   ROLE,
 } from '../../shared/constants.js';
 import { clearComplianceRuleCache } from './complianceChecker.js';
-import { ACK_NOTE, recordComplianceAlerts, resolveAckNote } from './complianceAlerts.js';
+import {
+  ACK_NOTE,
+  normalizeAcknowledgedCodes,
+  recordComplianceAlerts,
+  resolveAckNote,
+} from './complianceAlerts.js';
 
 const RULES = [
   {
@@ -194,4 +199,18 @@ test('該当が無ければ書き込まない', () => {
 
   db.close();
   clearComplianceRuleCache();
+});
+
+test('acknowledgedCodes は配列以外を受け付けない（クライアント値を信用しない）', () => {
+  assert.equal(normalizeAcknowledgedCodes(undefined), null);
+  assert.equal(normalizeAcknowledgedCodes(null), null);
+  assert.equal(normalizeAcknowledgedCodes('honseki'), null, '文字列は配列ではない');
+  assert.equal(normalizeAcknowledgedCodes({ code: 'honseki' }), null);
+  assert.deepEqual(normalizeAcknowledgedCodes([]), []);
+  assert.deepEqual(normalizeAcknowledgedCodes(['honseki']), ['honseki']);
+  assert.deepEqual(
+    normalizeAcknowledgedCodes(['honseki', 1, null, '', { a: 1 }, 'owahara']),
+    ['honseki', 'owahara'],
+    '文字列以外と空文字を落とす',
+  );
 });

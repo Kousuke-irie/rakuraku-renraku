@@ -9,7 +9,8 @@ import { calculateRoomUrgency } from '../services/urgencyCalculator.js';
 import { emitMessageNew, emitSummaryUpdated } from '../services/realtime.js';
 import { applyStatusTransition } from '../services/statusTransition.js';
 import { queueStudentMessageAnalysis } from '../services/aiPriority.js';
-import { recordComplianceAlerts } from '../services/complianceAlerts.js';
+import { normalizeAcknowledgedCodes, recordComplianceAlerts } from '../services/complianceAlerts.js';
+import { checkCompliance, isCheckedRole } from '../services/complianceChecker.js';
 import { MESSAGE_TYPE, ROLE } from '../../shared/constants.js';
 
 const router = Router();
@@ -74,12 +75,41 @@ router.get('/rooms/:id/messages', requireAuth, (req, res) => {
   res.json({ messages: rows });
 });
 
+/**
+ * P4-3: 送信前チェック。状態を変えない問い合わせなので REST に置く（api.md §1）。
+ *
+ * 辞書ベースの同期処理のみで、外部通信もDB書き込みも行わない。
+ * ここが遅いと送信ボタンが固まるので、重い処理を足さないこと。
+ *
+ * このAPIはあくまで人事への親切であり、監視の本体ではない。
+ * クライアントが呼ばずに送信しても insertMessage 側で検知・記録される。
+ */
+router.post('/messages/check', requireAuth, (req, res) => {
+  const roomId = Number(req.body?.roomId);
+  const { body } = req.body ?? {};
+
+  if (!Number.isInteger(roomId) || roomId <= 0) {
+    return res.status(400).json({ error: 'invalid_request', message: 'roomId が必要です' });
+  }
+  if (typeof body !== 'string') {
+    return res.status(400).json({ error: 'invalid_request', message: '本文が必要です' });
+  }
+
+  // 他人のルームの本文を検査させない（CLAUDE.md §6-6）
+  assertRoomMember(db, req.user.id, roomId);
+
+  // 学生の発言は検査対象外。学生が呼んでも常に空を返す
+  if (!isCheckedRole(req.user.role)) return res.json({ results: [] });
+
+  res.json({ results: checkCompliance(db, body) });
+});
+
 router.post('/rooms/:id/messages', requireAuth, async (req, res, next) => {
   try {
     const roomId = Number(req.params.id);
     assertRoomMember(db, req.user.id, roomId);
 
-    const { body, clientMsgId } = req.body;
+    const { body, clientMsgId, acknowledgedCodes } = req.body;
 
     if (typeof body !== 'string' || body.trim() === '') {
       return res.status(400).json({ error: 'invalid_request', message: '本文が空です' });
@@ -94,7 +124,14 @@ router.post('/rooms/:id/messages', requireAuth, async (req, res, next) => {
       return res.status(200).json({ message: existing });
     }
 
-    const message = insertMessage({ roomId, senderId: req.user.id, senderRole: req.user.role, body, clientMsgId });
+    const message = insertMessage({
+      roomId,
+      senderId: req.user.id,
+      senderRole: req.user.role,
+      body,
+      clientMsgId,
+      acknowledgedCodes: normalizeAcknowledgedCodes(acknowledgedCodes),
+    });
 
     const io = req.app.get('io');
     await emitMessageNew(io, db, message);

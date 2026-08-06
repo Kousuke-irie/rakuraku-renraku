@@ -27,6 +27,18 @@ const INSERT_SQL = `
 `;
 
 /**
+ * クライアントから届く acknowledgedCodes を検証する（P4-3）。
+ *
+ * 配列でなければ null（＝送信前チェック未経由）として扱う。中身は文字列だけに絞る。
+ * 記録の注記にしか使わない値だが、クライアントから来たものをそのまま信用しない
+ * （CLAUDE.md §6-6）。REST と socket の両方の入口で通すこと。
+ */
+export function normalizeAcknowledgedCodes(value) {
+  if (!Array.isArray(value)) return null;
+  return value.filter((code) => typeof code === 'string' && code !== '');
+}
+
+/**
  * 送信経路の注記を決める。
  * acknowledgedCodes が未指定（null / undefined）なら送信前チェックを経ていない。
  */

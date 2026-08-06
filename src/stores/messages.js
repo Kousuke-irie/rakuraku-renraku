@@ -160,8 +160,10 @@ export const useMessagesStore = defineStore('messages', {
      * 3. 切断中は REST（POST /api/rooms/:id/messages）にフォールバック
      * @param {number} roomId
      * @param {string} body
+     * @param {string[]|null} [acknowledgedCodes] 送信前チェック（P4-3）で人事が
+     *   「このまま送信」を選んだルールコード。未指定ならチェック未経由として記録される。
      */
-    async sendMessage(roomId, body) {
+    async sendMessage(roomId, body, acknowledgedCodes = null) {
       const trimmed = body.trim()
       if (!trimmed) return
 
@@ -177,6 +179,9 @@ export const useMessagesStore = defineStore('messages', {
         createdAt: new Date().toISOString(),
         deletedAt: null,
         sendStatus: SEND_STATUS.SENDING,
+        // 再送（retryMessage）でも同じ注記が残るよう、楽観メッセージに載せて持ち回す。
+        // 吹き出しの描画には使わない（sendStatus と違い表示要素ではない）。
+        acknowledgedCodes,
       }
 
       this.byRoomId[roomId] = [...(this.byRoomId[roomId] ?? []), optimistic]
@@ -190,9 +195,9 @@ export const useMessagesStore = defineStore('messages', {
      * sendMessage / retryMessage の共通処理（同じ clientMsgId を使うので二重保存されない）。
      */
     async deliver(roomId, message) {
-      const { clientMsgId, body } = message
+      const { clientMsgId, body, acknowledgedCodes = null } = message
 
-      if (emitSocket(SOCKET_EMIT.MESSAGE_SEND, { roomId, body, clientMsgId })) {
+      if (emitSocket(SOCKET_EMIT.MESSAGE_SEND, { roomId, body, clientMsgId, acknowledgedCodes })) {
         // ack（message:sent）が来なければ失敗扱いにする
         this.ackTimers[clientMsgId] = setTimeout(
           () => this.markFailed(clientMsgId),
@@ -203,7 +208,7 @@ export const useMessagesStore = defineStore('messages', {
 
       // 切断中は REST フォールバック（api.md §1 責務分担）
       try {
-        const { data } = await messagesApi.create(roomId, { body, clientMsgId })
+        const { data } = await messagesApi.create(roomId, { body, clientMsgId, acknowledgedCodes })
         this.markSent(clientMsgId, data.message)
       } catch (error) {
         this.error = toErrorMessage(error, 'メッセージの送信に失敗しました')

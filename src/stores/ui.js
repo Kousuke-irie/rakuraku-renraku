@@ -101,6 +101,15 @@ export const useUiStore = defineStore('ui', {
     /** company は未設定でも null なので、取得済みかどうかを別に持つ */
     companyLoaded: false,
 
+    /**
+     * 送信前チェックの警告ダイアログ（P4-3）。
+     * @type {{code:string, category:string, severity:string, message:string, matched:string}[]}
+     * 空配列＝閉じている。開いている間は該当ルールの一覧を持つ。
+     */
+    complianceResults: [],
+    /** 警告ダイアログを表示中か。results と分けて持つと閉じるアニメ中に中身が消えない */
+    complianceDialogOpen: false,
+
     /** @type {'connected'|'connecting'|'disconnected'} socket の接続状態バナー用 */
     connectionState: 'connecting',
 
@@ -121,6 +130,9 @@ export const useUiStore = defineStore('ui', {
       return this.filteredSnippets[this.snippetHighlightIndex] ?? null
     },
     isOffline: (s) => s.connectionState !== 'connected',
+
+    /** 送信前チェックで検知したルールコード（P4-3。そのまま acknowledgedCodes になる） */
+    complianceCodes: (s) => s.complianceResults.map((result) => result.code),
   },
 
   actions: {
@@ -307,6 +319,22 @@ export const useUiStore = defineStore('ui', {
       this.snippetHighlightIndex = (this.snippetHighlightIndex + delta + count) % count
     },
 
+    /**
+     * 送信前チェックで検知したときにダイアログを開く（P4-3）。
+     * @param {object[]} results POST /api/messages/check の結果（1件以上）
+     */
+    openComplianceDialog(results) {
+      if (!Array.isArray(results) || results.length === 0) return
+      this.complianceResults = results
+      this.complianceDialogOpen = true
+    },
+
+    /** 「修正する」「このまま送信」のどちらでも閉じる */
+    closeComplianceDialog() {
+      this.complianceDialogOpen = false
+      this.complianceResults = []
+    },
+
     /** @param {'connected'|'connecting'|'disconnected'} state */
     setConnectionState(state) {
       this.connectionState = state
@@ -334,6 +362,8 @@ export const useUiStore = defineStore('ui', {
       this.snippets = []
       this.company = null
       this.companyLoaded = false
+      this.complianceResults = []
+      this.complianceDialogOpen = false
       this.connectionState = 'connecting'
       this.toasts = []
     },
