@@ -2,7 +2,7 @@
 // ホームのボード（S-07・frontend.md §5-2）
 //
 // ステータスごとに列を作り、学生カードを縦に積む。
-// 縦割りの軸は uiStore.boardGroupBy（対応／選考／緊急度）で切り替える。既定は選考。
+// 縦割りの軸は uiStore.boardGroupBy（対応／選考／緊急度）で切り替える。既定は対応ステータス。
 //
 // ★列は「そのステータスの学生が0人でも」出す。
 //   選考パイプラインのどこが空いているかも情報なので、列ごと消すと分からなくなる。
@@ -12,6 +12,7 @@
 import { computed } from "vue"
 import {
   BOARD_GROUP_BY,
+  DEFAULT_BOARD_GROUP_BY,
   HANDLING_STATUS_META,
   HANDLING_STATUS_VALUES,
   SELECTION_STATUS_META,
@@ -74,7 +75,7 @@ const byPriority = (a, b) => {
 // #endregion
 
 // #region computed
-const axis = computed(() => AXES[ui.boardGroupBy] ?? AXES[BOARD_GROUP_BY.SELECTION])
+const axis = computed(() => AXES[ui.boardGroupBy] ?? AXES[DEFAULT_BOARD_GROUP_BY])
 
 /**
  * 表示用の列。
