@@ -101,7 +101,8 @@ const buildItems = (list, readUpTo) => {
     })
 
     // システムメッセージを挟んだら連続発言を切る
-    previousSenderId = message.type === MESSAGE_TYPE.SYSTEM ? null : message.senderId
+    previousSenderId =
+      message.type === MESSAGE_TYPE.SYSTEM || message.scheduleRequestId ? null : message.senderId
   }
 
   return items

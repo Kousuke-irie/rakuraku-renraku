@@ -46,22 +46,24 @@ function createDatabase() {
   return db;
 }
 
-test('一覧はルール緊急、AI高、通常の順で並び、一定形のAI結果を返す', () => {
+test('一覧はAI推奨度を優先し、未判定時はルール判定へフォールバックする', () => {
   const db = createDatabase();
   const rooms = listRoomsForUser(db, {
     userId: 1,
     handlingStatuses: null,
     selectionStatuses: null,
     topicTags: null,
-    urgencies: null,
+    priorities: null,
     assigneeMode: null,
     assigneeId: null,
     queryPattern: null,
     sort: SORT_KEY.DEFAULT,
   });
 
-  assert.deepEqual(rooms.map((room) => room.id), [12, 11, 10]);
-  assert.deepEqual(rooms[1].aiRecommendation, {
+  assert.deepEqual(rooms.map((room) => room.id), [11, 12, 10]);
+  assert.equal(rooms[0].priority, 'high');
+  assert.equal(rooms[1].priority, 'high');
+  assert.deepEqual(rooms[0].aiRecommendation, {
     status: 'completed',
     priority: 'high',
     reason: '期限が迫っているため',
@@ -70,8 +72,8 @@ test('一覧はルール緊急、AI高、通常の順で並び、一定形のAI�
     analyzedMessageId: 101,
     analyzedAt: '2026-08-06T00:00:00.000Z',
   });
-  assert.equal(rooms[2].aiRecommendation.status, 'skipped');
-  assert.equal(rooms[2].aiRecommendation.priority, null);
+  assert.equal(rooms[1].aiRecommendation.status, 'skipped');
+  assert.equal(rooms[1].aiRecommendation.priority, null);
   db.close();
 });
 
@@ -82,7 +84,7 @@ test('学生にはAIの内部判断を返さない', () => {
     handlingStatuses: null,
     selectionStatuses: null,
     topicTags: null,
-    urgencies: null,
+    priorities: null,
     assigneeMode: null,
     assigneeId: null,
     queryPattern: null,

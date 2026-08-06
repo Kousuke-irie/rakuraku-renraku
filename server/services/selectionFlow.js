@@ -15,6 +15,7 @@ import {
   SELECTION_STATUS,
   SELECTION_STATUS_META,
 } from '../../shared/constants.js';
+import { findNotesByStudent, findOverallNote } from './studentNotes.js';
 
 const STEP_SELECT_SQL = `
   SELECT status_key AS statusKey, is_enabled AS isEnabled, sort_order AS sortOrder,
@@ -65,9 +66,27 @@ export function listSelectionSteps(db) {
   }));
 }
 
-/** 学生に見せるステップ（有効なものだけ） */
-function listEnabledSteps(db) {
-  return listSelectionSteps(db).filter((step) => step.isEnabled);
+/**
+ * その学生に見せるステップ。
+ *
+ * 会社の設定（is_enabled）は**標準フロー**であって、個々の学生の実態はそれより優先される。
+ * 有効なステップに加えて、次の2つは無効でも図に出す。
+ *
+ *   1. その学生の現在地 … 出さないと現在地のノードが図から消え、「山」の頂点が
+ *      決まらないので線がまっすぐになる。学生には自分の段階が伝わらない
+ *   2. FB が届いているステップ … 出さないと人事が書いたFBが黙って学生に届かない
+ *
+ * どちらも「人事があとからフロー設定を変えた」ときに起きる。設定を変えただけで
+ * 進行中の学生の画面が壊れる、という状態を作らないための救済。
+ *
+ * @param {string|null} selectionStatus students.selection_status
+ * @param {Map<string, object>} feedbacks findFeedbacksByStudent の結果
+ */
+function listVisibleSteps(db, { selectionStatus, feedbacks }) {
+  return listSelectionSteps(db).filter(
+    (step) =>
+      step.isEnabled || step.statusKey === selectionStatus || feedbacks.has(step.statusKey)
+  );
 }
 
 /**
@@ -109,38 +128,53 @@ export function saveSelectionSteps(db, steps) {
 }
 
 /**
- * 有効ステップの並びの中で、学生がいまどこにいるかを判定する（business-logic.md §8）。
+ * 並びの中で、学生がいまどこにいるかを判定する（business-logic.md §8）。
  *
  * 現在ステータスより前 → done ／ 同じ → current ／ 後ろ → upcoming。
  *
- * 現在ステータスが「無効化されたステップ」を指している場合（例：三次面接を使わない設定に
- * 変えたが、その段階の学生が残っている）は、**その手前までを完了扱いにする**。
- * 進捗が全部 upcoming になって「何も進んでいない」ように見えるのを防ぐため。
+ * 現在地が並びに含まれていない場合は、`SELECTION_FLOW_STEP_VALUES` の全体順で比べ、
+ * **その手前までを完了扱いにする**。進捗が全部 upcoming になって「何も進んでいない」
+ * ように見えるのを防ぐため。
+ *
+ * ★`listVisibleSteps()` が現在地を必ず含めるようになったので、この分岐に入るのは
+ *   選考ステータスが未設定・辞退のときだけ。それでも安全網として残す
+ *   （この関数は並びを渡されるだけで、呼び出し側の都合を知らないため）。
  *
  * @param {string} selectionStatus students.selection_status
- * @param {{statusKey: string}[]} enabledSteps 有効ステップ（sortOrder 昇順）
- * @returns {string[]} enabledSteps と同じ並びの FLOW_STEP_STATE
+ * @param {{statusKey: string}[]} steps 学生に見せるステップ（sortOrder 昇順）
+ * @returns {string[]} steps と同じ並びの FLOW_STEP_STATE
  */
-export function resolveStepStates(selectionStatus, enabledSteps) {
-  const currentIndex = enabledSteps.findIndex((step) => step.statusKey === selectionStatus);
+export function resolveStepStates(selectionStatus, steps) {
+  const currentIndex = steps.findIndex((step) => step.statusKey === selectionStatus);
 
   if (currentIndex !== -1) {
-    return enabledSteps.map((_step, index) => {
+    return steps.map((_step, index) => {
       if (index < currentIndex) return FLOW_STEP_STATE.DONE;
       if (index === currentIndex) return FLOW_STEP_STATE.CURRENT;
       return FLOW_STEP_STATE.UPCOMING;
     });
   }
 
-  // 無効ステップにいる場合は、全体の並び（SELECTION_FLOW_STEP_VALUES）での位置で比べる
+  // 並びに現在地が無い場合は、全体の並び（SELECTION_FLOW_STEP_VALUES）での位置で比べる
   const absoluteCurrent = SELECTION_FLOW_STEP_VALUES.indexOf(selectionStatus);
-  if (absoluteCurrent === -1) return enabledSteps.map(() => FLOW_STEP_STATE.UPCOMING);
+  if (absoluteCurrent === -1) return steps.map(() => FLOW_STEP_STATE.UPCOMING);
 
-  return enabledSteps.map((step) =>
+  return steps.map((step) =>
     SELECTION_FLOW_STEP_VALUES.indexOf(step.statusKey) < absoluteCurrent
       ? FLOW_STEP_STATE.DONE
       : FLOW_STEP_STATE.UPCOMING
   );
+}
+
+/**
+ * その状態のステップに書いたFBを、学生本人に見せてよいか（business-logic.md §8）。
+ *
+ * ★可視範囲の判定はこの関数だけに置く。学生の画面と人事の画面で同じ答えを出すため。
+ *   人事側で「学生に見えているか」を別途計算すると、必ずどこかでズレて
+ *   「非公開」と表示されているFBが本人に見えている、という事故になる。
+ */
+export function isFeedbackVisibleToStudent(state) {
+  return state === FLOW_STEP_STATE.DONE;
 }
 
 /** 学生本人のフィードバックを status_key をキーにして引く */
@@ -158,7 +192,8 @@ function findFeedbacksByStudent(db, studentUserId) {
 
 /**
  * 学生のマイページ（S-09）が必要とするものを1回で返す。
- * ステップ設定・自分の現在位置・見せてよいFB をまとめ、画面側の往復を1回にする。
+ * ステップ設定・自分の現在位置・見せてよいFB・本人のメモ（S-10）をまとめ、
+ * 画面側の往復を1回にする。
  *
  * @param {number} studentUserId 認証済みの本人。クライアントから受け取らないこと
  */
@@ -170,18 +205,24 @@ export function buildStudentFlow(db, studentUserId) {
   const selectionStatus = student?.selectionStatus ?? null;
   const isDeclined = selectionStatus === SELECTION_STATUS.DECLINED;
 
-  const enabledSteps = listEnabledSteps(db);
+  // ★どのステップを出すかの判定に使うので、FB はステップの絞り込みより先に引く
+  const feedbacks = findFeedbacksByStudent(db, studentUserId);
+  const visibleSteps = listVisibleSteps(db, { selectionStatus, feedbacks });
+
   // 辞退はフロー上の一段階ではないので、線の上には現在地を置かない
   const states = isDeclined
-    ? enabledSteps.map(() => FLOW_STEP_STATE.UPCOMING)
-    : resolveStepStates(selectionStatus, enabledSteps);
+    ? visibleSteps.map(() => FLOW_STEP_STATE.UPCOMING)
+    : resolveStepStates(selectionStatus, visibleSteps);
 
-  const feedbacks = findFeedbacksByStudent(db, studentUserId);
+  // 本人のメモ（S-10）。FB と違い完了判定で絞らない（本人が書いたものを本人に返すだけ）
+  const notes = findNotesByStudent(db, studentUserId);
 
-  const steps = enabledSteps.map((step, index) => {
+  const steps = visibleSteps.map((step, index) => {
     const state = states[index];
-    // ★完了済みのステップだけ FB を載せる（進行中・未到達は載せない）
-    const feedback = state === FLOW_STEP_STATE.DONE ? (feedbacks.get(step.statusKey) ?? null) : null;
+    // ★見せてよいステップのFBだけ載せる（進行中・未到達は載せない）
+    const feedback = isFeedbackVisibleToStudent(state)
+      ? (feedbacks.get(step.statusKey) ?? null)
+      : null;
 
     return {
       statusKey: step.statusKey,
@@ -190,15 +231,16 @@ export function buildStudentFlow(db, studentUserId) {
       points: step.points,
       state,
       feedback: feedback ? { body: feedback.body, updatedAt: feedback.updatedAt } : null,
+      note: notes.get(step.statusKey) ?? null,
     };
   });
 
-  return { steps, selectionStatus, isDeclined };
+  return { steps, selectionStatus, isDeclined, overallNote: findOverallNote(db, studentUserId) };
 }
 
-/** 人事が見るフィードバック一覧（全ステップぶん。完了判定で絞らない） */
-export function listFeedbacksForHr(db, studentUserId) {
-  return db
+/** 人事が見るFB（書いた人の名前つき）を status_key をキーにして引く */
+function findFeedbacksForHr(db, studentUserId) {
+  const rows = db
     .prepare(
       `SELECT f.status_key AS statusKey, f.body, f.updated_at AS updatedAt,
               u.display_name AS authorName
@@ -207,6 +249,52 @@ export function listFeedbacksForHr(db, studentUserId) {
        WHERE f.student_user_id = ?`
     )
     .all(studentUserId);
+
+  return new Map(rows.map((row) => [row.statusKey, row]));
+}
+
+/**
+ * 人事のプロフィールパネル（P2-11）が必要とするものを1回で返す。
+ *
+ * ★「本人に見えているか」はサーバが返す。**クライアントで再計算させない。**
+ *   人事側で独自に判定すると、現在地が無効ステップにある学生などで学生側とズレて、
+ *   「本人には非公開」と表示されているFBが実際は本人に見えている、という事故になる。
+ *
+ * 学生側（buildStudentFlow）と同じ listVisibleSteps / resolveStepStates を通すので、
+ * 出てくる並びと状態は必ず一致する。
+ *
+ * @param {number} studentUserId 対象の学生。認可は呼び出し側（routes/students.js）が済ませる
+ */
+export function buildHrFeedbackView(db, studentUserId) {
+  const student = db
+    .prepare('SELECT selection_status AS selectionStatus FROM students WHERE user_id = ?')
+    .get(studentUserId);
+
+  const selectionStatus = student?.selectionStatus ?? null;
+  const isDeclined = selectionStatus === SELECTION_STATUS.DECLINED;
+
+  const feedbacks = findFeedbacksForHr(db, studentUserId);
+  const visibleSteps = listVisibleSteps(db, { selectionStatus, feedbacks });
+
+  const states = isDeclined
+    ? visibleSteps.map(() => FLOW_STEP_STATE.UPCOMING)
+    : resolveStepStates(selectionStatus, visibleSteps);
+
+  const steps = visibleSteps.map((step, index) => {
+    const state = states[index];
+
+    return {
+      statusKey: step.statusKey,
+      label: step.label,
+      state,
+      isVisibleToStudent: isFeedbackVisibleToStudent(state),
+      /** 会社の標準フローから外れているステップ。人事に注記を出すために返す */
+      isEnabled: step.isEnabled,
+      feedback: feedbacks.get(step.statusKey) ?? null,
+    };
+  });
+
+  return { steps, selectionStatus, isDeclined };
 }
 
 /**

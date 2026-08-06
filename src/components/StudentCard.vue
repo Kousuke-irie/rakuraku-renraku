@@ -8,7 +8,7 @@
 // カード全体が /inbox/:roomId へのリンク。クリック領域を広く取りたいが
 // div に @click を付けるとキーボードで辿れないので RouterLink にする。
 import { computed } from "vue"
-import { BOARD_GROUP_BY, URGENCY } from "../constants/index.js"
+import { BOARD_GROUP_BY, AI_RECOMMENDED_PRIORITY } from "../constants/index.js"
 import ElapsedBadge from "./ElapsedBadge.vue"
 import StatusChip, { CHIP_KIND } from "./StatusChip.vue"
 import UnreadBadge, { UNREAD_VARIANT } from "./UnreadBadge.vue"
@@ -22,7 +22,7 @@ import UserAvatar from "./UserAvatar.vue"
 const CHIPS = Object.freeze([
   { axis: BOARD_GROUP_BY.HANDLING, kind: CHIP_KIND.HANDLING, field: "handlingStatus" },
   { axis: BOARD_GROUP_BY.SELECTION, kind: CHIP_KIND.SELECTION, field: "selectionStatus" },
-  { axis: BOARD_GROUP_BY.URGENCY, kind: CHIP_KIND.URGENCY, field: "urgency" },
+  { axis: BOARD_GROUP_BY.AI_PRIORITY, kind: CHIP_KIND.AI_PRIORITY, field: "priority" },
 ])
 // #endregion
 
@@ -32,15 +32,18 @@ const props = defineProps({
   /**
    * 縦割りに使っている軸（BOARD_GROUP_BY のいずれか）。この軸のチップは出さない。
    * 空文字（既定）は「軸がステータスではない」場合。全学生（S-08）は担当人事で
-   * 縦割りするため、対応・選考・緊急度の3つとも出す。
+ * 縦割りするため、対応・選考・AI推奨度の3つとも出す。
    */
   groupBy: { type: String, default: "" },
 })
 
 // #region computed
 /** 選考ステータスだけ room ではなく room.student にぶら下がっている */
-const valueOf = (field) =>
-  field === "selectionStatus" ? props.room.student?.selectionStatus : props.room[field]
+const valueOf = (field) => {
+  if (field === "selectionStatus") return props.room.student?.selectionStatus
+  if (field === "priority") return props.room.priority ?? props.room.urgency
+  return props.room[field]
+}
 
 const chips = computed(() =>
   CHIPS.filter((chip) => chip.axis !== props.groupBy).map((chip) => ({
@@ -49,10 +52,10 @@ const chips = computed(() =>
   }))
 )
 
-/** 緊急のみ左端に赤いアクセントを出す（frontend.md §6）。ラベルはチップが担う */
-const isHigh = computed(() => props.room.urgency === URGENCY.HIGH)
+/** AI推奨度が高いカードを左端のアクセントで目立たせる。 */
+const isHigh = computed(() => (props.room.priority ?? props.room.urgency) === AI_RECOMMENDED_PRIORITY.HIGH)
 
-const isLow = computed(() => props.room.urgency === URGENCY.LOW)
+const isLow = computed(() => (props.room.priority ?? props.room.urgency) === AI_RECOMMENDED_PRIORITY.LOW)
 // #endregion
 </script>
 
@@ -120,7 +123,7 @@ const isLow = computed(() => props.room.urgency === URGENCY.LOW)
   border-left-color: var(--color-sla-alert);
 }
 
-/* 緊急度 low は薄く表示（frontend.md §6）。ラベルはチップに残る */
+/* AI推奨度 low は薄く表示。ラベルはチップに残る */
 .card--low {
   opacity: 0.62;
 }

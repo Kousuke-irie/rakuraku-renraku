@@ -5,6 +5,7 @@ import { connectSocket, disconnectSocket } from '../composables/useSocket.js'
 import { useRoomsStore } from './rooms.js'
 import { useMessagesStore } from './messages.js'
 import { useUiStore } from './ui.js'
+import { useSchedulesStore } from './schedules.js'
 
 /**
  * 認証ストア（P0/A-3・frontend.md §3）
@@ -147,6 +148,7 @@ export const useAuthStore = defineStore('auth', {
         useRoomsStore().reset()
         useMessagesStore().reset()
         useUiStore().reset()
+        useSchedulesStore().reset()
         this.reset()
       }
     },

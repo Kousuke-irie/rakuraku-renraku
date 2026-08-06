@@ -63,7 +63,7 @@ const columns = computed(() => {
 </script>
 
 <template>
-  <!-- 縦割りが担当人事なので、カードには対応・選考・緊急度の3つとも出す（group-by は渡さない） -->
+  <!-- 縦割りが担当人事なので、カードには対応・選考・AI推奨度の3つとも出す（group-by は渡さない） -->
   <BoardColumns
     :columns="columns"
     label="全学生一覧（担当人事別）"

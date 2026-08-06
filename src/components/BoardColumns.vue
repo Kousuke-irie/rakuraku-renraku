@@ -1,22 +1,17 @@
 <script setup>
 // 学生カードを縦に積んだ「列」を横に並べるボードの表示部（frontend.md §5-2）
 //
-// ホーム（S-07・縦割りは対応／選考／緊急度）と全学生（S-08・縦割りは担当人事）で共通に使う。
+// ホーム（S-07・縦割りは対応／選考／AI推奨度）と全学生（S-08・縦割りは担当人事）で共通に使う。
 // **どんな軸で縦割りするかは呼び出し側が決める。** ここは受け取った列を並べるだけ。
 //
 // ★列は「その列の学生が0人でも」出す。
 //   どこが空いているかも情報なので、列ごと消すと分からなくなる。
 //
-// ★並び替え UI は持たない。列の中は常に 緊急度 → 経過時間の長い順で固定する
+// ★並び替え UI は持たない。列の中は常に AI推奨度 → 経過時間の長い順で固定する
 //   （コンセプト「返信すべき学生が、上から順に並んでいる」・CLAUDE.md §1）。
 //   どのボードでも同じ並びになるよう、この並べ替えはここに集約する。
 import { computed } from "vue"
-import {
-  AI_ANALYSIS_STATUS,
-  AI_RECOMMENDED_PRIORITY,
-  HANDLING_STATUS,
-  URGENCY_ORDER,
-} from "../constants/index.js"
+import { AI_RECOMMENDED_PRIORITY_ORDER } from "../constants/index.js"
 import StudentCard from "./StudentCard.vue"
 
 // #region constants
@@ -39,21 +34,11 @@ const props = defineProps({
 
 // #region local methods
 /**
- * 列の中の並び：ルール緊急 → AI対応推奨度「高」 → 通常 → 低 → 経過時間。
+ * 列の中の並び：AI推奨度（高→通常→低）→ 経過時間。
  * 経過時間は「学生の最終メッセージが古いほど長い」ので昇順に並べる。
  */
 const byPriority = (a, b) => {
-  const rank = (room) => {
-    if (URGENCY_ORDER[room.urgency] === 0) return 0
-    if (
-      room.aiRecommendation?.status === AI_ANALYSIS_STATUS.COMPLETED &&
-      room.aiRecommendation?.priority === AI_RECOMMENDED_PRIORITY.HIGH &&
-      [HANDLING_STATUS.NEEDS_REPLY, HANDLING_STATUS.IN_PROGRESS].includes(room.handlingStatus)
-    ) {
-      return 1
-    }
-    return (URGENCY_ORDER[room.urgency] ?? 8) + 1
-  }
+  const rank = (room) => AI_RECOMMENDED_PRIORITY_ORDER[room.priority ?? room.urgency] ?? Infinity
 
   const priority = rank(a) - rank(b)
   if (priority !== 0) return priority

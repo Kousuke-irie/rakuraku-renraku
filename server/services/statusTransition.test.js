@@ -9,6 +9,15 @@ test('人事の返信で要返信・対応中から返信待ちへ遷移する',
   }
 });
 
+test('日程確定後の人事連絡は対応中を維持する', () => {
+  for (const role of [ROLE.HR, ROLE.ADMIN]) {
+    assert.equal(
+      nextHandlingStatus(HANDLING_STATUS.IN_PROGRESS, role, { keepInProgress: true }),
+      HANDLING_STATUS.IN_PROGRESS,
+    );
+  }
+});
+
 test('学生の返信で返信待ち・完了から要返信へ遷移する', () => {
   for (const current of [HANDLING_STATUS.WAITING_STUDENT, HANDLING_STATUS.DONE]) {
     assert.equal(nextHandlingStatus(current, ROLE.STUDENT), HANDLING_STATUS.NEEDS_REPLY);

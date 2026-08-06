@@ -42,7 +42,7 @@
 
 | メソッド | パス | 説明 |
 | --- | --- | --- |
-| GET | `/rooms` | ルーム一覧。query: `handlingStatus`, `selectionStatus`, `topicTag`, `urgency`, `assigneeId`, `sort`, `q` |
+| GET | `/rooms` | ルーム一覧。query: `handlingStatus`, `selectionStatus`, `topicTag`, `priority`, `assigneeId`, `sort`, `q` |
 | GET | `/rooms/:id` | ルーム詳細（学生プロフィール込み） |
 | PATCH | `/rooms/:id` | `{handlingStatus?, assigneeUserId?}` |
 | POST | `/rooms/:id/read` | `{lastReadMessageId}` |
@@ -62,7 +62,7 @@
         "avatarColor": "#7C9CBF"
       },
       "handlingStatus": "needs_reply",
-      "urgency": "high",
+      "priority": "high",
       "topicTag": "absence_late",
       "assignee": { "id": 3, "displayName": "田中" },
       "unreadCount": 2,
@@ -147,7 +147,7 @@
 | GET | `/selection-flow` | 全ロール。無効なステップも含む全件 |
 | PUT | `/selection-flow` | **人事のみ**。全ステップの一括置換 |
 | GET | `/selection-flow/me` | **学生のみ**。自分の進捗＋見せてよいFB |
-| GET | `/students/:userId/feedbacks` | **人事のみ**。完了判定で絞らない全件 |
+| GET | `/students/:userId/feedbacks` | **人事のみ**。本文は全件＋`isVisibleToStudent` |
 | PUT | `/students/:userId/feedbacks/:statusKey` | **人事のみ**。本文が空なら削除 |
 
 ```json
@@ -160,11 +160,13 @@
       "description": "ご提出いただいた…",
       "points": "「学生時代に力を入れたこと」は…",
       "state": "done",
-      "feedback": { "body": "志望動機が具体的で…", "updatedAt": "2026-08-06T01:00:00Z" }
+      "feedback": { "body": "志望動機が具体的で…", "updatedAt": "2026-08-06T01:00:00Z" },
+      "note": { "noteKey": "document", "body": "ガクチカは…", "updatedAt": "2026-08-06T02:00:00Z" }
     }
   ],
   "selectionStatus": "interview_2",
-  "isDeclined": false
+  "isDeclined": false,
+  "overallNote": { "noteKey": "overall", "body": "志望動機の軸…", "updatedAt": "…" }
 }
 ```
 
@@ -175,6 +177,57 @@
 - `PUT /selection-flow` は9件すべてを送る全置換。件数不足・重複・`declined` 指定は **400**
 - 有効なステップが0件になる指定も **400**（学生の画面が空になるため）
 - 更新頻度が低いので Socket.IO では配信しない
+- `note` / `overallNote` は**本人のメモ**（S-10）。読み取りの往復を増やさないためここに載せる
+
+```json
+// GET /students/:userId/feedbacks（人事のプロフィールパネル用）
+{
+  "steps": [
+    {
+      "statusKey": "document",
+      "label": "書類選考",
+      "state": "done",
+      "isVisibleToStudent": true,
+      "isEnabled": true,
+      "feedback": { "body": "…", "updatedAt": "…", "authorName": "大西 陽子" }
+    }
+  ],
+  "selectionStatus": "interview_2",
+  "isDeclined": false
+}
+```
+
+- **`isVisibleToStudent` はサーバが返す。クライアントで計算し直さない。**
+  学生側（`GET /selection-flow/me`）と同じ `listVisibleSteps()` + `resolveStepStates()` を
+  通しているので、並びと状態は必ず一致する。人事側で独自に判定すると、現在地が無効ステップに
+  ある学生などでズレ、**「本人には非公開」と表示されているFBが実際は本人に見えている**
+  という事故になる
+- `isEnabled` が `false` の行は、会社の標準フローから外れているステップ
+  （その学生の現在地かFBがあるために出している）。人事にその旨を注記すること
+
+### 学生の選考メモ（S-10）
+
+| メソッド | パス | 権限 |
+| --- | --- | --- |
+| PUT | `/student-notes/:noteKey` | **学生のみ**。本文が空なら削除 |
+
+読み取りは専用エンドポイントを作らず、`GET /selection-flow/me` に相乗りさせる
+（マイページを1往復で描くため）。各ステップに `note`、トップレベルに `overallNote` が載る。
+
+```json
+// PUT /student-notes/interview_2  { "body": "逆質問：評価制度について聞く" }
+{ "note": { "noteKey": "interview_2", "body": "逆質問：…", "updatedAt": "2026-08-06T…" } }
+
+// 本文が空 → 削除
+{ "note": null }
+```
+
+- **対象は常に `req.user.id`。** `userId` をクライアントから受け取らない
+- 学生以外のロールは **403**。`noteKey` が `STUDENT_NOTE_KEY_VALUES` 以外なら **400**
+- 本文が `STUDENT_NOTE_MAX_LENGTH`（2000）超なら **400**
+- **人事向けの読み取りエンドポイントを作らない。** 学生本人にしか見えないことが
+  この機能の前提であり、覗ける経路を1つでも作ると機能ごと意味を失う
+- 本人しか書かないので Socket.IO では配信しない
 
 ### AI 現況サマリー（P3-1a・未実装）
 
@@ -197,6 +250,24 @@
 - `status`：`loading` / `ready` / `error` / `unavailable`（`GEMINI_API_KEY` 未設定）
 - **人事のみ参照可**。`GET /summary` と同じくロールを検証する
 - 生成ロジック・フォールバックは `business-logic.md` §7-2
+
+### 面接日程予約（P3-4）
+
+| メソッド | パス | ロール・用途 |
+| --- | --- | --- |
+| GET | `/calendar/interviewers` | 人事：面接官一覧 |
+| GET | `/calendar/interviewers/:id/slots` | 人事：送信前の空き枠確認 |
+| POST | `/rooms/:roomId/schedule-requests` | 人事：学生へ予約依頼を送信 |
+| GET | `/rooms/:roomId/schedule-requests` | ルーム参加者：履歴 |
+| GET | `/schedule-requests/:id` | 対象学生本人またはルーム参加人事 |
+| GET | `/schedule-requests/:id/slots` | 同上：最新空き枠 |
+| POST | `/schedule-requests/:id/book` | 対象学生本人：原子的に予約確定 |
+| GET | `/mock-calendar/interviewers` | 擬似カレンダーAPI |
+| GET | `/mock-calendar/interviewers/:id/slots` | 擬似カレンダーAPI |
+| POST | `/mock-calendar/bookings` | 擬似カレンダーAPI |
+
+競合時は `409 { error: 'slot_already_booked', message }`。学生向けレスポンスやSocketには
+他学生の情報を含めない。
 
 ---
 
@@ -223,6 +294,8 @@ io(BASE_URL, { withCredentials: true })
 | `message:send` | `{ roomId, body, clientMsgId }` | 送信。サーバでタグ判定・ステータス自動遷移・緊急度再計算を実行 |
 | `message:read` | `{ roomId, lastReadMessageId }` | 既読更新 |
 | `room:status_update` | `{ roomId, handlingStatus }` | 対応ステータス変更（低遅延用。REST と同等） |
+| `schedule:watch` | `{ requestId }` | 認可後、同じ面接官の枠更新ルームへ参加 |
+| `schedule:unwatch` | `{ requestId }` | 枠更新ルームから退出 |
 
 ### Server → Client
 
@@ -232,10 +305,13 @@ io(BASE_URL, { withCredentials: true })
 | `message:sent` | `{ clientMsgId, message }` | 送信者のみ（ack） |
 | `message:deleted` | `{ roomId, messageId }` | ルーム参加者 |
 | `read:updated` | `{ roomId, userId, lastReadMessageId }` | ルーム参加者 |
-| `room:updated` | `{ room }` | `hr` ルーム。ステータス・緊急度・担当者の変更時 |
+| `room:updated` | `{ room }` | `hr` ルーム。ステータス・AI推奨度・担当者の変更時 |
 | `memo:updated` | `{ roomId, memo }` | `hr` ルーム（共有メモのみ） |
 | `summary:updated` | `{ needsReply, urgent, overdue24h }` | `hr` ルーム |
 | `ai:summary_updated` | `{ status, situation, todos, generatedAt }` | 生成を依頼した本人のみ（P3-1a・未実装） |
+| `schedule:slot_updated` | `{ interviewerId, slotId, available, updatedAt }` | 同じ面接官の予約画面 |
+| `schedule:request_updated` | `{ request }` | 対象ルーム |
+| `schedule:booked` | `{ request }` | 対象ルーム |
 | `error` | `{ code, message }` | 発生元のみ |
 
 ---

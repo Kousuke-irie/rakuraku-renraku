@@ -19,10 +19,13 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { FLOW_STEP_STATE, FLOW_STEP_STATE_META } from "../constants/index.js"
 
 const props = defineProps({
-  /** @type {{statusKey: string, label: string, state: string, feedback: object|null}[]} */
+  /** @type {{statusKey: string, label: string, state: string, feedback: object|null,
+   *          isUnreadFeedback: boolean}[]} */
   steps: { type: Array, required: true },
   /** 選択中のステップ（詳細を表示しているもの） */
   selectedKey: { type: String, default: null },
+  /** アンケート未回答の面接ステップの statusKey（面接アンケート・frontend.md §7-3） */
+  surveyPendingKeys: { type: Array, default: () => [] },
 })
 
 const emit = defineEmits(["select"])
@@ -112,6 +115,9 @@ const nodes = computed(() =>
     isCurrent: step.state === FLOW_STEP_STATE.CURRENT,
     stateLabel: FLOW_STEP_STATE_META[step.state]?.label ?? "",
     hasFeedback: Boolean(step.feedback),
+    /** まだ読んでいないFB。未読だけを動かして、読んだら静かにする */
+    isUnread: Boolean(step.isUnreadFeedback),
+    hasSurveyBadge: props.surveyPendingKeys.includes(step.statusKey),
     delayMs: Math.min(index, MAX_STAGGER_INDEX) * STAGGER_MS,
     /** 丸の持ち上げ量。線と同じガウス関数から出すので、線は必ず中心を通る */
     lift: lifts.value[index] ?? 0,
@@ -309,30 +315,128 @@ watch(() => props.steps, scheduleMeasure, { deep: true })
                 aria-hidden="true"
               >{{ node.order }}</span>
 
-              <!-- 完了ステップに企業からのFBが届いているときの目印 -->
+              <!-- 完了ステップに企業からのFBが届いているときの目印。
+                   未読は塗り＋パルス、既読は輪郭だけにして静かにする。
+                   アンケートの吹き出しタグ（右上）と衝突しないよう左上に置く -->
+
               <span
                 v-if="node.hasFeedback"
                 class="flow__mark"
+                :class="node.isUnread ? 'flow__mark--unread' : 'flow__mark--read'"
                 aria-hidden="true"
               />
+
+              <!-- 面接アンケート未回答の目印（frontend.md §7-3）。
+                   丸い点だとFB印と見分けが付きにくいため、吹き出し型のタグ＋アイコンにする -->
+              <span
+                v-if="node.hasSurveyBadge"
+                class="flow__survey-badge"
+                aria-hidden="true"
+              >
+                <!-- クリップボード＋箇条書き（アンケート帳票の意匠）。塗りなし・線のみ -->
+                <svg
+                  class="flow__survey-icon"
+                  viewBox="0 0 14 16"
+                >
+                  <circle
+                    cx="7"
+                    cy="1.4"
+                    r="1"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1"
+                  />
+                  <rect
+                    x="1.5"
+                    y="2.4"
+                    width="11"
+                    height="12.2"
+                    rx="1.3"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.1"
+                  />
+                  <rect
+                    x="3.3"
+                    y="5.7"
+                    width="1.3"
+                    height="1.3"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="0.9"
+                  />
+                  <line
+                    x1="5.9"
+                    y1="6.35"
+                    x2="10.2"
+                    y2="6.35"
+                    stroke="currentColor"
+                    stroke-width="1"
+                    stroke-linecap="round"
+                  />
+                  <rect
+                    x="3.3"
+                    y="8.5"
+                    width="1.3"
+                    height="1.3"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="0.9"
+                  />
+                  <line
+                    x1="5.9"
+                    y1="9.15"
+                    x2="10.2"
+                    y2="9.15"
+                    stroke="currentColor"
+                    stroke-width="1"
+                    stroke-linecap="round"
+                  />
+                  <rect
+                    x="3.3"
+                    y="11.3"
+                    width="1.3"
+                    height="1.3"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="0.9"
+                  />
+                  <line
+                    x1="5.9"
+                    y1="11.95"
+                    x2="10.2"
+                    y2="11.95"
+                    stroke="currentColor"
+                    stroke-width="1"
+                    stroke-linecap="round"
+                  />
+                </svg>
+              </span>
             </span>
 
             <span class="flow__label">{{ node.label }}</span>
 
-            <!-- 進行中だけは画面上にも状態を出す。残りは読み上げ用に持たせる -->
+            <!-- 画面に出す短いラベルは1つだけ。
+                 「進行中」と「新着」は同時に起きない（進行中ステップのFBはサーバが返さない） -->
             <span
-              v-if="node.isCurrent"
+              v-if="node.isCurrent || node.isUnread"
               class="flow__state"
-            >{{ node.stateLabel }}</span>
+            >{{ node.isCurrent ? node.stateLabel : "新着" }}</span>
+
+            <!-- 読み上げ用。画面に出ていない状態は必ずここで補う（色と動きだけで伝えない） -->
             <span
-              v-else
+              v-if="!node.isCurrent"
               class="sr-only"
             >{{ node.stateLabel }}</span>
 
             <span
               v-if="node.hasFeedback"
               class="sr-only"
-            >企業からのフィードバックあり</span>
+            >企業からのフィードバックあり{{ node.isUnread ? "（未読）" : "" }}</span>
+            <span
+              v-if="node.hasSurveyBadge"
+              class="sr-only"
+            >アンケート未回答</span>
           </button>
         </li>
       </ol>
@@ -518,16 +622,75 @@ watch(() => props.steps, scheduleMeasure, { deep: true })
   height: 18px;
 }
 
-/* FB が届いている目印。丸の右上の弧の上に載せる */
+/* FB が届いている目印。アンケートの吹き出しタグ（右上）と衝突しないよう左上に置く。
+   外側の白い縁は、ノードの枠線と点が溶け合わないようにするためのもの */
 .flow__mark {
   position: absolute;
   top: 2px;
-  right: 2px;
+  left: 2px;
   width: 10px;
   height: 10px;
   border: 2px solid var(--color-canvas);
   border-radius: var(--radius-pill);
   background-color: var(--color-primary);
+}
+
+/* 既読：塗りを白に落とし、輪郭だけ残して静かにする。
+   「FBがある」ことは伝え続けるが、もう学生を呼ばない */
+.flow__mark--read {
+  background-color: var(--color-canvas);
+  box-shadow: inset 0 0 0 2px var(--color-primary);
+}
+
+/* 未読：点の外へ広がる波。現在地リングと同じ 2.4s の言語に揃える。
+   ★動かすのは transform と opacity だけ。
+     .flow__dot が transform を持つためスタッキングコンテキストが立っており、
+     z-index: -1 は「丸の面より前・点の塗りより後ろ」に収まる */
+.flow__mark--unread::after {
+  position: absolute;
+  z-index: -1;
+  border-radius: var(--radius-pill);
+  background-color: var(--color-primary);
+  content: "";
+  inset: -2px;
+}
+
+.flow--entered .flow__mark--unread::after {
+  animation: mark-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes mark-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0;
+    transform: scale(2.1);
+  }
+}
+
+/* 面接アンケート未回答の目印。丸い点だとFB印と混同しやすいため、
+   吹き出し型のタグ（右下の角だけ尖らせて「つの」に見せる）＋アイコンにする */
+.flow__survey-badge {
+  position: absolute;
+  top: -16px;
+  right: -17px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 27px;
+  height: 27px;
+  border: 1.5px solid var(--color-primary);
+  border-radius: 8px 8px 8px 2px;
+  background-color: var(--color-canvas);
+  color: var(--color-primary);
+}
+
+.flow__survey-icon {
+  width: 15px;
+  height: 17px;
 }
 
 /* これからのステップのラベル。丸ほどは薄くしない（読めなくなるため） */
@@ -590,6 +753,11 @@ watch(() => props.steps, scheduleMeasure, { deep: true })
   }
 
   .flow--entered .flow__step--current .flow__dot::after {
+    animation: none;
+  }
+
+  /* パルスは止めるが、点そのものは残す（未読は塗り・既読は輪郭で見分けられる） */
+  .flow--entered .flow__mark--unread::after {
     animation: none;
   }
 }

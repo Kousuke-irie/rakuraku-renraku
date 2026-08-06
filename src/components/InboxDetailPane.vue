@@ -5,8 +5,8 @@
 //   日程調整の進捗更新（P3-4）は**未実装**で、現在の値の表示だけを行う。
 import { computed } from "vue"
 import {
-  DEFAULT_SCHEDULE_STATE,
-  SCHEDULE_STATE_META,
+  SCHEDULE_REQUEST_STATUS,
+  SCHEDULE_REQUEST_STATUS_META,
 } from "../constants/index.js"
 import { useUiStore } from "../stores/ui.js"
 import MemoPanel from "./MemoPanel.vue"
@@ -31,10 +31,18 @@ const ui = useUiStore()
 // #region computed
 const student = computed(() => props.room?.student ?? {})
 
-const scheduleStateLabel = computed(
-  () =>
-    SCHEDULE_STATE_META[student.value.scheduleState ?? DEFAULT_SCHEDULE_STATE]?.label ?? UNSET_LABEL
+const scheduleRequest = computed(() => props.room?.scheduleRequest ?? null)
+const scheduleStateLabel = computed(() =>
+  scheduleRequest.value
+    ? SCHEDULE_REQUEST_STATUS_META[scheduleRequest.value.status]?.label ?? UNSET_LABEL
+    : UNSET_LABEL
 )
+const scheduleBookedLabel = computed(() => {
+  if (!scheduleRequest.value?.bookedStartsAt) return ""
+  return new Date(scheduleRequest.value.bookedStartsAt).toLocaleString("ja-JP", {
+    month: "long", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit",
+  })
+})
 
 // #endregion
 </script>
@@ -98,13 +106,25 @@ const scheduleStateLabel = computed(
         <MemoPanel :room-id="room.id" />
       </div>
 
-      <!-- 日程調整トラッカー（P3-4）：現在の進捗の表示のみ -->
+      <!-- 面接日程予約（P3-4 改訂）：schedule_requests.status を正として表示 -->
       <section class="section">
         <h3 class="section__title">
           日程調整
         </h3>
         <p class="section__value">
           {{ scheduleStateLabel }}
+        </p>
+        <p
+          v-if="scheduleBookedLabel"
+          class="section__schedule-time"
+        >
+          {{ scheduleBookedLabel }}
+        </p>
+        <p
+          v-if="scheduleRequest?.status === SCHEDULE_REQUEST_STATUS.EXPIRED"
+          class="section__alert"
+        >
+          人事の対応が必要です
         </p>
       </section>
     </div>
@@ -192,5 +212,18 @@ const scheduleStateLabel = computed(
   border-radius: var(--radius-pill);
   background-color: var(--color-orange-soft);
   font-size: 12px;
+}
+
+.section__schedule-time {
+  margin-top: var(--space-sm);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.section__alert {
+  margin-top: var(--space-xs);
+  color: var(--color-error);
+  font-size: 11px;
+  font-weight: 700;
 }
 </style>
