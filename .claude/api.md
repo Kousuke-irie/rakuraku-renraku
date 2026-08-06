@@ -117,6 +117,28 @@
 | GET | `/snippets` | 定型文一覧 |
 | GET | `/summary` | `{needsReply, urgent, overdue24h, unassigned}` |
 
+### AI 現況サマリー（P3-1a・未実装）
+
+| メソッド | パス | 説明 |
+| --- | --- | --- |
+| GET | `/ai/summary` | キャッシュ済みの要約を返す。生成中は `{status: 'loading'}` |
+| POST | `/ai/summary` | キャッシュを破棄して再生成（右下の円形 AI ボタン／カードの更新） |
+
+```json
+{
+  "status": "ready",
+  "situation": "要返信7件のうち2件が24時間を超えています。",
+  "todos": [
+    { "roomId": 12, "studentName": "山田 太郎", "action": "欠席連絡に返信する", "reason": "25時間経過・緊急" }
+  ],
+  "generatedAt": "2026-08-06T01:00:00Z"
+}
+```
+
+- `status`：`loading` / `ready` / `error` / `unavailable`（`GEMINI_API_KEY` 未設定）
+- **人事のみ参照可**。`GET /summary` と同じくロールを検証する
+- 生成ロジック・フォールバックは `business-logic.md` §7-2
+
 ---
 
 ## 3. Socket.IO
@@ -154,6 +176,7 @@ io(BASE_URL, { withCredentials: true })
 | `room:updated` | `{ room }` | `hr` ルーム。ステータス・緊急度・担当者・ピン留めの変更時 |
 | `memo:updated` | `{ roomId, memo }` | `hr` ルーム（共有メモのみ） |
 | `summary:updated` | `{ needsReply, urgent, overdue24h }` | `hr` ルーム |
+| `ai:summary_updated` | `{ status, situation, todos, generatedAt }` | 生成を依頼した本人のみ（P3-1a・未実装） |
 | `error` | `{ code, message }` | 発生元のみ |
 
 ---

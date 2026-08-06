@@ -47,8 +47,11 @@ export const useAuthStore = defineStore('auth', {
     isHr: (s) => s.user?.role === ROLE.HR || s.user?.role === ROLE.ADMIN,
     isStudent: (s) => s.user?.role === ROLE.STUDENT,
     currentUserId: (s) => s.user?.id ?? null,
-    /** ログイン後の遷移先。student は /chat、それ以外は /inbox */
-    homePath: (s) => (s.user?.role === ROLE.STUDENT ? '/chat' : '/inbox'),
+    /**
+     * ログイン後の遷移先（frontend.md §1）。student は /chat、人事は S-07 ホーム。
+     * LoginView・ルーターガード・ナビレールはすべてここを見る。パスを直書きしないこと。
+     */
+    homePath: (s) => (s.user?.role === ROLE.STUDENT ? '/chat' : '/home'),
   },
 
   actions: {
