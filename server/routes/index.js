@@ -7,6 +7,7 @@ import usersRouter from './users.js';
 import memosRouter from './memos.js';
 import snippetsRouter from './snippets.js';
 import summaryRouter from './summary.js';
+import aiSummaryRouter from './aiSummary.js';
 
 const router = Router();
 
@@ -20,5 +21,6 @@ router.use('/students', studentsRouter);
 router.use('/users', usersRouter);
 router.use('/snippets', snippetsRouter);
 router.use('/summary', summaryRouter);
+router.use('/ai/summary', aiSummaryRouter);
 
 export default router;

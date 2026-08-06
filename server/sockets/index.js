@@ -43,6 +43,9 @@ export function registerSocketHandlers(io) {
   io.on('connection', (socket) => {
     const { user } = socket.data;
 
+    // ユーザー本人だけに返す通知（AI要約など）の宛先。
+    socket.join(`user:${user.id}`);
+
     listMemberRoomIds(db, user.id).forEach((roomId) => {
       socket.join(`room:${roomId}`);
     });

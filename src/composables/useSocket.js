@@ -26,6 +26,7 @@ import { useUiStore } from '../stores/ui.js'
  * | `room:updated`    | `{ room }`                                   | `rooms.upsertRoom(room)`                             |
  * | `memo:updated`    | `{ roomId, memo }`                           | `rooms.upsertMemo(roomId, memo)`                     |
  * | `summary:updated` | `{ needsReply, urgent, overdue24h }`         | `rooms.setSummary(payload)`                          |
+ * | `ai:summary_updated` | `{ status, situation, todos, generatedAt }` | `rooms.setAiSummary(payload)`                     |
  * | `error`           | `{ code, message }`                          | `ui.pushToast({ type:'error', message })`。`unauthorized` なら `auth.reset()` |
  * | `connect`         | -                                            | `ui.setConnectionState('connected')` → `rooms.fetchRooms()` + 開いているルームの `messages.resync()` |
  * | `disconnect`      | -                                            | `ui.setConnectionState('disconnected')`              |
@@ -135,6 +136,7 @@ function registerHandlers() {
   socket.on(SOCKET_ON.ROOM_UPDATED, ({ room }) => rooms.upsertRoom(room))
   socket.on(SOCKET_ON.MEMO_UPDATED, ({ roomId, memo }) => rooms.upsertMemo(roomId, memo))
   socket.on(SOCKET_ON.SUMMARY_UPDATED, (payload) => rooms.setSummary(payload))
+  socket.on(SOCKET_ON.AI_SUMMARY_UPDATED, (payload) => rooms.setAiSummary(payload))
   socket.on(SOCKET_ON.ERROR, ({ code, message }) => {
     ui.pushToast({ type: 'error', message })
     if (code === 'unauthorized') handleUnauthorized()

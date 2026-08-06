@@ -4,7 +4,8 @@ import db from '../../db/index.js';
 import { assertRoomMember, RoomAccessDeniedError } from '../../services/roomAuth.js';
 import { insertMessage, findMessageByClientMsgId } from '../../routes/messages.js';
 import { emitMessageNew, emitSummaryUpdated } from '../../services/realtime.js';
-import { SOCKET_EMIT, SOCKET_ON } from '../../../shared/constants.js';
+import { queueStudentMessageAnalysis } from '../../services/aiPriority.js';
+import { ROLE, SOCKET_EMIT, SOCKET_ON } from '../../../shared/constants.js';
 
 export function registerMessageHandlers(io, socket) {
   socket.on(SOCKET_EMIT.MESSAGE_SEND, async ({ roomId, body, clientMsgId } = {}) => {
@@ -45,6 +46,7 @@ export function registerMessageHandlers(io, socket) {
       if (!existing) {
         await emitMessageNew(io, db, message);
         emitSummaryUpdated(io, db);
+        if (socket.data.user.role === ROLE.STUDENT) queueStudentMessageAnalysis(db, io, message);
       }
     } catch {
       socket.emit(SOCKET_ON.ERROR, {

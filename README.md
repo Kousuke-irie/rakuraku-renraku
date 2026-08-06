@@ -49,6 +49,9 @@ Windows は WSL2 上の Ubuntu、Mac はネイティブ環境で実行します�
    node -e "console.log(require('node:crypto').randomBytes(48).toString('base64url'))"
    ```
 
+   AI対応推奨度を確認する場合は、Google AI Studioで発行したキーを`GEMINI_API_KEY`へ設定する。
+   未設定の場合も、AI表示以外の機能は動作する。
+
 5. DBを初期化する（初回のみ）
 
    ```bash
@@ -69,6 +72,61 @@ Windows は WSL2 上の Ubuntu、Mac はネイティブ環境で実行します�
    ログインIDとパスワードは[シードデータ](#シードデータ)を参照。
 
 講師のリファレンス環境では、lockfile通りに再現できることを `npm ci` で確認します。
+
+## Gemini APIキーの発行と設定
+
+ホームの「AI 現況サマリー」を使う開発者は、各自のGoogleアカウントでGemini APIキーを発行します。
+APIキーはチーム内で共有せず、開発者ごとに用意してください。
+
+### Google AI StudioでAPIキーを発行する
+
+1. [Google AI StudioのAPIキー画面](https://aistudio.google.com/app/apikey)を開く。
+
+2. Googleアカウントでログインし、初回表示される利用規約に同意する。
+
+3. APIキーを紐づけるGoogle Cloudプロジェクトを選ぶ。
+
+   初めてGoogle AI Studioを使う場合は、既定のプロジェクトが自動作成されることがあります。
+   プロジェクトが表示されない場合は、Google AI Studioの「Dashboard」から「Projects」を開き、プロジェクトを作成またはインポートしてください。
+
+4. 「Create API key」を押し、作成されたAPIキーをコピーする。
+
+   発行画面や項目名が変わった場合は、[Gemini APIキーの公式手順](https://ai.google.dev/gemini-api/docs/api-key)を確認してください。
+
+### ローカル環境へ設定する
+
+1. `chatapp/.env` が存在しない場合は、`.env.example`をコピーする。
+
+   ```bash
+   cp .env.example .env
+   ```
+
+2. `chatapp/.env`へ、発行したAPIキーを設定する。
+
+   ```dotenv
+   GEMINI_API_KEY=ここに発行したAPIキーを貼り付ける
+   GEMINI_MODEL=gemini-3.5-flash-lite
+   ```
+
+3. `npm run dev`を再起動する。
+
+4. `hr1`、`hr2`、または`admin1`でログインする。
+
+5. ホーム右側の「AI 現況サマリー」が「生成済み」になることを確認する。
+
+   生成されない場合は、カードの「更新」を押してください。
+
+### チーム開発での注意
+
+- `.env`はGitへコミットしない。
+  このリポジトリでは、`.env`を`.gitignore`の対象に設定しています。
+- APIキーをGitHub、チャット、スクリーンショットへ貼らない。
+- `.env.example`には設定名だけを記載し、実際のAPIキーを記載しない。
+- 無料枠を超えた場合、課金設定をしていないプロジェクトではAI生成がエラーになりますが、ホームの一覧とチャットは動作を継続します。
+- Geminiの無料枠では、送信内容がGoogleのサービス改善に使われる場合があります。
+  実在する応募者情報を使う前に、所属組織の個人情報ルールを確認してください。
+
+この実装がGeminiへ送る情報とエラー時の挙動は、[Gemini AI現況サマリーの設定](docs/GEMINI_AI_SUMMARY.md)を参照してください。
 
 
 ## シードデータ
@@ -113,6 +171,7 @@ npm run db:seed      # デモデータ投入
 
 ※追加実装した機能を追記してください
 
-- ...
-- ...
-- ...
+- 学生の最新メッセージをGeminiで分析し、ルール緊急度とは別にAI対応推奨度を保存する
+- AI対応推奨度が高い未対応案件を受信箱で強調する
+- トーク画面に、学生が求めていることと判断時に注意する背景を表示する
+- ホームのGemini AI現況サマリー（設定手順は [docs/GEMINI_AI_SUMMARY.md](docs/GEMINI_AI_SUMMARY.md)）

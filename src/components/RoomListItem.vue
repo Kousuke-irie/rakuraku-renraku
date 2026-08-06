@@ -17,6 +17,10 @@
 // 対応ステータスの**変更**は右ペイン（ProfilePanel）の責務。ここは表示のみ。
 import { computed } from "vue"
 import {
+  AI_ANALYSIS_STATUS,
+  AI_RECOMMENDED_PRIORITY,
+  AI_RECOMMENDED_PRIORITY_META,
+  HANDLING_STATUS,
   LAST_MESSAGE_PREVIEW_LENGTH,
   SELECTION_STATUS_META,
   TOPIC_TAG_META,
@@ -58,6 +62,16 @@ const preview = computed(() => {
     ? `${body.slice(0, LAST_MESSAGE_PREVIEW_LENGTH)}…`
     : body
 })
+
+const showAiRecommendation = computed(() =>
+  props.room.aiRecommendation?.status === AI_ANALYSIS_STATUS.COMPLETED &&
+  props.room.aiRecommendation?.priority === AI_RECOMMENDED_PRIORITY.HIGH &&
+  [HANDLING_STATUS.NEEDS_REPLY, HANDLING_STATUS.IN_PROGRESS].includes(props.room.handlingStatus)
+)
+
+const aiPriorityLabel = computed(
+  () => AI_RECOMMENDED_PRIORITY_META[props.room.aiRecommendation?.priority]?.label ?? ""
+)
 
 /** 保存・送受信は UTC、表示のみローカル変換（CLAUDE.md §6-2） */
 const time = computed(() => {
@@ -120,6 +134,15 @@ const time = computed(() => {
           />
           <UnreadBadge :count="room.unreadCount ?? 0" />
         </div>
+
+        <p
+          v-if="showAiRecommendation"
+          class="room__ai"
+          :title="room.aiRecommendation.reason"
+        >
+          AI対応推奨度：{{ aiPriorityLabel }}
+          <span v-if="room.aiRecommendation.reason">・{{ room.aiRecommendation.reason }}</span>
+        </p>
 
         <!-- 選考ステータス（P1-3）と用件タグ（P1-5）。チップにせず文字だけで置く -->
         <p class="room__meta">
@@ -217,6 +240,16 @@ const time = computed(() => {
   min-width: 0;
   color: var(--color-ink-mute);
   font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.room__ai {
+  overflow: hidden;
+  margin: 3px 0 0;
+  color: var(--color-primary);
+  font-size: 11px;
+  font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

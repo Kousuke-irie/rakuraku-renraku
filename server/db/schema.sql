@@ -45,6 +45,16 @@ CREATE TABLE IF NOT EXISTS rooms (
   last_message_id INTEGER REFERENCES messages(id),
   last_message_at TEXT,
   last_student_message_at TEXT,
+  ai_priority TEXT CHECK(ai_priority IN ('high', 'normal', 'low') OR ai_priority IS NULL),
+  ai_priority_reason TEXT,
+  ai_requested_action TEXT,
+  ai_context_summary TEXT,
+  ai_analyzed_message_id INTEGER REFERENCES messages(id),
+  ai_analyzed_at TEXT,
+  ai_model TEXT,
+  ai_analysis_status TEXT NOT NULL DEFAULT 'skipped' CHECK(ai_analysis_status IN (
+    'pending', 'completed', 'failed', 'skipped'
+  )),
   created_at TEXT NOT NULL
 );
 

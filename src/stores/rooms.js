@@ -1,11 +1,14 @@
-/* eslint-disable no-unused-vars -- 空実装のため引数が未使用。実装時にこの行を消すこと */
+/* eslint-disable no-unused-vars -- 他機能の段階実装用スタブが同居しているため */
 import { defineStore } from 'pinia'
 import {
+  AI_ANALYSIS_STATUS,
+  AI_RECOMMENDED_PRIORITY,
   AI_SUMMARY_STATUS,
   DEFAULT_AI_SUMMARY_STATUS,
   DEFAULT_SORT_KEY,
   DEFAULT_TOPIC_TAG,
   ELAPSED_BADGE_HIDDEN_STATUSES,
+  HANDLING_STATUS,
   ROLE,
   SLA_ALERT_HOURS,
   SOCKET_EMIT,
@@ -13,7 +16,7 @@ import {
   SORT_KEY_VALUES,
   URGENCY_ORDER,
 } from '../constants/index.js'
-import { memosApi, roomsApi, studentsApi, toErrorMessage, usersApi } from '../api/index.js'
+import { aiSummaryApi, memosApi, roomsApi, studentsApi, toErrorMessage, usersApi } from '../api/index.js'
 import { emitSocketAck } from '../composables/useSocket.js'
 import { useAuthStore } from './auth.js'
 import { useUiStore } from './ui.js'
@@ -32,13 +35,25 @@ const timestampOf = (value) => {
 /** 比較結果が同じときにも表示順を安定させる。 */
 const byRoomId = (left, right) => Number(left.id) - Number(right.id)
 
+const isActiveAiHigh = (room) =>
+  room.aiRecommendation?.status === AI_ANALYSIS_STATUS.COMPLETED &&
+  room.aiRecommendation?.priority === AI_RECOMMENDED_PRIORITY.HIGH &&
+  [HANDLING_STATUS.NEEDS_REPLY, HANDLING_STATUS.IN_PROGRESS].includes(room.handlingStatus)
+
+const priorityRank = (room) => {
+  if ((URGENCY_ORDER[room.urgency] ?? Infinity) === 0) return 0
+  if (isActiveAiHigh(room)) return 1
+  const urgencyRank = URGENCY_ORDER[room.urgency]
+  return Number.isFinite(urgencyRank) ? urgencyRank + 1 : Infinity
+}
+
 /**
- * 既定の優先順位。緊急度 → 学生最終メッセージが古い順。
+ * 既定の優先順位。ルール緊急 → AI対応推奨度「高」 → 通常 → 低。
  * 時刻がないルームは経過時間を算出できないため、同条件の末尾に置く。
  */
 const byDefaultPriority = (left, right) => {
-  const urgency = (URGENCY_ORDER[left.urgency] ?? Infinity) - (URGENCY_ORDER[right.urgency] ?? Infinity)
-  if (urgency !== 0) return urgency
+  const priority = priorityRank(left) - priorityRank(right)
+  if (priority !== 0) return priority
 
   const elapsed = timestampOf(left.lastStudentMessageAt) - timestampOf(right.lastStudentMessageAt)
   return elapsed !== 0 ? elapsed : byRoomId(left, right)
@@ -176,6 +191,8 @@ function initialFilters() {
  *   lastMessage: { id, body, createdAt, senderId } | null,
  *   lastStudentMessageAt: string|null,   // ISO8601(UTC)。経過時間の基準
  *   elapsedHours: number,                // サーバ算出。表示は useElapsedTime で1分ごとに再計算
+ *   aiRecommendation: { status, priority, reason, requestedAction, contextSummary,
+ *                       analyzedMessageId, analyzedAt },
  * }
  *
  * ルール:
@@ -205,7 +222,6 @@ export const useRoomsStore = defineStore('rooms', {
     /**
      * ホームの AI 現況サマリー（P3-1a・business-logic.md §7-2）。
      * サーバ由来のデータなので ui ストアではなくここに置く。
-     * ★中身の生成は P3-1a で実装する。現状は UI の受け皿だけ用意した状態。
      * @type {{
      *   status: string,               // AI_SUMMARY_STATUS のいずれか
      *   situation: string,            // 現状の1〜2文の要約
@@ -339,20 +355,40 @@ export const useRoomsStore = defineStore('rooms', {
 
     /**
      * GET /api/ai/summary。ホーム表示時にキャッシュ済みの要約を取りに行く。
-     * ★P3-1a で実装する。サーバ側（server/services/aiSummary.js）が未実装のため
-     *   今は API を叩かず「準備中」を立てるだけにしてある。
-     *   AI が落ちてもホームの一覧は動き続けること（business-logic.md §7-2）。
+     * AI が落ちてもホームの一覧は動き続けること（business-logic.md §7-2）。
      */
     async fetchAiSummary() {
-      this.setAiSummary({ status: AI_SUMMARY_STATUS.UNAVAILABLE })
+      try {
+        const { data } = await aiSummaryApi.get()
+        this.setAiSummary(data)
+      } catch (error) {
+        this.setAiSummary({
+          status: AI_SUMMARY_STATUS.ERROR,
+          error: toErrorMessage(error, 'AIサマリーを取得できませんでした'),
+        })
+      }
     },
 
     /**
      * POST /api/ai/summary。右下の AI ボタン／カードの更新から呼ぶ強制再生成。
-     * ★P3-1a で実装する。
      */
     async regenerateAiSummary() {
-      this.setAiSummary({ status: AI_SUMMARY_STATUS.UNAVAILABLE })
+      this.setAiSummary({
+        status: AI_SUMMARY_STATUS.LOADING,
+        situation: '',
+        todos: [],
+        generatedAt: null,
+        error: null,
+      })
+      try {
+        const { data } = await aiSummaryApi.regenerate()
+        this.setAiSummary(data)
+      } catch (error) {
+        this.setAiSummary({
+          status: AI_SUMMARY_STATUS.ERROR,
+          error: toErrorMessage(error, 'AIサマリーを生成できませんでした'),
+        })
+      }
     },
 
     /**

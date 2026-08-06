@@ -8,6 +8,7 @@ import { classifyTopicTag } from '../services/tagClassifier.js';
 import { calculateRoomUrgency } from '../services/urgencyCalculator.js';
 import { emitMessageNew, emitSummaryUpdated } from '../services/realtime.js';
 import { applyStatusTransition } from '../services/statusTransition.js';
+import { queueStudentMessageAnalysis } from '../services/aiPriority.js';
 import { MESSAGE_TYPE, ROLE } from '../../shared/constants.js';
 
 const router = Router();
@@ -97,6 +98,7 @@ router.post('/rooms/:id/messages', requireAuth, async (req, res, next) => {
     const io = req.app.get('io');
     await emitMessageNew(io, db, message);
     emitSummaryUpdated(io, db);
+    if (req.user.role === ROLE.STUDENT) queueStudentMessageAnalysis(db, io, message);
 
     res.status(201).json({ message });
   } catch (error) {
