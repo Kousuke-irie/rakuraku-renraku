@@ -114,9 +114,65 @@ CREATE TABLE IF NOT EXISTS tag_rules (
   priority INTEGER NOT NULL
 );
 
+-- 監視イベント（P4-0）。SLA 通知もコンプライアンス警告もここに集約する。
+-- 多重登録は下の部分UNIQUEインデックス2本で防ぐ。INSERT OR IGNORE と必ずセットで使うこと。
+-- テーブルレベルの UNIQUE は使えない：SQLite は UNIQUE 中の NULL を互いに異なる値として
+-- 扱うため、target_user_id が NULL のコンプライアンス行が重複し放題になる。
+CREATE TABLE IF NOT EXISTS alerts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT NOT NULL CHECK(kind IN ('sla_notify', 'sla_escalate', 'compliance')),
+  severity TEXT NOT NULL CHECK(severity IN ('block', 'warn', 'info')),
+  room_id INTEGER NOT NULL REFERENCES rooms(id),
+  -- 通知先。SLA は担当者／上長、コンプライアンスは NULL（本人へは即時ダイアログで伝える）
+  target_user_id INTEGER REFERENCES users(id),
+  -- 原因を作った人。コンプライアンスは送信者、SLA は担当者
+  actor_user_id INTEGER REFERENCES users(id),
+  -- 起点メッセージ。冪等キーの一部
+  trigger_message_id INTEGER REFERENCES messages(id),
+  -- compliance_rules.code。SLA では NULL
+  rule_code TEXT,
+  -- 画面に出す短文。本文全体を入れないこと（CLAUDE.md §6-8）
+  detail TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  read_at TEXT,
+  -- SLA：人事が返信した時刻。コンプライアンスは常に NULL（記録を消さない）
+  resolved_at TEXT
+);
+
+-- 就職差別・オワハラのキーワード辞書（P4-2）。tag_rules と同じ形。
+CREATE TABLE IF NOT EXISTS compliance_rules (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT NOT NULL UNIQUE,
+  category TEXT NOT NULL CHECK(category IN ('discrimination', 'owahara')),
+  keyword TEXT NOT NULL,
+  -- これが本文に含まれていたら検知しない（誤検知対策。例：「本籍地はお伺いしません」）
+  exclude_keyword TEXT,
+  severity TEXT NOT NULL CHECK(severity IN ('block', 'warn', 'info')),
+  message TEXT NOT NULL,
+  priority INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_messages_room       ON messages(room_id, id DESC);
 CREATE INDEX IF NOT EXISTS idx_rooms_sort          ON rooms(urgency, last_student_message_at);
 CREATE INDEX IF NOT EXISTS idx_rooms_status        ON rooms(handling_status);
 CREATE INDEX IF NOT EXISTS idx_rooms_assignee       ON rooms(assignee_user_id);
 CREATE INDEX IF NOT EXISTS idx_room_members_user   ON room_members(user_id);
 CREATE INDEX IF NOT EXISTS idx_memos_room          ON memos(room_id, scope);
+-- ★多重通知を防ぐ唯一の仕組み。60秒タイマーはこれに依存している。
+-- SLA：1ルーム×1起点メッセージ×1宛先×1種別につき1件だけ。
+CREATE UNIQUE INDEX IF NOT EXISTS idx_alerts_sla_unique
+  ON alerts(kind, room_id, trigger_message_id, target_user_id)
+  WHERE kind IN ('sla_notify', 'sla_escalate');
+-- コンプライアンス：1メッセージ×1ルールにつき1件だけ（target_user_id は NULL なので使えない）。
+-- 1通に複数ルールが当たれば rule_code の数だけ行が立つ。これは意図した挙動。
+CREATE UNIQUE INDEX IF NOT EXISTS idx_alerts_compliance_unique
+  ON alerts(room_id, trigger_message_id, rule_code)
+  WHERE kind = 'compliance';
+
+-- 通知一覧（自分宛・未読優先・新しい順）
+CREATE INDEX IF NOT EXISTS idx_alerts_target       ON alerts(target_user_id, read_at, created_at DESC);
+-- 未解決のSLA件数・エスカレーション一覧（P4-4 のKPI）
+CREATE INDEX IF NOT EXISTS idx_alerts_open         ON alerts(kind, resolved_at);
+-- 返信時の解消 UPDATE
+CREATE INDEX IF NOT EXISTS idx_alerts_room         ON alerts(room_id);
+CREATE INDEX IF NOT EXISTS idx_compliance_rules    ON compliance_rules(priority, id);

@@ -22,6 +22,8 @@ users ──┬─< room_members >── rooms ──< messages ──< read_rec
                                └─ handling_status / urgency / assignee
 snippets（ルーム非依存・全社共有）
 tag_rules（キーワード辞書）
+alerts（監視イベント：SLA通知・コンプライアンス警告。P4-0）
+compliance_rules（就職差別・オワハラの辞書。P4-2）
 ```
 
 ---
@@ -135,6 +137,47 @@ tag_rules（キーワード辞書）
 | `keyword` | TEXT | NOT NULL | 部分一致させるキーワード |
 | `priority` | INTEGER | NOT NULL | 小さいほど優先 |
 
+### `alerts`（監視イベント・P4-0）
+
+SLA 通知とコンプライアンス警告を集約する。設計意図は `monitoring.md` §2。
+
+| カラム | 型 | 制約 | 説明 |
+| --- | --- | --- | --- |
+| `id` | INTEGER | PK AUTOINCREMENT | |
+| `kind` | TEXT | NOT NULL CHECK | `sla_notify` / `sla_escalate` / `compliance` |
+| `severity` | TEXT | NOT NULL CHECK | `block` / `warn` / `info` |
+| `room_id` | INTEGER | NOT NULL FK rooms | |
+| `target_user_id` | INTEGER | FK users | 通知先。compliance では NULL |
+| `actor_user_id` | INTEGER | FK users | 原因を作った人（送信者・担当者） |
+| `trigger_message_id` | INTEGER | FK messages | 起点メッセージ。**冪等キーの一部** |
+| `rule_code` | TEXT | | `compliance_rules.code`。SLA では NULL |
+| `detail` | TEXT | NOT NULL | 画面用の短文。**本文全体を入れない** |
+| `created_at` | TEXT | NOT NULL | ISO8601 UTC |
+| `read_at` | TEXT | | 既読時刻 |
+| `resolved_at` | TEXT | | SLA：返信した時刻。compliance は常に NULL |
+
+**多重通知は部分 UNIQUE インデックス2本（`idx_alerts_sla_unique` / `idx_alerts_compliance_unique`）で防ぐ。**
+60秒タイマーから `INSERT OR IGNORE` で書き込むこと。アプリ側に「通知済みかどうか」の状態を持たせない。
+学生が新しく発言すれば `trigger_message_id` が変わるので、別イベントとして正しく再通知される。
+
+**テーブルレベルの `UNIQUE(...)` にしないこと。** SQLite は UNIQUE 中の NULL を互いに異なる値として
+扱うため、`target_user_id IS NULL` のコンプライアンス行が重複し放題になる。詳細は `monitoring.md` §2。
+
+### `compliance_rules`（就職差別・オワハラの辞書・P4-2）
+
+| カラム | 型 | 制約 | 説明 |
+| --- | --- | --- | --- |
+| `id` | INTEGER | PK AUTOINCREMENT | |
+| `code` | TEXT | NOT NULL UNIQUE | `alerts.rule_code` から参照される |
+| `category` | TEXT | NOT NULL CHECK | `discrimination` / `owahara` |
+| `keyword` | TEXT | NOT NULL | 部分一致させるキーワード |
+| `exclude_keyword` | TEXT | | これを含むなら検知しない（誤検知対策） |
+| `severity` | TEXT | NOT NULL CHECK | `block` / `warn` / `info` |
+| `message` | TEXT | NOT NULL | 人事に見せる警告文 |
+| `priority` | INTEGER | NOT NULL | 小さいほど優先 |
+
+`tag_rules` と違い、**最初のマッチで確定しない**。1通に複数の問題が混ざりうるので全件返す。
+
 ---
 
 ## 4. インデックス
@@ -146,6 +189,10 @@ CREATE INDEX idx_rooms_status        ON rooms(handling_status);
 CREATE INDEX idx_rooms_assignee      ON rooms(assignee_user_id);
 CREATE INDEX idx_room_members_user   ON room_members(user_id);
 CREATE INDEX idx_memos_room          ON memos(room_id, scope);
+CREATE INDEX idx_alerts_target       ON alerts(target_user_id, read_at, created_at DESC);
+CREATE INDEX idx_alerts_open         ON alerts(kind, resolved_at);
+CREATE INDEX idx_alerts_room         ON alerts(room_id);
+CREATE INDEX idx_compliance_rules    ON compliance_rules(priority, id);
 ```
 
 `idx_messages_room` は無限スクロールのキーセットページネーションに必須。

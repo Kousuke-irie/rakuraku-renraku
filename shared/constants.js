@@ -287,11 +287,112 @@ export const DEFAULT_AI_SUMMARY_STATUS = AI_SUMMARY_STATUS.IDLE;
 export const SLA_WARN_HOURS = 12;
 export const SLA_ALERT_HOURS = 24;
 
+// ---------------------------------------------------------------------------
+// SLA 通知の閾値（P4-1 / monitoring.md §3）
+// 上の SLA_WARN/ALERT は「緊急度」の閾値、こちらは「通知」の閾値。責務が別なので
+// 流用しないこと。サーバは SLA_NOTIFY_HOURS / SLA_ESCALATE_HOURS で上書きする。
+// ---------------------------------------------------------------------------
+
+/** N：この時間を超えたら担当者へ通知する */
+export const SLA_NOTIFY_HOURS = 24;
+/** 2N：この時間を超えたら上長（role='admin'）へエスカレーションする */
+export const SLA_ESCALATE_HOURS = 48;
+
+// SLA 通知の対象外にする対応ステータス。
+// waiting_student / done は人事が返信済み、on_hold は意図的に止めている（P1-2 の設計判断）。
+export const SLA_ALERT_EXEMPT_STATUSES = Object.freeze([
+  HANDLING_STATUS.WAITING_STUDENT,
+  HANDLING_STATUS.DONE,
+  HANDLING_STATUS.ON_HOLD,
+]);
+
+// ---------------------------------------------------------------------------
+// 監視ダッシュボード（P4-4 / monitoring.md §6）
+// ---------------------------------------------------------------------------
+
+/** 発生推移グラフの日数。件数0の日もサーバ側で埋めて返す */
+export const DASHBOARD_TREND_DAYS = 14;
+
 // 経過時間バッジを表示しない対応ステータス（返信済み・完了は SLA の対象外）
 export const ELAPSED_BADGE_HIDDEN_STATUSES = Object.freeze([
   HANDLING_STATUS.WAITING_STUDENT,
   HANDLING_STATUS.DONE,
 ]);
+
+// ---------------------------------------------------------------------------
+// 監視イベント（P4-0 / monitoring.md §2）
+// SLA 通知もコンプライアンス警告も `alerts` 1テーブルに集約する。
+// CHECK 制約の文字列と完全に一致させること。
+// ---------------------------------------------------------------------------
+
+export const ALERT_KIND = Object.freeze({
+  /** N=24h 無返信。担当者（未アサインなら上長）へ通知する */
+  SLA_NOTIFY: 'sla_notify',
+  /** 2N=48h 無返信。上長へエスカレーションする */
+  SLA_ESCALATE: 'sla_escalate',
+  /** 人事の発言から就職差別・オワハラ表現を検知した */
+  COMPLIANCE: 'compliance',
+});
+
+export const ALERT_KIND_META = Object.freeze({
+  [ALERT_KIND.SLA_NOTIFY]: { label: '未返信24時間' },
+  [ALERT_KIND.SLA_ESCALATE]: { label: '上長エスカレーション' },
+  [ALERT_KIND.COMPLIANCE]: { label: 'コンプライアンス警告' },
+});
+
+export const ALERT_KIND_VALUES = Object.values(ALERT_KIND);
+
+/** SLA 系の kind。解消処理（返信時の resolved_at 更新）の対象。 */
+export const SLA_ALERT_KINDS = Object.freeze([
+  ALERT_KIND.SLA_NOTIFY,
+  ALERT_KIND.SLA_ESCALATE,
+]);
+
+export const ALERT_SEVERITY = Object.freeze({
+  /** 送信前に警告ダイアログで止める */
+  BLOCK: 'block',
+  /** 注意を促すが止めない */
+  WARN: 'warn',
+  /** 記録のみ */
+  INFO: 'info',
+});
+
+export const ALERT_SEVERITY_META = Object.freeze({
+  [ALERT_SEVERITY.BLOCK]: { label: '要修正' },
+  [ALERT_SEVERITY.WARN]: { label: '要確認' },
+  [ALERT_SEVERITY.INFO]: { label: '参考' },
+});
+
+export const ALERT_SEVERITY_VALUES = Object.values(ALERT_SEVERITY);
+
+/** 重い順。複数検知したときの並び順に使う（monitoring.md §4） */
+export const ALERT_SEVERITY_ORDER = Object.freeze({
+  [ALERT_SEVERITY.BLOCK]: 0,
+  [ALERT_SEVERITY.WARN]: 1,
+  [ALERT_SEVERITY.INFO]: 2,
+});
+
+// ---------------------------------------------------------------------------
+// コンプライアンス検知の分類（P4-2 / monitoring.md §4）
+// ---------------------------------------------------------------------------
+
+export const COMPLIANCE_CATEGORY = Object.freeze({
+  DISCRIMINATION: 'discrimination',
+  OWAHARA: 'owahara',
+});
+
+export const COMPLIANCE_CATEGORY_META = Object.freeze({
+  [COMPLIANCE_CATEGORY.DISCRIMINATION]: { label: '就職差別のおそれ' },
+  [COMPLIANCE_CATEGORY.OWAHARA]: { label: 'オワハラのおそれ' },
+});
+
+export const COMPLIANCE_CATEGORY_VALUES = Object.values(COMPLIANCE_CATEGORY);
+
+/**
+ * 検知結果に必ず添える免責。
+ * 「検知しました」と断定すると法的判断の代行に見えるため（monitoring.md §4）。
+ */
+export const COMPLIANCE_DISCLAIMER = '参考情報です。最終判断は担当者が行ってください。';
 
 // ---------------------------------------------------------------------------
 // Socket.IO イベント名（api.md §3）
@@ -318,6 +419,8 @@ export const SOCKET_ON = Object.freeze({
   SUMMARY_UPDATED: 'summary:updated',
   /** P3-1a。生成を依頼した本人にのみ配信する */
   AI_SUMMARY_UPDATED: 'ai:summary_updated',
+  /** P4-1。通知先（target_user_id）本人にのみ配信する */
+  ALERT_NEW: 'alert:new',
   ERROR: 'error',
 });
 
