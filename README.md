@@ -49,6 +49,9 @@ Windows は WSL2 上の Ubuntu、Mac はネイティブ環境で実行します�
    node -e "console.log(require('node:crypto').randomBytes(48).toString('base64url'))"
    ```
 
+   AI対応推奨度を確認する場合は、Google AI Studioで発行したキーを`GEMINI_API_KEY`へ設定する。
+   未設定の場合も、AI表示以外の機能は動作する。
+
 5. DBを初期化する（初回のみ）
 
    ```bash
@@ -113,6 +116,6 @@ npm run db:seed      # デモデータ投入
 
 ※追加実装した機能を追記してください
 
-- ...
-- ...
-- ...
+- 学生の最新メッセージをGeminiで分析し、ルール緊急度とは別にAI対応推奨度を保存する
+- AI対応推奨度が高い未対応案件を受信箱で強調する
+- トーク画面に、学生が求めていることと判断時に注意する背景を表示する

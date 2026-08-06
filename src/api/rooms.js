@@ -10,7 +10,9 @@ import { http } from "./client.js"
  *   handlingStatus, urgency, topicTag,
  *   assignee: { id, displayName } | null,   // null = 未割当
  *   unreadCount, lastMessage: { id, body, createdAt, senderId } | null,
- *   lastStudentMessageAt, elapsedHours
+ *   lastStudentMessageAt, elapsedHours,
+ *   aiRecommendation: { status, priority, reason, requestedAction, contextSummary,
+ *                       analyzedMessageId, analyzedAt }
  * }
  *
  * `elapsedHours` はサーバ算出値。表示の再計算は useElapsedTime が1分ごとに行う（api.md §2）。

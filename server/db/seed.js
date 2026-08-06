@@ -510,7 +510,7 @@ const STUDENTS = [...SHOWCASE_STUDENTS, ...buildGeneratedStudents()];
 
 function clearExistingData() {
   // rooms.last_message_id が messages を参照する循環FKがあるため、先にNULL化してから削除する。
-  db.prepare(`UPDATE rooms SET last_message_id = NULL`).run();
+  db.prepare(`UPDATE rooms SET last_message_id = NULL, ai_analyzed_message_id = NULL`).run();
   const tables = ['read_receipts', 'memos', 'room_members', 'messages', 'rooms', 'students', 'users', 'tag_rules', 'snippets'];
   for (const table of tables) {
     db.prepare(`DELETE FROM ${table}`).run();

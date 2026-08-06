@@ -15,6 +15,7 @@ import { useAuthStore } from "../stores/auth.js"
 import { useMessagesStore } from "../stores/messages.js"
 import { useRoomsStore } from "../stores/rooms.js"
 import { useUiStore } from "../stores/ui.js"
+import AiConversationInsight from "./AiConversationInsight.vue"
 import ComposerResizeHandle from "./ComposerResizeHandle.vue"
 import MessageList from "./MessageList.vue"
 import SnippetPalette from "./SnippetPalette.vue"
@@ -211,6 +212,8 @@ const onSubmit = async () => {
         </p>
       </div>
     </header>
+
+    <AiConversationInsight :recommendation="room.aiRecommendation" />
 
     <MessageList
       :room-id="roomId"

@@ -96,6 +96,34 @@ export const URGENCY_META = Object.freeze({
 
 export const URGENCY_VALUES = Object.values(URGENCY);
 
+// ---------------------------------------------------------------------------
+// AI対応推奨度（P3-1改訂）
+// ルール緊急度とは別の補助情報であり、既存の urgency を変更しない。
+// ---------------------------------------------------------------------------
+
+export const AI_RECOMMENDED_PRIORITY = Object.freeze({
+  HIGH: 'high',
+  NORMAL: 'normal',
+  LOW: 'low',
+});
+
+export const AI_RECOMMENDED_PRIORITY_META = Object.freeze({
+  [AI_RECOMMENDED_PRIORITY.HIGH]: { label: '高' },
+  [AI_RECOMMENDED_PRIORITY.NORMAL]: { label: '通常' },
+  [AI_RECOMMENDED_PRIORITY.LOW]: { label: '低' },
+});
+
+export const AI_RECOMMENDED_PRIORITY_VALUES = Object.values(AI_RECOMMENDED_PRIORITY);
+
+export const AI_ANALYSIS_STATUS = Object.freeze({
+  PENDING: 'pending',
+  COMPLETED: 'completed',
+  FAILED: 'failed',
+  SKIPPED: 'skipped',
+});
+
+export const AI_ANALYSIS_STATUS_VALUES = Object.values(AI_ANALYSIS_STATUS);
+
 export const SCHEDULE_STATE = Object.freeze({
   NONE: 'none',
   PROPOSED: 'proposed',
@@ -246,6 +274,7 @@ export const DEFAULT_HANDLING_STATUS = HANDLING_STATUS.NEEDS_REPLY;
 export const DEFAULT_SELECTION_STATUS = SELECTION_STATUS.ENTRY;
 export const DEFAULT_TOPIC_TAG = TOPIC_TAG.OTHER;
 export const DEFAULT_URGENCY = URGENCY.NORMAL;
+export const DEFAULT_AI_ANALYSIS_STATUS = AI_ANALYSIS_STATUS.SKIPPED;
 export const DEFAULT_SCHEDULE_STATE = SCHEDULE_STATE.NONE;
 export const DEFAULT_MEMO_SCOPE = MEMO_SCOPE.PRIVATE;
 export const DEFAULT_AI_SUMMARY_STATUS = AI_SUMMARY_STATUS.IDLE;

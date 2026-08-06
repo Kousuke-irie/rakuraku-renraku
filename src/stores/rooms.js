@@ -1,11 +1,14 @@
 /* eslint-disable no-unused-vars -- 空実装のため引数が未使用。実装時にこの行を消すこと */
 import { defineStore } from 'pinia'
 import {
+  AI_ANALYSIS_STATUS,
+  AI_RECOMMENDED_PRIORITY,
   AI_SUMMARY_STATUS,
   DEFAULT_AI_SUMMARY_STATUS,
   DEFAULT_SORT_KEY,
   DEFAULT_TOPIC_TAG,
   ELAPSED_BADGE_HIDDEN_STATUSES,
+  HANDLING_STATUS,
   ROLE,
   SLA_ALERT_HOURS,
   SOCKET_EMIT,
@@ -32,13 +35,25 @@ const timestampOf = (value) => {
 /** 比較結果が同じときにも表示順を安定させる。 */
 const byRoomId = (left, right) => Number(left.id) - Number(right.id)
 
+const isActiveAiHigh = (room) =>
+  room.aiRecommendation?.status === AI_ANALYSIS_STATUS.COMPLETED &&
+  room.aiRecommendation?.priority === AI_RECOMMENDED_PRIORITY.HIGH &&
+  [HANDLING_STATUS.NEEDS_REPLY, HANDLING_STATUS.IN_PROGRESS].includes(room.handlingStatus)
+
+const priorityRank = (room) => {
+  if ((URGENCY_ORDER[room.urgency] ?? Infinity) === 0) return 0
+  if (isActiveAiHigh(room)) return 1
+  const urgencyRank = URGENCY_ORDER[room.urgency]
+  return Number.isFinite(urgencyRank) ? urgencyRank + 1 : Infinity
+}
+
 /**
- * 既定の優先順位。緊急度 → 学生最終メッセージが古い順。
+ * 既定の優先順位。ルール緊急 → AI対応推奨度「高」 → 通常 → 低。
  * 時刻がないルームは経過時間を算出できないため、同条件の末尾に置く。
  */
 const byDefaultPriority = (left, right) => {
-  const urgency = (URGENCY_ORDER[left.urgency] ?? Infinity) - (URGENCY_ORDER[right.urgency] ?? Infinity)
-  if (urgency !== 0) return urgency
+  const priority = priorityRank(left) - priorityRank(right)
+  if (priority !== 0) return priority
 
   const elapsed = timestampOf(left.lastStudentMessageAt) - timestampOf(right.lastStudentMessageAt)
   return elapsed !== 0 ? elapsed : byRoomId(left, right)
@@ -160,6 +175,8 @@ function initialFilters() {
  *   lastMessage: { id, body, createdAt, senderId } | null,
  *   lastStudentMessageAt: string|null,   // ISO8601(UTC)。経過時間の基準
  *   elapsedHours: number,                // サーバ算出。表示は useElapsedTime で1分ごとに再計算
+ *   aiRecommendation: { status, priority, reason, requestedAction, contextSummary,
+ *                       analyzedMessageId, analyzedAt },
  * }
  *
  * ルール:
