@@ -481,7 +481,15 @@ checkCompliance(db, body): { code, category, severity, message, matched }[]
 接続できるときは AI の結果を待ってから送信可能にする。
 
 - 待っている間は送信ボタンを `確認中…` にして押下不可にする（固まって見せない）
-- タイムアウト（3秒）・APIエラー → `status='error'`。**辞書の結果だけで先へ進める**
+- タイムアウト（`COMPLIANCE_AI_TIMEOUT_MS`・既定8秒）・APIエラー → `status='error'`。
+  **辞書の結果だけで先へ進める**
+
+**タイムアウトは `AI_PRIORITY_TIMEOUT_MS`(3秒) を流用しないこと。**
+実測で温まっていれば中央値約1.0秒・最大1.6秒だが、**初回だけ TLS ハンドシェイク等で3秒を超える**。
+3秒にすると1通目が必ず `error` になる。余裕を持たせても通常の待ち時間は増えない。
+
+`gemini-3.5-flash-lite` は無料枠だと **`503 UNAVAILABLE` を返すことがある**（実測で発生）。
+そのときも `error` に落ちて辞書の結果だけで進むので、送信は止まらない。
 - `GEMINI_API_KEY` 未設定 → `status='unavailable'`。API を呼ばない
 - `ok` 以外のときはダイアログに
   **「AIによる検証はできていません。辞書による判定のみを表示しています。」**を出す

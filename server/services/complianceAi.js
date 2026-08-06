@@ -19,7 +19,7 @@ import {
   COMPLIANCE_CATEGORY_VALUES,
   COMPLIANCE_SOURCE,
 } from '../../shared/constants.js';
-import { AI_PRIORITY_TIMEOUT_MS, GEMINI_API_KEY, GEMINI_MODEL } from '../config/gemini.js';
+import { COMPLIANCE_AI_TIMEOUT_MS, GEMINI_API_KEY, GEMINI_MODEL } from '../config/gemini.js';
 
 const GEMINI_API_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 
@@ -202,7 +202,7 @@ export async function checkComplianceWithAi(
   {
     apiKey = GEMINI_API_KEY,
     model = GEMINI_MODEL,
-    timeoutMs = AI_PRIORITY_TIMEOUT_MS,
+    timeoutMs = COMPLIANCE_AI_TIMEOUT_MS,
     fetchImpl = globalThis.fetch,
   } = {},
 ) {

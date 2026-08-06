@@ -82,6 +82,18 @@ watch(
 const onFix = () => ui.closeComplianceDialog()
 
 /**
+ * dialog 要素の close イベント。Esc や close() から来る。
+ *
+ * ★close は**非同期に**発火する。閉じた直後に別の検知で開き直すと、
+ *   遅れて届いた close がその新しいダイアログを閉じてしまう。
+ *   要素が既に開いているなら、それは古い close なので無視する。
+ */
+const onDialogClose = () => {
+  if (dialogEl.value?.open) return
+  ui.closeComplianceDialog()
+}
+
+/**
  * 「このまま送信」。承知したルールコードを添えて親（ChatPanel）に送信を任せる。
  * 閉じる前にコードを控えておくこと（close で complianceResults が空になるため）。
  */
@@ -104,7 +116,7 @@ const onBackdropClick = (event) => {
     class="dialog"
     aria-labelledby="compliance-dialog-title"
     @click="onBackdropClick"
-    @close="onFix"
+    @close="onDialogClose"
     @keydown.escape.prevent="onFix"
   >
     <div class="dialog__body">
