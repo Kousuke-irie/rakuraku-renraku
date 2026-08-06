@@ -17,6 +17,7 @@ import { useMessagesStore } from "../stores/messages.js"
 import { useUiStore } from "../stores/ui.js"
 import ComposerResizeHandle from "../components/ComposerResizeHandle.vue"
 import MessageList from "../components/MessageList.vue"
+import CompanyPanel from "../components/CompanyPanel.vue"
 
 // #region constants
 /** 担当者が未割当のときに相手側の吹き出しへ出す表示名 */
@@ -99,7 +100,11 @@ const openMyRoom = async () => {
 // #endregion
 
 // #region lifecycle
-onMounted(openMyRoom)
+onMounted(() => {
+  openMyRoom()
+  // 会社情報パネル（P2-10）。更新頻度が低いマスタデータなので取得は初回のみ
+  ui.fetchCompany()
+})
 
 // socket 再接続で fetchRooms が走った後にルームが判明する場合に備える
 watch(roomId, (value) => {
@@ -206,15 +211,29 @@ const onPublish = async () => {
         </div>
       </form>
     </div>
+
+    <!-- 会社情報（P2-10）。返信を待つ間に自然と目に入る位置に常設する -->
+    <CompanyPanel />
   </div>
 </template>
 
 <style scoped>
-/* 画面全体の固定レイヤは AppShell が持つ。ここはそのセルを埋めて中央寄せするだけ */
+/* 画面全体の固定レイヤは AppShell が持つ。ここはそのセルを埋めて中央寄せするだけ。
+   トーク（可変）＋会社情報パネル（固定幅）の2カラム。
+   人事側の受信箱がトークの右にプロフィールパネルを置くのと同じ作りに揃えている */
 .chat {
+  --company-panel-width: 280px;
+
+  display: grid;
   height: 100%;
-  max-width: 860px;
+  /* トーク 860px ＋ パネル 280px ＋ 隙間。1280px 幅に収まる */
+  max-width: 1160px;
   margin: 0 auto;
+  grid-template-columns: minmax(0, 1fr) var(--company-panel-width);
+  /* 暗黙の行は auto だと中身より縮まないため、明示的に minmax(0,1fr) にする */
+  grid-template-rows: minmax(0, 1fr);
+  gap: var(--space-md);
+  min-height: 0;
   overflow: hidden;
   padding: var(--space-xs) 0 var(--space-sm);
 }

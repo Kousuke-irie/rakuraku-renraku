@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { snippetsApi, toErrorMessage } from '../api/index.js'
+import { companyApi, snippetsApi, toErrorMessage } from '../api/index.js'
 import { DEFAULT_BOARD_GROUP_BY, MEMO_SCOPE, MEMO_SCOPE_VALUES } from '../constants/index.js'
 
 /** トーストの連番。Date.now() だと同時 push で衝突する */
@@ -11,6 +11,12 @@ const SNIPPET_ERROR = Object.freeze({
   CREATE: '定型文の追加に失敗しました',
   UPDATE: '定型文の更新に失敗しました',
   DELETE: '定型文の削除に失敗しました',
+})
+
+/** 会社情報（P2-10）での失敗時の既定文言 */
+const COMPANY_ERROR = Object.freeze({
+  FETCH: '会社情報の取得に失敗しました',
+  SAVE: '会社情報の保存に失敗しました',
 })
 
 /**
@@ -43,7 +49,7 @@ const PANE_WIDTH_KEY = Object.freeze({
  * 「どのルームを選んでいるか」「どのパネルが開いているか」など、
  * サーバのデータではない画面状態だけを持つ。データそのものは rooms / messages に置く。
  *
- * 定型文（snippets）はルームに紐づかないマスタデータなので、
+ * 定型文（snippets）・会社情報（company）はルームに紐づかないマスタデータなので、
  * パレットの表示状態と合わせてここで保持する（ストアは4つに固定するため）。
  */
 export const useUiStore = defineStore('ui', {
@@ -86,6 +92,14 @@ export const useUiStore = defineStore('ui', {
     snippetHighlightIndex: 0,
     /** @type {object[]} GET /api/snippets の結果 */
     snippets: [],
+
+    /**
+     * @type {{name: string, description: string|null, recruitSiteUrl: string|null, updatedAt: string}|null}
+     * GET /api/company の結果（P2-10）。未設定なら null
+     */
+    company: null,
+    /** company は未設定でも null なので、取得済みかどうかを別に持つ */
+    companyLoaded: false,
 
     /** @type {'connected'|'connecting'|'disconnected'} socket の接続状態バナー用 */
     connectionState: 'connecting',
@@ -230,6 +244,44 @@ export const useUiStore = defineStore('ui', {
       }
     },
 
+    /**
+     * GET /api/company（P2-10）。
+     * 更新頻度の低いマスタデータなので、画面を開くたびには取り直さない。
+     */
+    async fetchCompany() {
+      if (this.companyLoaded) return
+      await this.reloadCompany()
+    },
+
+    /** 設定画面での保存のあとに使う、無条件の取り直し */
+    async reloadCompany() {
+      try {
+        const { data } = await companyApi.get()
+        this.company = data.company
+        this.companyLoaded = true
+      } catch (error) {
+        this.pushToast({ type: 'error', message: toErrorMessage(error, COMPANY_ERROR.FETCH) })
+      }
+    },
+
+    /**
+     * PUT /api/company（設定画面からの保存・人事のみ）
+     * @param {{ name: string, description: string|null, recruitSiteUrl: string|null }} input
+     * @returns {Promise<object|null>} 保存後の会社情報。失敗時は null
+     */
+    async saveCompany(input) {
+      try {
+        const { data } = await companyApi.update(input)
+        this.company = data.company
+        this.companyLoaded = true
+        this.pushToast({ type: 'info', message: '会社情報を保存しました' })
+        return data.company
+      } catch (error) {
+        this.pushToast({ type: 'error', message: toErrorMessage(error, COMPANY_ERROR.SAVE) })
+        return null
+      }
+    },
+
     /** "/" 入力でパレットを開く */
     async openSnippetPalette() {
       this.snippetPaletteOpen = true
@@ -280,6 +332,8 @@ export const useUiStore = defineStore('ui', {
       this.snippetQuery = ''
       this.snippetHighlightIndex = 0
       this.snippets = []
+      this.company = null
+      this.companyLoaded = false
       this.connectionState = 'connecting'
       this.toasts = []
     },

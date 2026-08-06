@@ -22,6 +22,7 @@ users ──┬─< room_members >── rooms ──< messages ──< read_rec
                                └─ handling_status / urgency / assignee
 snippets（ルーム非依存・全社共有）
 tag_rules（キーワード辞書）
+company_info（ルーム非依存・全社共有・必ず1行）
 ```
 
 ---
@@ -125,6 +126,22 @@ tag_rules（キーワード辞書）
 | `title` | TEXT | NOT NULL | 一覧表示名 |
 | `body` | TEXT | NOT NULL | `{学生名}` 等の変数を含むテンプレート |
 | `sort_order` | INTEGER | NOT NULL DEFAULT 0 | |
+
+### `company_info`（会社情報・P2-10）
+
+人事が設定し、学生のトーク画面の会社情報パネルに出す。**単一テナントなので必ず1行だけ。**
+
+| カラム | 型 | 制約 | 説明 |
+| --- | --- | --- | --- |
+| `id` | INTEGER | PK CHECK(id = 1) | 2行目を作れないようにするための固定値 |
+| `name` | TEXT | NOT NULL | 会社名（100文字以内） |
+| `description` | TEXT | | 紹介文（1000文字以内）。未設定は NULL |
+| `recruit_site_url` | TEXT | | 採用サイトURL（500文字以内）。未設定は NULL |
+| `updated_at` | TEXT | NOT NULL | ISO8601(UTC) |
+
+- 更新は `INSERT ... ON CONFLICT(id) DO UPDATE` の UPSERT。`migrate` だけして `seed` していない状態でも1行目を作れる
+- **部分更新にしない。** 3項目すべてを受け取る全置換にする（「紹介文を空にする」を表現するため）
+- `recruit_site_url` は**サーバ側で `http:` / `https:` のみ許可**する。学生の画面にリンクとして出るため
 
 ### `tag_rules`（用件タグのキーワード辞書）
 

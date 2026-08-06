@@ -405,6 +405,14 @@ const SNIPPETS = [
   },
 ];
 
+/** 会社情報（P2-10）。学生のトーク画面の会社情報パネルに出る初期値 */
+const COMPANY_INFO = {
+  name: '株式会社ラクラク',
+  description:
+    '「はたらく人の毎日を、少しだけ軽くする」をミッションに、業務コミュニケーションの プロダクトをつくっています。\n新卒採用では、入社1年目から企画・開発の意思決定に関わる機会を大切にしています。',
+  recruitSiteUrl: 'https://example.com/recruit',
+};
+
 // ---------------------------------------------------------------------------
 // 生成
 // ---------------------------------------------------------------------------
@@ -511,10 +519,17 @@ const STUDENTS = [...SHOWCASE_STUDENTS, ...buildGeneratedStudents()];
 function clearExistingData() {
   // rooms.last_message_id が messages を参照する循環FKがあるため、先にNULL化してから削除する。
   db.prepare(`UPDATE rooms SET last_message_id = NULL`).run();
-  const tables = ['read_receipts', 'memos', 'room_members', 'messages', 'rooms', 'students', 'users', 'tag_rules', 'snippets'];
+  const tables = ['read_receipts', 'memos', 'room_members', 'messages', 'rooms', 'students', 'users', 'tag_rules', 'snippets', 'company_info'];
   for (const table of tables) {
     db.prepare(`DELETE FROM ${table}`).run();
   }
+}
+
+function insertCompanyInfo() {
+  db.prepare(
+    `INSERT INTO company_info (id, name, description, recruit_site_url, updated_at)
+     VALUES (1, ?, ?, ?, ?)`,
+  ).run(COMPANY_INFO.name, COMPANY_INFO.description, COMPANY_INFO.recruitSiteUrl, new Date().toISOString());
 }
 
 function insertUser({ loginId, displayName, role, avatarColor }, passwordHash) {
@@ -640,6 +655,7 @@ function seed() {
     // 用件タグ判定が tag_rules を読むので、学生より先に投入する
     insertTagRules();
     insertSnippets();
+    insertCompanyInfo();
 
     const hrUserIds = {};
     for (const hrUser of HR_USERS) {

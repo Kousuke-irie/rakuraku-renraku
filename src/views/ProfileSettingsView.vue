@@ -7,6 +7,8 @@
 // ★このビューは**雛形**である。セクションを増やすときは SECTIONS に足す。
 //   - プロフィール … B-5。編集フォーム自体は ProfileDialog を使い回す（二重実装しない）
 //   - 定型文       … P2-1 拡張。追加・削除・編集は SnippetSettingsPanel に委譲
+//   - 会社情報     … P2-10。編集は CompanySettingsPanel に委譲。**人事のみ**
+//                    （学生は編集できず、/chat の CompanyPanel で閲覧するだけ）
 //   - アカウント   … ログインIDの表示とログアウトのみ。パスワード変更は要件に無い
 //
 // セクションの切替はローカル state で持つ。URL に載せる必要が出たら
@@ -15,16 +17,23 @@ import { computed, ref } from "vue"
 import { useRouter } from "vue-router"
 import { useAuthStore } from "../stores/auth.js"
 import { useUiStore } from "../stores/ui.js"
+import CompanySettingsPanel from "../components/CompanySettingsPanel.vue"
 import SnippetSettingsPanel from "../components/SnippetSettingsPanel.vue"
 import UserAvatar from "../components/UserAvatar.vue"
 
 // #region constants
 /** 設定内のナビゲーション。key は下の v-if と対応する */
-const SECTIONS = Object.freeze([
+const BASE_SECTIONS = Object.freeze([
   { key: "profile", label: "プロフィール", note: "表示名・ステータス" },
   { key: "snippets", label: "定型文", note: "コマンドと本文" },
-  { key: "account", label: "アカウント", note: "ログイン情報" },
 ])
+
+/** 人事だけに出すセクション（P2-10）。学生は会社情報を閲覧するだけで編集できない */
+const HR_SECTIONS = Object.freeze([
+  { key: "company", label: "会社情報", note: "学生に見せる自社紹介" },
+])
+
+const ACCOUNT_SECTION = Object.freeze({ key: "account", label: "アカウント", note: "ログイン情報" })
 
 const NOT_SET_LABEL = "未設定"
 // #endregion
@@ -42,8 +51,15 @@ const activeKey = ref("profile")
 // #endregion
 
 // #region computed
+/** アカウントは常に最下段に置きたいので、人事限定のセクションはその手前に差し込む */
+const sections = computed(() => [
+  ...BASE_SECTIONS,
+  ...(auth.isHr ? HR_SECTIONS : []),
+  ACCOUNT_SECTION,
+])
+
 const activeSection = computed(
-  () => SECTIONS.find((section) => section.key === activeKey.value) ?? SECTIONS[0]
+  () => sections.value.find((section) => section.key === activeKey.value) ?? sections.value[0]
 )
 
 const statusMessage = computed(() => auth.user?.statusMessage || NOT_SET_LABEL)
@@ -70,7 +86,7 @@ const onLogout = async () => {
 
       <ul class="menu">
         <li
-          v-for="section in SECTIONS"
+          v-for="section in sections"
           :key="section.key"
         >
           <button
@@ -145,6 +161,11 @@ const onLogout = async () => {
         <!-- 定型文（P2-1 拡張：コマンドの追加・削除・編集） -->
         <template v-else-if="activeKey === 'snippets'">
           <SnippetSettingsPanel />
+        </template>
+
+        <!-- 会社情報（P2-10）。学生の /chat の右パネルに出る内容 -->
+        <template v-else-if="activeKey === 'company'">
+          <CompanySettingsPanel />
         </template>
 
         <!-- アカウント -->
