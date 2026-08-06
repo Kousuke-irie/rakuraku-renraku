@@ -5,6 +5,7 @@ import LoginView from "../views/LoginView.vue"
 import RegisterView from "../views/RegisterView.vue"
 import HomeView from "../views/HomeView.vue"
 import InboxView from "../views/InboxView.vue"
+import StudentsView from "../views/StudentsView.vue"
 import ChatView from "../views/ChatView.vue"
 import NotificationsView from "../views/NotificationsView.vue"
 import ProfileSettingsView from "../views/ProfileSettingsView.vue"
@@ -53,6 +54,14 @@ const routes = [
     name: "inbox-room",
     component: InboxView,
     props: true,
+    meta: { requiresAuth: true, roles: [ROLE.HR, ROLE.ADMIN] },
+  },
+  {
+    // S-08 全学生。担当外・未配属も含めた全学生を担当人事ごとの列で俯瞰する（frontend.md §5-3）。
+    // 受信箱・ホームが担当制で自分の担当しか出さない（#28）ぶんの拾い上げを担う。
+    path: "/students",
+    name: "students",
+    component: StudentsView,
     meta: { requiresAuth: true, roles: [ROLE.HR, ROLE.ADMIN] },
   },
   {

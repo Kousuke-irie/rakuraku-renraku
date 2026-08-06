@@ -29,8 +29,12 @@ const CHIPS = Object.freeze([
 const props = defineProps({
   /** roomsStore.rooms の要素 */
   room: { type: Object, required: true },
-  /** 縦割りに使っている軸（BOARD_GROUP_BY のいずれか）。この軸のチップは出さない */
-  groupBy: { type: String, required: true },
+  /**
+   * 縦割りに使っている軸（BOARD_GROUP_BY のいずれか）。この軸のチップは出さない。
+   * 空文字（既定）は「軸がステータスではない」場合。全学生（S-08）は担当人事で
+   * 縦割りするため、対応・選考・緊急度の3つとも出す。
+   */
+  groupBy: { type: String, default: "" },
 })
 
 // #region computed

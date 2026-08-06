@@ -23,6 +23,13 @@ const PATHS = Object.freeze({
     "M3.5 13.5 L6 5.5 h12 l2.5 8",
     "M3.5 13.5 h4.5 l1.5 2.5 h5 l1.5-2.5 h4.5 v4 a2 2 0 0 1-2 2 H5.5 a2 2 0 0 1-2-2 z",
   ],
+  // 2人の人型（S-08 全学生）。受信箱（1件ずつ）に対して「人の集まり」を表す
+  students: [
+    "M12.25 8 a3.25 3.25 0 1 1-6.5 0 a3.25 3.25 0 0 1 6.5 0",
+    "M3.5 19.5 v-0.75 A4.25 4.25 0 0 1 7.75 14.5 h2.5 A4.25 4.25 0 0 1 14.5 18.75 v0.75",
+    "M15.5 5.4 a3 3 0 0 1 0 5.2",
+    "M16.75 14.6 A4.25 4.25 0 0 1 20.5 18.75 v0.75",
+  ],
   // 吹き出し（学生のホーム）
   chat: [
     "M4 7 A2.5 2.5 0 0 1 6.5 4.5 h11 A2.5 2.5 0 0 1 20 7 v6 a2.5 2.5 0 0 1-2.5 2.5 H10 L6 19.5 V15.5 A2.5 2.5 0 0 1 4 13 z",
@@ -53,11 +60,12 @@ const PATHS = Object.freeze({
 // defineProps の既定値・validator はコンパイル時に巻き上げられるため、
 // setup スコープの PATHS を参照できない。ここだけ名前をリテラルで書く。
 const props = defineProps({
-  /** "home" | "inbox" | "chat" | "bell" | "settings" | "logout" */
+  /** "home" | "inbox" | "students" | "chat" | "bell" | "settings" | "logout" */
   name: {
     type: String,
     required: true,
-    validator: (value) => ["home", "inbox", "chat", "bell", "settings", "logout"].includes(value),
+    validator: (value) =>
+      ["home", "inbox", "students", "chat", "bell", "settings", "logout"].includes(value),
   },
 })
 

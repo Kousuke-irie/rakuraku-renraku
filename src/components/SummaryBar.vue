@@ -1,13 +1,14 @@
-<script setup>
+<script>
 // 未対応サマリー（P1-8・frontend.md §5-2）
 //
 // 「要返信 5件・緊急 3件・24h超 2件」を常時表示し、**各項目クリックでフィルタを適用**する。
-// ホーム（S-07）と受信箱（S-03/S-04）の両方で使う。行の見た目と同様、
+// ホーム（S-07）・受信箱（S-03/S-04）・全学生（S-08）で使う。行の見た目と同様、
 // サマリーの見た目とふるまいはこのコンポーネントが単独で持つ。
 //
-// ★件数は**自分の担当ルーム**（roomsStore.myRooms）から数える。
-//   受信箱は担当制で他人の担当は一覧に出ないため（#28）、rooms 全件を数えると
-//   件数と実際に見えている行数が食い違う。
+// ★数える範囲は画面に出ているルームと一致させる（scope プロップ）。
+//   受信箱・ホームは担当制で他人の担当が出ない（#28）ので**自分の担当ルーム**
+//   （roomsStore.myRooms）を、全学生は担当外・未配属も出るので**全ルーム**を数える。
+//   ここがずれると件数と実際に見えている件数が食い違う。
 //
 // ★件数の情報源について
 //   絞り込み前の**全件**を数える。絞り込むたびに未対応件数が減って見えると、
@@ -35,6 +36,36 @@ import {
 } from "../constants/index.js"
 import { useRoomsStore } from "../stores/rooms.js"
 
+/**
+ * 件数を数える範囲。利用側からも参照できるよう export する。
+ * ※ defineProps は `<script setup>` 内の変数を参照できないため、
+ *   props の既定値に使う定数はこの通常 `<script>` ブロック（モジュールスコープ）に置く。
+ */
+export const SUMMARY_SCOPE = Object.freeze({
+  /** 自分の担当ルームだけ（受信箱・ホーム） */
+  MINE: "mine",
+  /** 担当外・未配属も含む全ルーム（全学生・S-08） */
+  ALL: "all",
+})
+
+const SCOPES = Object.values(SUMMARY_SCOPE)
+
+const ARIA_LABEL = Object.freeze({
+  [SUMMARY_SCOPE.MINE]: "未対応サマリー",
+  [SUMMARY_SCOPE.ALL]: "全学生の未対応サマリー",
+})
+</script>
+
+<script setup>
+const props = defineProps({
+  /** SUMMARY_SCOPE のいずれか。画面に出ているルームの範囲と揃えること */
+  scope: {
+    type: String,
+    default: SUMMARY_SCOPE.MINE,
+    validator: (value) => SCOPES.includes(value),
+  },
+})
+
 // #region global state
 const rooms = useRoomsStore()
 // #endregion
@@ -50,6 +81,13 @@ const isOnly = (values, value) => values.length === 1 && values[0] === value
 // #endregion
 
 // #region computed
+/** 数える対象のルーム。絞り込み前の全件を見る（上の「件数の情報源について」を参照） */
+const targetRooms = computed(() =>
+  props.scope === SUMMARY_SCOPE.ALL ? rooms.rooms : rooms.myRooms
+)
+
+const ariaLabel = computed(() => ARIA_LABEL[props.scope] ?? ARIA_LABEL[SUMMARY_SCOPE.MINE])
+
 /**
  * 各項目は「ラベル・件数・現在その条件で絞っているか・押したときの絞り込み条件」を持つ。
  * 条件を1つ増やすときはここに1行足す。
@@ -61,15 +99,16 @@ const items = computed(() => {
     {
       key: "urgent",
       label: URGENCY_META[URGENCY.HIGH].label,
-      count: rooms.myRooms.filter((room) => room.urgency === URGENCY.HIGH).length,
+      count: targetRooms.value.filter((room) => room.urgency === URGENCY.HIGH).length,
       active: isOnly(urgency, URGENCY.HIGH),
       patchOf: (active) => ({ urgency: active ? [] : [URGENCY.HIGH] }),
     },
     {
       key: "needsReply",
       label: HANDLING_STATUS_META[HANDLING_STATUS.NEEDS_REPLY].label,
-      count: rooms.myRooms.filter((room) => room.handlingStatus === HANDLING_STATUS.NEEDS_REPLY)
-        .length,
+      count: targetRooms.value.filter(
+        (room) => room.handlingStatus === HANDLING_STATUS.NEEDS_REPLY
+      ).length,
       active: isOnly(handlingStatus, HANDLING_STATUS.NEEDS_REPLY),
       patchOf: (active) => ({
         handlingStatus: active ? [] : [HANDLING_STATUS.NEEDS_REPLY],
@@ -78,7 +117,7 @@ const items = computed(() => {
     {
       key: "overdue24h",
       label: `${SLA_ALERT_HOURS}h超`,
-      count: rooms.myRooms.filter(isOverdue).length,
+      count: targetRooms.value.filter(isOverdue).length,
       active: overdueOnly,
       patchOf: (active) => ({ overdueOnly: !active }),
     },
@@ -95,7 +134,7 @@ const onToggle = (item) => rooms.applyFilters(item.patchOf(item.active))
 <template>
   <ul
     class="summary"
-    aria-label="未対応サマリー"
+    :aria-label="ariaLabel"
   >
     <li
       v-for="item in items"
