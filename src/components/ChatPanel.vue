@@ -9,10 +9,10 @@
 //   入力欄のキー操作をストアの action に取り次ぐだけ
 // - 変数展開（P2-2）のロジックは utils/snippetRenderer.js に集約する（business-logic.md §5）
 // - socket の購読は composables/useSocket.js に集約されている（CLAUDE.md §6-12）
-import { computed, watch } from "vue"
+import { computed, ref, watch } from "vue"
 import { messagesApi } from "../api/index.js"
 import { useComposerHeight } from "../composables/useComposerHeight.js"
-import { SELECTION_STATUS_META } from "../constants/index.js"
+import { COMPLIANCE_AI_STATUS, SELECTION_STATUS_META } from "../constants/index.js"
 import { useAuthStore } from "../stores/auth.js"
 import { useMessagesStore } from "../stores/messages.js"
 import { useRoomsStore } from "../stores/rooms.js"
@@ -82,7 +82,10 @@ const draft = computed({
   set: (value) => messages.setDraft(roomId.value, value),
 })
 
-const canSend = computed(() => draft.value.trim().length > 0)
+/** 送信前チェック（P4-2b）の応答待ち。AI 判定を挟むので最大3秒かかる */
+const checking = ref(false)
+
+const canSend = computed(() => draft.value.trim().length > 0 && !checking.value)
 
 /** 展開した定型文に未設定の変数が残っているか（P2-2。送信前に気づけるよう赤字で警告する） */
 const hasUnsetSnippetVariable = computed(() => hasUnsetVariable(draft.value))
@@ -196,14 +199,21 @@ const onSubmit = async () => {
 
   const body = draft.value
 
+  // AI 判定を待つ間はボタンを「確認中…」にする。押しっぱなしに見えないように
+  checking.value = true
   try {
     const { data } = await messagesApi.check(roomId.value, body)
+    ui.setComplianceAiStatus(data.ai?.status ?? COMPLIANCE_AI_STATUS.ERROR)
+
     if (data.results.length > 0) {
-      ui.openComplianceDialog(data.results)
+      ui.openComplianceDialog(data.results, data.ai?.status)
       return
     }
   } catch {
     // 握りつぶす。ここで送信を止めるとチェックの障害が業務を止めてしまう
+    ui.setComplianceAiStatus(COMPLIANCE_AI_STATUS.ERROR)
+  } finally {
+    checking.value = false
   }
 
   await messages.sendMessage(roomId.value, body)
@@ -314,7 +324,7 @@ const onSendAnyway = async (acknowledgedCodes) => {
             class="button-primary"
             :disabled="!canSend"
           >
-            送信
+            {{ checking ? "確認中…" : "送信" }}
           </button>
         </div>
       </div>

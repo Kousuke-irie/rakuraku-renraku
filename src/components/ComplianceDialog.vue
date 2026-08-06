@@ -14,8 +14,12 @@ import { computed, nextTick, ref, watch } from "vue"
 import {
   ALERT_SEVERITY,
   ALERT_SEVERITY_META,
+  COMPLIANCE_AI_STATUS,
+  COMPLIANCE_AI_STATUS_META,
   COMPLIANCE_CATEGORY_META,
   COMPLIANCE_DISCLAIMER,
+  COMPLIANCE_SOURCE,
+  COMPLIANCE_SOURCE_META,
 } from "../constants/index.js"
 import { useUiStore } from "../stores/ui.js"
 
@@ -44,6 +48,14 @@ const title = computed(() =>
 
 const categoryLabel = (category) => COMPLIANCE_CATEGORY_META[category]?.label ?? category
 const severityLabel = (severity) => ALERT_SEVERITY_META[severity]?.label ?? severity
+const sourceLabel = (source) => COMPLIANCE_SOURCE_META[source]?.label ?? source
+
+/** LLM 検証が効かなかったときだけ、その旨を明示する（P4-2b） */
+const aiUnverified = computed(() => ui.complianceAiStatus !== COMPLIANCE_AI_STATUS.OK)
+
+const aiStatusLabel = computed(
+  () => COMPLIANCE_AI_STATUS_META[ui.complianceAiStatus]?.label ?? ""
+)
 // #endregion
 
 // #region lifecycle
@@ -117,6 +129,11 @@ const onBackdropClick = (event) => {
               class="finding__severity"
               :class="`finding__severity--${result.severity}`"
             >{{ severityLabel(result.severity) }}</span>
+            <!-- 辞書が拾ったのか AI が拾ったのかを明示する（P4-2b） -->
+            <span
+              v-if="result.source === COMPLIANCE_SOURCE.AI"
+              class="finding__source"
+            >{{ sourceLabel(result.source) }}</span>
           </p>
           <!-- 該当箇所。v-html は使わずテキスト補間で出す（CLAUDE.md §6-10） -->
           <p class="finding__matched">
@@ -127,6 +144,15 @@ const onBackdropClick = (event) => {
           </p>
         </li>
       </ul>
+
+      <!-- AI が効かなかったときは黙って辞書だけの結果を見せない（P4-2b） -->
+      <p
+        v-if="aiUnverified"
+        class="dialog__ai-status"
+        role="status"
+      >
+        {{ aiStatusLabel }}。辞書による判定のみを表示しています。
+      </p>
 
       <!-- 断定を避ける。法的判断の代行に見せないための免責（monitoring.md §4） -->
       <p class="dialog__disclaimer">
@@ -246,6 +272,25 @@ const onBackdropClick = (event) => {
   color: var(--color-ink-mute);
   font-size: 12px;
   line-height: 1.7;
+}
+
+.finding__source {
+  padding: 1px var(--space-sm);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-pill);
+  background-color: var(--color-canvas);
+  color: var(--color-ink-mute);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.dialog__ai-status {
+  margin: 0;
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md);
+  background-color: var(--color-canvas-cream);
+  color: var(--color-ink);
+  font-size: 12px;
 }
 
 .dialog__disclaimer {

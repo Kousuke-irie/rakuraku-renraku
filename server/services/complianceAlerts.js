@@ -8,6 +8,7 @@ import {
   COMPLIANCE_DISCLAIMER,
 } from '../../shared/constants.js';
 import { checkCompliance, isCheckedRole } from './complianceChecker.js';
+import { checkComplianceWithAi } from './complianceAi.js';
 
 /** detail に付す送信経路の注記。ダッシュボード（P4-4）の「無視して送信」の集計元になる。 */
 export const ACK_NOTE = Object.freeze({
@@ -78,6 +79,15 @@ export function recordComplianceAlerts(
   const results = checkCompliance(db, body);
   if (results.length === 0) return [];
 
+  insertAlerts(db, results, { roomId, messageId, actorUserId, acknowledgedCodes });
+  return results;
+}
+
+/**
+ * 検知結果の配列を alerts に書き込む（辞書・AI 共通）。
+ * 重複は idx_alerts_compliance_unique が弾く。
+ */
+function insertAlerts(db, results, { roomId, messageId, actorUserId, acknowledgedCodes }) {
   const createdAt = new Date().toISOString();
   const insert = db.prepare(INSERT_SQL);
 
@@ -97,7 +107,37 @@ export function recordComplianceAlerts(
   });
 
   run();
-  return results;
+}
+
+/**
+ * LLM の指摘を非同期で記録する（P4-2b）。
+ *
+ * 辞書判定と違い外部通信が入るので、**保存トランザクションの外**で行う
+ * （business-logic.md §7-5）。送信そのものは既に完了しているため、
+ * ここが失敗してもメッセージは正常に送られている。
+ *
+ * 送信前チェック（P4-3）で同じ本文を既に判定していれば complianceAi の
+ * キャッシュに乗るので、Gemini への2回目の呼び出しは発生しない。
+ */
+export function queueAiComplianceRecord(
+  db,
+  { roomId, messageId, actorUserId, senderRole, body, acknowledgedCodes = null },
+) {
+  if (!isCheckedRole(senderRole)) return;
+
+  void (async () => {
+    const ai = await checkComplianceWithAi(body);
+    if (ai.results.length === 0) return;
+
+    // 辞書が既に拾ったカテゴリは記録済みなので重ねない
+    const covered = new Set(checkCompliance(db, body).map((result) => result.category));
+    const fresh = ai.results.filter((result) => !covered.has(result.category));
+    if (fresh.length === 0) return;
+
+    insertAlerts(db, fresh, { roomId, messageId, actorUserId, acknowledgedCodes });
+  })().catch((error) => {
+    console.warn(`server: AI compliance record failed (type=${error?.name ?? 'Error'})`);
+  });
 }
 
 export { COMPLIANCE_DISCLAIMER };

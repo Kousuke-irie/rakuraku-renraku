@@ -9,9 +9,14 @@ import { calculateRoomUrgency } from '../services/urgencyCalculator.js';
 import { emitMessageNew, emitSummaryUpdated } from '../services/realtime.js';
 import { applyStatusTransition } from '../services/statusTransition.js';
 import { queueStudentMessageAnalysis } from '../services/aiPriority.js';
-import { normalizeAcknowledgedCodes, recordComplianceAlerts } from '../services/complianceAlerts.js';
+import {
+  normalizeAcknowledgedCodes,
+  queueAiComplianceRecord,
+  recordComplianceAlerts,
+} from '../services/complianceAlerts.js';
 import { checkCompliance, isCheckedRole } from '../services/complianceChecker.js';
-import { MESSAGE_TYPE, ROLE } from '../../shared/constants.js';
+import { checkComplianceWithAi, mergeFindings } from '../services/complianceAi.js';
+import { COMPLIANCE_AI_STATUS, MESSAGE_TYPE, ROLE } from '../../shared/constants.js';
 
 const router = Router();
 
@@ -84,24 +89,38 @@ router.get('/rooms/:id/messages', requireAuth, (req, res) => {
  * このAPIはあくまで人事への親切であり、監視の本体ではない。
  * クライアントが呼ばずに送信しても insertMessage 側で検知・記録される。
  */
-router.post('/messages/check', requireAuth, (req, res) => {
-  const roomId = Number(req.body?.roomId);
-  const { body } = req.body ?? {};
+router.post('/messages/check', requireAuth, async (req, res, next) => {
+  try {
+    const roomId = Number(req.body?.roomId);
+    const { body } = req.body ?? {};
 
-  if (!Number.isInteger(roomId) || roomId <= 0) {
-    return res.status(400).json({ error: 'invalid_request', message: 'roomId が必要です' });
+    if (!Number.isInteger(roomId) || roomId <= 0) {
+      return res.status(400).json({ error: 'invalid_request', message: 'roomId が必要です' });
+    }
+    if (typeof body !== 'string') {
+      return res.status(400).json({ error: 'invalid_request', message: '本文が必要です' });
+    }
+
+    // 他人のルームの本文を検査させない（CLAUDE.md §6-6）
+    assertRoomMember(db, req.user.id, roomId);
+
+    // 学生の発言は検査対象外。学生が呼んでも常に空を返す
+    if (!isCheckedRole(req.user.role)) {
+      return res.json({ results: [], ai: { status: COMPLIANCE_AI_STATUS.OK } });
+    }
+
+    // 辞書は必ず動く。AI は繋がるときだけ上乗せする（P4-2b）。
+    // AI が落ちていても status を返すだけで、辞書の結果はそのまま生きる。
+    const dictionaryResults = checkCompliance(db, body);
+    const ai = await checkComplianceWithAi(body);
+
+    res.json({
+      results: mergeFindings(dictionaryResults, ai.results),
+      ai: { status: ai.status },
+    });
+  } catch (error) {
+    next(error);
   }
-  if (typeof body !== 'string') {
-    return res.status(400).json({ error: 'invalid_request', message: '本文が必要です' });
-  }
-
-  // 他人のルームの本文を検査させない（CLAUDE.md §6-6）
-  assertRoomMember(db, req.user.id, roomId);
-
-  // 学生の発言は検査対象外。学生が呼んでも常に空を返す
-  if (!isCheckedRole(req.user.role)) return res.json({ results: [] });
-
-  res.json({ results: checkCompliance(db, body) });
 });
 
 router.post('/rooms/:id/messages', requireAuth, async (req, res, next) => {
@@ -137,6 +156,15 @@ router.post('/rooms/:id/messages', requireAuth, async (req, res, next) => {
     await emitMessageNew(io, db, message);
     emitSummaryUpdated(io, db);
     if (req.user.role === ROLE.STUDENT) queueStudentMessageAnalysis(db, io, message);
+    // 辞書分は insertMessage 内で記録済み。AI 分だけ保存トランザクションの外で追う
+    queueAiComplianceRecord(db, {
+      roomId,
+      messageId: message.id,
+      actorUserId: req.user.id,
+      senderRole: req.user.role,
+      body,
+      acknowledgedCodes: normalizeAcknowledgedCodes(acknowledgedCodes),
+    });
 
     res.status(201).json({ message });
   } catch (error) {

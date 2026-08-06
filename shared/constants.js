@@ -394,6 +394,40 @@ export const COMPLIANCE_CATEGORY_VALUES = Object.values(COMPLIANCE_CATEGORY);
  */
 export const COMPLIANCE_DISCLAIMER = '参考情報です。最終判断は担当者が行ってください。';
 
+/** 検知の出どころ（P4-2b）。ダイアログでどちらが拾ったか示す */
+export const COMPLIANCE_SOURCE = Object.freeze({
+  DICTIONARY: 'dictionary',
+  AI: 'ai',
+});
+
+export const COMPLIANCE_SOURCE_META = Object.freeze({
+  [COMPLIANCE_SOURCE.DICTIONARY]: { label: '辞書' },
+  [COMPLIANCE_SOURCE.AI]: { label: 'AI' },
+});
+
+export const COMPLIANCE_SOURCE_VALUES = Object.values(COMPLIANCE_SOURCE);
+
+/**
+ * LLM による検証の状態（P4-2b）。
+ * 辞書判定は常に動くので、これは「AI の上乗せ分が効いたか」だけを表す。
+ */
+export const COMPLIANCE_AI_STATUS = Object.freeze({
+  /** 検証済み */
+  OK: 'ok',
+  /** タイムアウト・APIエラー・レスポンス不正 */
+  ERROR: 'error',
+  /** GEMINI_API_KEY 未設定。AI 機能自体が使えない */
+  UNAVAILABLE: 'unavailable',
+});
+
+export const COMPLIANCE_AI_STATUS_META = Object.freeze({
+  [COMPLIANCE_AI_STATUS.OK]: { label: 'AIによる検証済み' },
+  [COMPLIANCE_AI_STATUS.ERROR]: { label: 'AIによる検証はできていません' },
+  [COMPLIANCE_AI_STATUS.UNAVAILABLE]: { label: 'AIによる検証はできていません' },
+});
+
+export const COMPLIANCE_AI_STATUS_VALUES = Object.values(COMPLIANCE_AI_STATUS);
+
 // ---------------------------------------------------------------------------
 // Socket.IO イベント名（api.md §3）
 // client / server の双方がここから import する。文字列を直書きしないこと。

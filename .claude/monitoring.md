@@ -344,11 +344,39 @@ admin1 自身が担当する学生でやると「自分から自分へ」の絵�
 
 | ファイル | 責務 |
 | --- | --- |
-| `services/complianceChecker.js` | 検知のみ。DB は辞書の読み出しだけ。`checkCompliance` / `isExcluded` / `hasBlocking` / `extractMatchContext` |
-| `services/complianceAlerts.js` | 検知結果を `alerts` に記録。`recordComplianceAlerts` / `resolveAckNote` |
+| `services/textNormalizer.js` | 照合前の正規化と位置の対応表。`normalizeForMatch` / `toOriginalRange` |
+| `services/complianceChecker.js` | 辞書による検知。`checkCompliance` / `hasBlocking` / `extractContextAt` |
+| `services/complianceAi.js` | LLM による検知。`checkComplianceWithAi` / `mergeFindings` |
+| `services/complianceAlerts.js` | 検知結果を `alerts` に記録。`recordComplianceAlerts` / `queueAiComplianceRecord` |
 
-記録は `routes/messages.js` の `insertMessage` から呼ぶ。REST と socket の共通経路なので、
-どちらから送っても記録される。保存トランザクション内で完結してよい（外部通信が無いため）。
+辞書分の記録は `insertMessage` から呼ぶ（REST・socket の共通経路。外部通信が無いので
+保存トランザクション内で完結してよい）。**AI 分は `queueAiComplianceRecord` で
+トランザクションの外**（business-logic.md §7-5）。
+
+### 照合の前処理（P4-2b）★
+
+キーワードをそのまま `includes` すると **空白1つで回避できる**（「本 籍はどちらですか」）。
+照合は必ず `normalizeForMatch` を通した文字列に対して行う。
+
+1. NFKC 正規化（全角英数→半角、半角カナ→全角カナ）
+2. 小文字化
+3. 空白・全角空白・ゼロ幅文字の除去
+
+**位置は一貫して UTF-16 コードユニット単位で扱うこと。** `RegExp.exec().index` も
+`String.indexOf` もコードユニット基準なので、対応表をコードポイント単位にすると
+絵文字を含む本文で該当箇所がずれる（実装時に踏んだ）。
+
+半角カナの濁点は `ｼ` + `ﾞ` の2コードポイントなので、**1文字ずつ NFKC すると合成されない**。
+`normalizeForMatch` は次の文字が `ﾞ` / `ﾟ` なら2文字まとめて正規化する。
+
+### キーワードは正規表現（P4-2b）★
+
+`compliance_rules.keyword` と `exclude_keyword` は**正規表現**として解釈する。
+
+- 照合対象は正規化済み本文なので、**パターンに空白を書かないこと**（絶対に一致しない）
+- 不正な正規表現は**リテラルとして**扱う。辞書1行の typo で検査全体を落とさないため
+- 「尋ねている文」だけを拾うため、多くのルールで述語（何ですか・教えて 等）を
+  パターンに含める。単語の存在だけで判定すると「弊社は労働組合と協議して…」まで block になる
 
 ### 辞書テーブル（`schema.sql`）
 
@@ -435,15 +463,45 @@ checkCompliance(db, body): { code, category, severity, message, matched }[]
 3. UI に免責を添える：**「参考情報です。最終判断は担当者が行ってください」**
    「就職差別を検知しました」と断定すると法的判断の代行に見える
 
-### AI 併用（任意・後回し可）
+### LLM 判定（P4-2b・実装済み）
 
-**ブロック判定には使わない。** `aiPriorityClassifier.js` は3秒タイムアウトであり、送信ボタンが3秒固まる。
+実装：`server/services/complianceAi.js`
 
-使うなら送信**後**の非同期パスに限る。`queueStudentMessageAnalysis`（`aiPriority.js`）と同じ形で、
-辞書が拾えなかった婉曲表現を `severity='info'` で `alerts` に積む。
+辞書は部分一致なので、**言い換え・迂回表現を原理的に拾えない**。そこを埋める層。
 
-- タイムアウト3秒、失敗しても握りつぶす（`business-logic.md` §7 のフォールバック要件を継承）
-- `GEMINI_API_KEY` 未設定なら呼ばない。**辞書ベースだけで全受入条件を満たす**
+> **汎用のモデレーションAPI（Perspective API / OpenAI Moderation / Azure Content Safety）は使えない。**
+> あれらは toxicity / hate / harassment という「攻撃性」の軸で測る。
+> 「ご本籍はどちらですか」は丁寧で攻撃性ゼロなのでスコアが立たない。
+> 測る軸が違うので、**厚労省の基準をこちらから定義してプロンプトで渡す**しかない。
+> （なお Perspective API は 2026年12月に終了予定）
+
+#### 送信前チェックでも待つ
+
+当初は「ブロック判定に AI を挟まない」としていたが、**チームの判断で同期に変更した**。
+接続できるときは AI の結果を待ってから送信可能にする。
+
+- 待っている間は送信ボタンを `確認中…` にして押下不可にする（固まって見せない）
+- タイムアウト（3秒）・APIエラー → `status='error'`。**辞書の結果だけで先へ進める**
+- `GEMINI_API_KEY` 未設定 → `status='unavailable'`。API を呼ばない
+- `ok` 以外のときはダイアログに
+  **「AIによる検証はできていません。辞書による判定のみを表示しています。」**を出す
+
+#### 誤検知を抑える仕掛け
+
+AI 単独の指摘で業務を止める影響は大きいので、出力を絞る。
+
+| 仕掛け | 内容 |
+| --- | --- |
+| 引用の実在確認 | `quote` が入力本文に含まれない指摘は捨てる（モデルの作文を表示しない） |
+| enum 検証 | category / severity が定義外なら捨てる |
+| 件数上限 | 最大3件。多いとダイアログが読めない |
+| 重複排除 | 辞書が既に拾ったカテゴリは重ねない（`mergeFindings`） |
+| プロンプト | 「確信が持てなければ含めない」「見逃しより誤検知の方が有害」と明示 |
+
+#### キャッシュ
+
+送信前チェックと送信後の記録で同じ本文を2回投げるため、本文をキーに60秒だけ
+プロセス内キャッシュする。**Gemini への呼び出しは1通あたり1回**に収まる。
 
 ### ログ
 
@@ -738,7 +796,7 @@ SLA_ESCALATE_HOURS=48      # 2N：上長へエスカレーション
 | --- | --- | --- |
 | 1 | 監視イベントは `alerts` 1テーブルに集約する | 分けるとダッシュボードが4種類の集計を持つ |
 | 2 | 冪等性は DB の UNIQUE 制約で担保する | アプリ側の状態管理は必ず壊れる |
-| 3 | 送信ブロックの判定に外部 API を使わない | 3秒のタイムアウトが送信ボタンを固める |
+| 3 | ~~送信ブロックの判定に外部 API を使わない~~ → **接続できるときは AI の結果を待つ**（P4-2b で変更）。待機中は送信ボタンを `確認中…` にする。落ちているときは辞書だけで進める | 検知漏れより待ち時間を許容するとチームで判断した |
 | 4 | `block` でも物理的に送信を禁止しない | 業務を止めない。無視した事実の記録こそ監視価値 |
 | 5 | 選考ステータス10段階を10色にしない | 8色を超える色分けは色覚多様性の検証を必ず落ちる |
 | 6 | 対応ステータス5色をチャートに使わない | 赤（要返信）と橙（対応中）がP型・D型色覚で区別できない |
@@ -751,6 +809,9 @@ SLA_ESCALATE_HOURS=48      # 2N：上長へエスカレーション
 
 | 案 | 不採用の理由 |
 | --- | --- |
+| Perspective API / OpenAI Moderation / Azure Content Safety を使う | 測る軸が「攻撃性」。丁寧な差別質問はスコアが立たない。Perspective は2026年12月終了 |
+| 日本語の差別語リスト（inappropriate-words-ja 等）を取り込む | 中身は放送禁止用語系の**語彙**辞書。「本籍を尋ねる」という**行為**は検出できない |
+| 差別系ルールに「疑問形であること」を必須条件として足す | 検証に使ったテストケースに合わせただけで、根拠が弱い。正規表現に述語を含める形に置き換えた |
 | SLA 通知を専用の `notifications` テーブルにする | ダッシュボードでコンプライアンス警告と合算できない |
 | エスカレーション先を `users.manager_user_id` で持つ | 組織構造の管理が要る。`role='admin'` で足りる |
 | 送信ブロックを Gemini の判定だけで行う | APIキー未設定時に機能が消える（`business-logic.md` §7 違反） |

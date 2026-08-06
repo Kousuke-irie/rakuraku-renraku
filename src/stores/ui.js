@@ -1,6 +1,11 @@
 import { defineStore } from 'pinia'
 import { companyApi, snippetsApi, toErrorMessage } from '../api/index.js'
-import { DEFAULT_BOARD_GROUP_BY, MEMO_SCOPE, MEMO_SCOPE_VALUES } from '../constants/index.js'
+import {
+  COMPLIANCE_AI_STATUS,
+  DEFAULT_BOARD_GROUP_BY,
+  MEMO_SCOPE,
+  MEMO_SCOPE_VALUES,
+} from '../constants/index.js'
 
 /** トーストの連番。Date.now() だと同時 push で衝突する */
 let toastSeq = 0
@@ -109,6 +114,11 @@ export const useUiStore = defineStore('ui', {
     complianceResults: [],
     /** 警告ダイアログを表示中か。results と分けて持つと閉じるアニメ中に中身が消えない */
     complianceDialogOpen: false,
+    /**
+     * @type {string} 直近のチェックで LLM 検証が効いたか（COMPLIANCE_AI_STATUS）。
+     * ok 以外なら「AIによる検証はできていません」と明示する（P4-2b）。
+     */
+    complianceAiStatus: COMPLIANCE_AI_STATUS.OK,
 
     /** @type {'connected'|'connecting'|'disconnected'} socket の接続状態バナー用 */
     connectionState: 'connecting',
@@ -322,10 +332,12 @@ export const useUiStore = defineStore('ui', {
     /**
      * 送信前チェックで検知したときにダイアログを開く（P4-3）。
      * @param {object[]} results POST /api/messages/check の結果（1件以上）
+     * @param {string} aiStatus COMPLIANCE_AI_STATUS のいずれか
      */
-    openComplianceDialog(results) {
+    openComplianceDialog(results, aiStatus = COMPLIANCE_AI_STATUS.OK) {
       if (!Array.isArray(results) || results.length === 0) return
       this.complianceResults = results
+      this.complianceAiStatus = aiStatus
       this.complianceDialogOpen = true
     },
 
@@ -333,6 +345,11 @@ export const useUiStore = defineStore('ui', {
     closeComplianceDialog() {
       this.complianceDialogOpen = false
       this.complianceResults = []
+    },
+
+    /** @param {string} status 検知が無かったときも AI の状態だけは記録しておく */
+    setComplianceAiStatus(status) {
+      this.complianceAiStatus = status
     },
 
     /** @param {'connected'|'connecting'|'disconnected'} state */
@@ -364,6 +381,7 @@ export const useUiStore = defineStore('ui', {
       this.companyLoaded = false
       this.complianceResults = []
       this.complianceDialogOpen = false
+      this.complianceAiStatus = COMPLIANCE_AI_STATUS.OK
       this.connectionState = 'connecting'
       this.toasts = []
     },

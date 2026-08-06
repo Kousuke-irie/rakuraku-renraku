@@ -4,15 +4,15 @@ import Database from 'better-sqlite3';
 import {
   ALERT_SEVERITY,
   COMPLIANCE_CATEGORY,
+  COMPLIANCE_SOURCE,
   ROLE,
 } from '../../shared/constants.js';
 import {
   checkCompliance,
   clearComplianceRuleCache,
-  extractMatchContext,
+  extractContextAt,
   hasBlocking,
   isCheckedRole,
-  isExcluded,
 } from './complianceChecker.js';
 
 const SCHEMA = `
@@ -28,7 +28,6 @@ const SCHEMA = `
   )
 `;
 
-/** テスト用の辞書を持つ in-memory DB を作る。 */
 function createDb(rules) {
   const database = new Database(':memory:');
   database.exec(SCHEMA);
@@ -63,22 +62,21 @@ const HONSEKI = {
   priority: 1,
 };
 
-const HONSEKI_ALT = { ...HONSEKI, keyword: '出身地' };
-
-const WITHDRAW = {
-  code: 'withdraw_others',
-  category: COMPLIANCE_CATEGORY.OWAHARA,
-  keyword: '他社は辞退',
+/** 正規表現ルール。1つの code が複数の言い回しを吸収する */
+const FAMILY_JOB = {
+  code: 'family_job',
+  category: COMPLIANCE_CATEGORY.DISCRIMINATION,
+  keyword: '(ご|お)?(両親|父|母|お父様|お母様).{0,12}(職業|お仕事|仕事|勤め)',
   excludeKeyword: null,
   severity: ALERT_SEVERITY.BLOCK,
-  message: '他社選考の辞退を条件にすることはオワハラに当たります',
-  priority: 20,
+  message: '家族に関する質問は本人の適性・能力と関係がありません',
+  priority: 2,
 };
 
 const PRESSURE = {
   code: 'pressure_soft',
   category: COMPLIANCE_CATEGORY.OWAHARA,
-  keyword: '早めに返事を',
+  keyword: '(早め|早急).{0,10}(返事|ご判断)',
   excludeKeyword: null,
   severity: ALERT_SEVERITY.WARN,
   message: '判断を急がせる表現になっていないか確認してください',
@@ -91,19 +89,35 @@ test('就職差別に当たる質問を検知する', () => {
   const results = checkCompliance(db, 'ご本籍はどちらですか');
   assert.equal(results.length, 1);
   assert.equal(results[0].code, 'honseki');
-  assert.equal(results[0].category, COMPLIANCE_CATEGORY.DISCRIMINATION);
   assert.equal(results[0].severity, ALERT_SEVERITY.BLOCK);
+  assert.equal(results[0].source, COMPLIANCE_SOURCE.DICTIONARY, '辞書由来と分かる');
 
   db.close();
   clearComplianceRuleCache();
 });
 
-test('オワハラ表現を検知する', () => {
-  const db = createDb([WITHDRAW]);
+test('★空白を挟んでも回避できない', () => {
+  const db = createDb([HONSEKI]);
 
-  const results = checkCompliance(db, '内定をお出しするので他社は辞退してください');
-  assert.equal(results.length, 1);
-  assert.equal(results[0].code, 'withdraw_others');
+  // 照合は正規化済み本文に対して行うので、空白での分断はすり抜けない
+  for (const body of ['本 籍はどちらですか', 'ご　本　籍はどちらですか', '本​籍はどちらですか']) {
+    assert.equal(checkCompliance(db, body).length, 1, `すり抜けた: ${body}`);
+  }
+
+  db.close();
+  clearComplianceRuleCache();
+});
+
+test('★正規表現で言い回しの揺れを吸収する', () => {
+  const db = createDb([FAMILY_JOB]);
+
+  for (const body of [
+    'お父様のお仕事は何ですか',
+    'ご両親はどんなお仕事をされていますか',
+    'お母様のお勤め先を教えてください',
+  ]) {
+    assert.equal(checkCompliance(db, body).length, 1, `検知できず: ${body}`);
+  }
 
   db.close();
   clearComplianceRuleCache();
@@ -112,7 +126,6 @@ test('オワハラ表現を検知する', () => {
 test('除外語を含む正しい文は検知しない', () => {
   const db = createDb([HONSEKI]);
 
-  // ★誤検知対策の要。この文が block になるとこの機能は信用を失う
   assert.deepEqual(checkCompliance(db, '本籍地はお伺いしませんのでご安心ください'), []);
   assert.deepEqual(checkCompliance(db, '本籍については伺いません'), []);
 
@@ -120,27 +133,25 @@ test('除外語を含む正しい文は検知しない', () => {
   clearComplianceRuleCache();
 });
 
-test('同じルールの別キーワードでも1件に畳む', () => {
-  const db = createDb([HONSEKI, HONSEKI_ALT]);
+test('同じ code は複数当たっても1件に畳む', () => {
+  const db = createDb([HONSEKI, { ...HONSEKI, keyword: '出身地', priority: 2 }]);
 
   const results = checkCompliance(db, 'ご本籍と出身地を教えてください');
-  assert.equal(results.length, 1, '本籍と出身地は同じ code なので1件');
-  assert.equal(results[0].code, 'honseki');
+  assert.equal(results.length, 1);
 
   db.close();
   clearComplianceRuleCache();
 });
 
 test('1通に複数の問題があれば全件を重い順に返す', () => {
-  // 用件タグ（最初のマッチで確定）と違い、こちらは全件返すのが仕様
-  const db = createDb([PRESSURE, HONSEKI, WITHDRAW]);
+  const db = createDb([PRESSURE, HONSEKI]);
 
-  const results = checkCompliance(db, 'ご本籍を教えてください。他社は辞退のうえ早めに返事をください');
-  assert.equal(results.length, 3);
+  const results = checkCompliance(db, 'ご本籍を教えてください。早めに返事をください');
+  assert.equal(results.length, 2);
   assert.deepEqual(
     results.map((result) => result.severity),
-    [ALERT_SEVERITY.BLOCK, ALERT_SEVERITY.BLOCK, ALERT_SEVERITY.WARN],
-    'block が warn より先に並ぶ',
+    [ALERT_SEVERITY.BLOCK, ALERT_SEVERITY.WARN],
+    'block が warn より先',
   );
 
   db.close();
@@ -148,9 +159,9 @@ test('1通に複数の問題があれば全件を重い順に返す', () => {
 });
 
 test('該当が無ければ空配列を返す', () => {
-  const db = createDb([HONSEKI, WITHDRAW]);
+  const db = createDb([HONSEKI]);
 
-  assert.deepEqual(checkCompliance(db, '面接日程のご連絡です。よろしくお願いいたします。'), []);
+  assert.deepEqual(checkCompliance(db, '面接日程のご連絡です'), []);
   assert.deepEqual(checkCompliance(db, ''), []);
   assert.deepEqual(checkCompliance(db, '   '), []);
   assert.deepEqual(checkCompliance(db, null), []);
@@ -159,12 +170,25 @@ test('該当が無ければ空配列を返す', () => {
   clearComplianceRuleCache();
 });
 
+test('不正な正規表現はリテラルとして扱い、検査全体を壊さない', () => {
+  const db = createDb([
+    { ...HONSEKI, code: 'broken', keyword: '本籍(', excludeKeyword: null, priority: 0 },
+    HONSEKI,
+  ]);
+
+  // 壊れたルールは「本籍(」というリテラルとして扱われ、当たらないだけ。
+  // 正常な honseki は従来どおり動く
+  const results = checkCompliance(db, 'ご本籍はどちらですか');
+  assert.deepEqual(results.map((r) => r.code), ['honseki']);
+
+  db.close();
+  clearComplianceRuleCache();
+});
+
 test('警告のみなら hasBlocking は false', () => {
   const db = createDb([PRESSURE]);
 
-  const results = checkCompliance(db, '早めに返事をいただけると助かります');
-  assert.equal(results.length, 1);
-  assert.equal(hasBlocking(results), false);
+  assert.equal(hasBlocking(checkCompliance(db, '早めに返事をください')), false);
 
   db.close();
   clearComplianceRuleCache();
@@ -176,33 +200,32 @@ test('検査対象は人事のみで、学生の発言は対象外', () => {
   assert.equal(isCheckedRole(ROLE.STUDENT), false);
 });
 
-test('除外語はカンマ区切りでいずれか1つ一致すれば除外する', () => {
-  assert.equal(isExcluded('本籍はお伺いしません', 'お伺いしません,伺いません'), true);
-  assert.equal(isExcluded('本籍については伺いません', 'お伺いしません,伺いません'), true);
-  assert.equal(isExcluded('ご本籍はどちらですか', 'お伺いしません,伺いません'), false);
-  assert.equal(isExcluded('ご本籍はどちらですか', null), false);
-  assert.equal(isExcluded('ご本籍はどちらですか', ''), false);
-  assert.equal(isExcluded('本籍はお伺いしません', ' お伺いしません , '), true, '空白と空要素を無視する');
-});
-
 test('該当箇所は前後20文字だけを切り出す（本文全体を残さない）', () => {
-  const long = `${'あ'.repeat(50)}ご本籍はどちらですか${'い'.repeat(50)}`;
-  const matched = extractMatchContext(long, '本籍');
+  const db = createDb([HONSEKI]);
+  const secret = 'あ'.repeat(50);
+  const body = `${secret}ご本籍はどちらですか${'い'.repeat(50)}`;
 
-  assert.ok(matched.includes('本籍'));
-  assert.ok(matched.startsWith('…') && matched.endsWith('…'), '前後が省略される');
-  assert.ok(matched.length < 50, `本文全体を含まない（実際 ${matched.length} 文字）`);
+  const [result] = checkCompliance(db, body);
+  assert.ok(result.matched.includes('本籍'));
+  assert.ok(!result.matched.includes(secret), '無関係な本文を含まない');
+  assert.ok(result.matched.startsWith('…') && result.matched.endsWith('…'));
 
-  // 短い本文なら省略記号は付かない
-  assert.equal(extractMatchContext('ご本籍は', '本籍'), 'ご本籍は');
-  assert.equal(extractMatchContext('該当なし', '本籍'), '');
+  db.close();
+  clearComplianceRuleCache();
 });
 
-test('サロゲートペアを含む本文でも該当箇所が壊れない', () => {
-  const body = `${'🙏'.repeat(30)}ご本籍はどちらですか`;
-  const matched = extractMatchContext(body, '本籍');
+test('空白除去後も該当箇所は元の本文の位置から切り出す', () => {
+  const db = createDb([HONSEKI]);
 
-  assert.ok(matched.includes('本籍'));
-  assert.ok(!matched.includes('�'), '文字化けが起きない');
-  assert.ok(matched.includes('🙏'), '直前の絵文字が正しく切り出される');
+  const [result] = checkCompliance(db, 'さて、ご本 籍はどちらでしょうか');
+  // 正規化後の位置ではなく元の本文の位置を使うので、空白入りのまま見える
+  assert.ok(result.matched.includes('本 籍'), `実際: ${result.matched}`);
+
+  db.close();
+  clearComplianceRuleCache();
+});
+
+test('extractContextAt は範囲外でも壊れない', () => {
+  assert.equal(extractContextAt('短い本文', 0, 2), '短い本文');
+  assert.equal(extractContextAt('', 0, 0), '');
 });

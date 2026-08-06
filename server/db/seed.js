@@ -55,77 +55,120 @@ const TAG_RULES = [
 // 出典は厚生労働省「公正な採用選考の基本」で**尋ねてはならない**とされる事項。
 // 根拠が公的基準にあることがこの機能の説得力の源なので、独自解釈で増やさないこと。
 //
+// ★keywords / exclude は**正規表現**（P4-2b）。照合は正規化済み本文に対して行う
+//   （NFKC・小文字化・空白除去）ので、パターン側に空白を書かないこと。
+//   「本 籍」のような空白挿入による回避は正規化側で潰れる。
+//
 // exclude は誤検知対策。「本籍地はお伺いしません」のような**正しい**文が
 // block になるとこの機能は信用を失う（monitoring.md §4）。
+//
+// 「尋ねている文」だけを拾うため、多くのルールで述語（何ですか・教えて 等）を
+// パターンに含めている。単語の存在だけで判定すると
+// 「弊社は労働組合と協議して…」のような説明文まで block になる。
+const ASK = '(です|でしょう|ます|ますでしょう)?(か|かね)|教え|お聞かせ|聞かせ|伺(い|え)|お答え|記入|ご記載|書いて|何|どちら|どこ|いくつ|いくら|どんな|どのよう';
+const FAMILY = '(ご|お)?(両親|父|母|父親|母親|お父様|お母様|ご尊父|ご母堂|家族|ご家族|保護者|兄弟|姉妹)';
+
 const COMPLIANCE_RULES = [
   // --- 就職差別のおそれ（すべて block） ---
   {
     code: 'honseki', category: COMPLIANCE_CATEGORY.DISCRIMINATION, priority: 1,
     severity: ALERT_SEVERITY.BLOCK,
-    keywords: ['本籍', '出身地', '生まれはどこ'],
-    exclude: ['お伺いしません', '伺いません', '質問しません', '不要です', 'お答えいただく必要はありません'],
+    keywords: [
+      '本籍',
+      '(ご|お)?出身(地|は|を|について|地は)',
+      '生まれ(はどこ|た場所|はどちら|はどの)',
+      '(どこ|どちら)の(生まれ|ご出身)',
+      '国籍',
+    ],
+    exclude: [
+      'お伺いしません', '伺いません', '質問しません', 'お尋ねしません', '尋ねません',
+      '不要です', '必要はありません', '記入不要', 'お答えいただく必要はありません',
+    ],
     message: '本籍・出生地に関する質問は就職差別に当たるおそれがあります',
   },
   {
     code: 'family_job', category: COMPLIANCE_CATEGORY.DISCRIMINATION, priority: 2,
     severity: ALERT_SEVERITY.BLOCK,
-    keywords: ['ご両親の職業', '父親の職業', '母親の職業', '家族構成', 'ご家族は何人'],
-    exclude: null,
+    keywords: [
+      `${FAMILY}.{0,12}(職業|お仕事|仕事|勤め|勤務先|会社|お勤め|職種)`,
+      '(職業|お仕事|勤め先|勤務先).{0,8}(ご両親|父|母|ご家族|保護者)',
+      `${FAMILY}(構成|は何人|の人数|は何名)`,
+      '何人家族',
+    ],
+    exclude: ['変更があれば', '変更の際は', '扶養', '手続き'],
     message: '家族に関する質問は本人の適性・能力と関係がありません',
   },
   {
     code: 'family_edu', category: COMPLIANCE_CATEGORY.DISCRIMINATION, priority: 3,
     severity: ALERT_SEVERITY.BLOCK,
-    keywords: ['ご両親の学歴', '親の学歴'],
+    keywords: [`${FAMILY}.{0,12}(学歴|出身校|出身大学|卒業)`],
     exclude: null,
     message: '家族の学歴に関する質問は就職差別に当たるおそれがあります',
   },
   {
     code: 'housing', category: COMPLIANCE_CATEGORY.DISCRIMINATION, priority: 4,
     severity: ALERT_SEVERITY.BLOCK,
-    keywords: ['持ち家', '間取り', '家賃はいくら', '住宅の広さ'],
+    keywords: [
+      '(持ち家|持家|マイホーム)',
+      '間取り',
+      '(家賃|住宅).{0,8}(いくら|どのくらい|どれくらい|何万)',
+      '(お住まい|住まい|ご自宅).{0,10}(広さ|何平米|賃貸|持ち家|一戸建て)',
+    ],
     exclude: null,
     message: '住宅状況に関する質問は就職差別に当たるおそれがあります',
   },
   {
     code: 'assets', category: COMPLIANCE_CATEGORY.DISCRIMINATION, priority: 5,
     severity: ALERT_SEVERITY.BLOCK,
-    keywords: ['資産', '世帯収入', 'ご家庭の収入'],
+    keywords: [
+      '(ご家庭|ご家族|世帯|ご両親).{0,10}(収入|年収|所得|資産|預貯金)',
+      '(世帯年収|世帯収入|家庭の事情|生活水準)',
+    ],
     exclude: null,
     message: '生活環境・家庭環境に関する質問は避けてください',
   },
   {
     code: 'religion', category: COMPLIANCE_CATEGORY.DISCRIMINATION, priority: 6,
     severity: ALERT_SEVERITY.BLOCK,
-    keywords: ['宗教', '信仰'],
-    exclude: null,
+    keywords: [`(宗教|信仰|宗派|信心).{0,10}(${ASK})`, '(宗教|信仰)は(何|どちら|お持ち)'],
+    exclude: ['宗教学', '宗教史', '宗教法人'],
     message: '信条・宗教に関する質問は思想信条の自由を侵すおそれがあります',
   },
   {
     code: 'politics', category: COMPLIANCE_CATEGORY.DISCRIMINATION, priority: 7,
     severity: ALERT_SEVERITY.BLOCK,
-    keywords: ['支持政党', '政治観', '選挙は'],
-    exclude: null,
+    keywords: [
+      '支持(政党|する政党)',
+      `(政党|政治).{0,10}(${ASK})`,
+      '(選挙|投票).{0,8}(どちら|どこ|誰|だれ)(に|へ)',
+    ],
+    exclude: ['政治学', '政治経済'],
     message: '支持政党に関する質問は就職差別に当たるおそれがあります',
   },
   {
     code: 'thought', category: COMPLIANCE_CATEGORY.DISCRIMINATION, priority: 8,
     severity: ALERT_SEVERITY.BLOCK,
-    keywords: ['尊敬する人物', '人生観', '信条'],
-    exclude: null,
+    keywords: [
+      '尊敬する(人物|人|方)',
+      `(人生観|信条|座右の銘|思想).{0,10}(${ASK})`,
+    ],
+    exclude: ['弊社の信条', '当社の信条', '会社の信条'],
     message: '思想信条に関する質問は避けてください',
   },
   {
     code: 'union', category: COMPLIANCE_CATEGORY.DISCRIMINATION, priority: 9,
     severity: ALERT_SEVERITY.BLOCK,
-    keywords: ['労働組合', '学生運動'],
-    exclude: null,
+    keywords: [
+      `(労働組合|労組|学生運動|社会運動|デモ).{0,12}(${ASK})`,
+      '(労働組合|学生運動|社会運動).{0,8}(参加|所属|加入)',
+    ],
+    exclude: ['弊社の労働組合', '当社の労働組合', '労働組合と協議', '労働組合との協議'],
     message: '労働組合・学生運動に関する質問は就職差別に当たるおそれがあります',
   },
   {
     code: 'newspaper', category: COMPLIANCE_CATEGORY.DISCRIMINATION, priority: 10,
     severity: ALERT_SEVERITY.BLOCK,
-    keywords: ['購読新聞', '愛読書'],
+    keywords: ['購読(新聞|紙|されている新聞)', '愛読(書|している本)', `(新聞|雑誌).{0,10}(購読|とって(いま|おら))`],
     exclude: null,
     message: '購読紙・愛読書に関する質問は思想信条の把握につながります',
   },
@@ -134,35 +177,51 @@ const COMPLIANCE_RULES = [
   {
     code: 'withdraw_others', category: COMPLIANCE_CATEGORY.OWAHARA, priority: 20,
     severity: ALERT_SEVERITY.BLOCK,
-    keywords: ['他社は辞退', '他社を辞退', '他社の選考を止め', '就活を終わらせ', '就職活動を終了'],
+    keywords: [
+      '(他社|よそ|同業他社|他の会社|ほかの会社).{0,14}(辞退|お断り|断って|止めて|やめて|中止)',
+      '(就活|就職活動).{0,10}(終わ|終了|やめ|止め|終え)',
+      '(弊社|当社|うち).{0,6}(一本|1本|だけ).{0,10}(絞|して)',
+      '(内定承諾|承諾書).{0,10}(今すぐ|即日|本日中)',
+    ],
     exclude: null,
     message: '他社選考の辞退を条件にすることはオワハラに当たります',
   },
   {
     code: 'decide_now', category: COMPLIANCE_CATEGORY.OWAHARA, priority: 21,
     severity: ALERT_SEVERITY.BLOCK,
-    keywords: ['今この場で決めて', '今ここで決めて', '今すぐ決めて', 'この場で返事'],
+    keywords: [
+      '(今|いま)(この場|ここ|すぐ).{0,8}(決め|ご決断|ご返答|返事|回答)',
+      'この場で(返事|回答|決め|ご決断)',
+      '即答(いただ|して|を)',
+    ],
     exclude: null,
     message: 'その場での意思決定の強要はオワハラに当たります',
   },
   {
     code: 'offer_condition', category: COMPLIANCE_CATEGORY.OWAHARA, priority: 22,
     severity: ALERT_SEVERITY.BLOCK,
-    keywords: ['内定を出す代わりに', '内定の条件として'],
+    keywords: ['内定.{0,10}(代わりに|条件と|引き換え|ひきかえ)', '(条件|交換条件)として.{0,8}内定'],
     exclude: null,
     message: '内定を交換条件にすることは避けてください',
   },
   {
     code: 'deadline_today', category: COMPLIANCE_CATEGORY.OWAHARA, priority: 23,
     severity: ALERT_SEVERITY.WARN,
-    keywords: ['返事は今日中', '本日中にご返答', '今日中に決めて'],
+    keywords: [
+      '(返事|ご返答|回答|ご連絡|お返事).{0,8}(は|を)?(本日|今日)中',
+      '(本日|今日)中.{0,10}(返事|ご返答|回答|決め|ご判断|お返事)',
+      '(明日|あす)(まで|中).{0,10}(決め|ご判断|ご返答)',
+    ],
     exclude: null,
     message: '極端に短い回答期限は圧力と受け取られます',
   },
   {
     code: 'pressure_soft', category: COMPLIANCE_CATEGORY.OWAHARA, priority: 24,
     severity: ALERT_SEVERITY.WARN,
-    keywords: ['早めに返事を', 'すぐに決めて', '早急にご判断'],
+    keywords: [
+      '(早め|早急|至急|なるべく早く).{0,10}(返事|ご返答|ご判断|決め|ご決断|お返事)',
+      'すぐに(決め|ご判断|ご決断)',
+    ],
     exclude: null,
     message: '判断を急がせる表現になっていないか確認してください',
   },
