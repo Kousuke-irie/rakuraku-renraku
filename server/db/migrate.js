@@ -69,6 +69,68 @@ function addMissingAlertColumns(db) {
   db.exec(`ALTER TABLE alerts ADD COLUMN source TEXT`);
 }
 
+/** alerts.kind の CHECK に載っている必要がある最新の種別（P4-5） */
+const LATEST_ALERT_KIND = 'interview_room_missing';
+const LEGACY_ALERTS_TABLE = 'alerts_legacy';
+
+/**
+ * alerts.kind の CHECK 制約を作り直す（P4-5）。
+ *
+ * `CREATE TABLE IF NOT EXISTS` では既存DBの CHECK が更新されないため、
+ * 新しい kind を INSERT した瞬間に CONSTRAINT エラーで落ちる。
+ * SQLite は CHECK だけを ALTER で差し替えられないのでテーブルごと作り直す。
+ * **compliance_rules と違い、こちらは通知の履歴なのでデータを移送する。**
+ *
+ * schema.sql の適用「前」に呼び、退避だけを行う。復元は restoreLegacyAlerts。
+ * @returns {boolean} 退避したか
+ */
+function stashLegacyAlerts(db) {
+  const table = db
+    .prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'alerts'`)
+    .get();
+  if (!table || table.sql.includes(LATEST_ALERT_KIND)) return false;
+
+  // 旧インデックスは RENAME 後も同じ名前で退避先に残る。名前が衝突すると
+  // schema.sql の CREATE INDEX IF NOT EXISTS が黙って飛ばされ、
+  // **多重通知を防ぐ UNIQUE が新テーブルに張られない**。先に落としておく。
+  const indexes = db
+    .prepare(
+      `SELECT name FROM sqlite_master
+        WHERE type = 'index' AND tbl_name = 'alerts' AND sql IS NOT NULL`,
+    )
+    .all();
+  for (const index of indexes) {
+    db.exec(`DROP INDEX IF EXISTS "${index.name}"`);
+  }
+
+  db.exec(`DROP TABLE IF EXISTS ${LEGACY_ALERTS_TABLE}`);
+  db.exec(`ALTER TABLE alerts RENAME TO ${LEGACY_ALERTS_TABLE}`);
+  return true;
+}
+
+/** 退避した通知を新しい alerts へ移して退避先を捨てる。schema.sql の適用「後」に呼ぶ。 */
+function restoreLegacyAlerts(db) {
+  const legacy = db
+    .prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`)
+    .get(LEGACY_ALERTS_TABLE);
+  if (!legacy) return;
+
+  // 列の増減があっても動くよう、両方に存在する列だけを移す
+  const columnsOf = (table) =>
+    db
+      .prepare(`PRAGMA table_info(${table})`)
+      .all()
+      .map((column) => column.name);
+  const target = new Set(columnsOf('alerts'));
+  const shared = columnsOf(LEGACY_ALERTS_TABLE).filter((name) => target.has(name));
+  const columnList = shared.map((name) => `"${name}"`).join(', ');
+
+  db.exec(
+    `INSERT INTO alerts (${columnList}) SELECT ${columnList} FROM ${LEGACY_ALERTS_TABLE}`,
+  );
+  db.exec(`DROP TABLE ${LEGACY_ALERTS_TABLE}`);
+}
+
 function migrate() {
   const dir = path.dirname(DATABASE_PATH);
   fs.mkdirSync(dir, { recursive: true });
@@ -79,11 +141,15 @@ function migrate() {
 
   // schema.sql は CREATE TABLE IF NOT EXISTS なので、旧定義の取り壊しは適用前に行う。
   dropLegacyComplianceRuleUnique(db);
+  const stashed = stashLegacyAlerts(db);
 
   const schema = fs.readFileSync(SCHEMA_PATH, 'utf-8');
   db.exec(schema);
   addMissingRoomAiColumns(db);
   addMissingAlertColumns(db);
+  // 退避した通知を移すのは、schema.sql が新しい alerts を作り
+  // addMissingAlertColumns が後付けの列を足し終えたあと。
+  if (stashed) restoreLegacyAlerts(db);
 
   db.close();
 }

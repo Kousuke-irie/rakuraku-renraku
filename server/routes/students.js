@@ -2,7 +2,8 @@ import { Router } from 'express';
 import db from '../db/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { assertRoomMember } from '../services/roomAuth.js';
-import { emitRoomUpdated } from '../services/realtime.js';
+import { emitAlertsResolved, emitRoomUpdated } from '../services/realtime.js';
+import { resolveStaleInterviewRoomAlerts } from '../services/interviewRoomMonitor.js';
 import { findRoomIdByStudent, findStudent, updateStudent } from '../services/studentProfile.js';
 import { listFeedbacksForHr, saveFeedback } from '../services/selectionFlow.js';
 import {
@@ -122,9 +123,15 @@ router.patch('/:userId', requireAuth, requireHr, async (req, res, next) => {
     }
 
     const student = updateStudent(db, userId, patch);
+    const io = req.app.get('io');
+
+    // P4-5：会議室が入った／日程が変わった時点で、会議室未設定の通知を閉じる。
+    // ★閉じるのは即時、立てるのは60秒タイマー。日時を入れた直後に会議室を
+    //   入力するのが普通の操作順なので、即時に検知すると入力途中で通知が飛ぶ。
+    emitAlertsResolved(io, db, resolveStaleInterviewRoomAlerts(db, { roomId }));
 
     // 受信箱の行にも選考ステータスが出ているので、他の人事の画面にも反映する
-    await emitRoomUpdated(req.app.get('io'), db, roomId);
+    await emitRoomUpdated(io, db, roomId);
 
     res.json({ student });
   } catch (error) {

@@ -11,8 +11,17 @@ import { registerSocketHandlers } from './sockets/index.js';
 import db from './db/index.js';
 import { recalculateAllUrgencies } from './services/urgencyCalculator.js';
 import { detectSlaBreaches } from './services/slaMonitor.js';
+import {
+  detectInterviewRoomGaps,
+  resolveStaleInterviewRoomAlerts,
+} from './services/interviewRoomMonitor.js';
 import { findAlertForUser } from './services/alertView.js';
-import { emitAlertNew, emitRoomUpdated, emitSummaryUpdated } from './services/realtime.js';
+import {
+  emitAlertNew,
+  emitAlertsResolved,
+  emitRoomUpdated,
+  emitSummaryUpdated,
+} from './services/realtime.js';
 
 const app = express();
 app.use(cors({ origin: CLIENT_ORIGIN, credentials: true }));
@@ -53,6 +62,19 @@ const monitorTimer = setInterval(async () => {
     }
   } catch (error) {
     console.error('server: SLA monitoring failed', error.stack);
+  }
+
+  // 面接会議室の未設定監視（P4-5）。SLA と独立して動かす
+  try {
+    // 先に掃除する。日程が変わった通知を閉じてから新しい日時のぶんを立てる
+    emitAlertsResolved(io, db, resolveStaleInterviewRoomAlerts(db));
+
+    for (const created of detectInterviewRoomGaps(db)) {
+      const alert = findAlertForUser(db, created.targetUserId, created.id);
+      emitAlertNew(io, created.targetUserId, alert);
+    }
+  } catch (error) {
+    console.error('server: interview room monitoring failed', error.stack);
   }
 }, MONITOR_INTERVAL_MS);
 monitorTimer.unref();

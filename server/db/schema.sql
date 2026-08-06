@@ -130,7 +130,7 @@ CREATE TABLE IF NOT EXISTS company_info (
 -- 扱うため、target_user_id が NULL のコンプライアンス行が重複し放題になる。
 CREATE TABLE IF NOT EXISTS alerts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  kind TEXT NOT NULL CHECK(kind IN ('sla_notify', 'sla_escalate', 'compliance')),
+  kind TEXT NOT NULL CHECK(kind IN ('sla_notify', 'sla_escalate', 'compliance', 'interview_room_missing')),
   severity TEXT NOT NULL CHECK(severity IN ('block', 'warn', 'info')),
   room_id INTEGER NOT NULL REFERENCES rooms(id),
   -- 通知先。SLA は担当者／上長、コンプライアンスは NULL（本人へは即時ダイアログで伝える）
@@ -139,7 +139,11 @@ CREATE TABLE IF NOT EXISTS alerts (
   actor_user_id INTEGER REFERENCES users(id),
   -- 起点メッセージ。冪等キーの一部
   trigger_message_id INTEGER REFERENCES messages(id),
-  -- compliance_rules.code。SLA では NULL
+  -- compliance_rules.code。SLA では NULL。
+  -- P4-5（会議室未設定）は**面接日時の ISO 文字列**を入れて冪等キーに使う。
+  -- 起点メッセージが存在しないため trigger_message_id が NULL になり、
+  -- SQLite の UNIQUE は NULL を互いに異なる値として扱う＝重複し放題になるので、
+  -- NULL にならない列を1つ冪等キーに含める必要がある（monitoring.md §2）
   rule_code TEXT,
   -- 検知の出どころ（'dictionary' / 'ai'）。SLA では NULL。
   -- ★rule_code に 'ai_' のような接頭辞を付けて代用しないこと。
@@ -226,6 +230,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_alerts_sla_unique
 CREATE UNIQUE INDEX IF NOT EXISTS idx_alerts_compliance_unique
   ON alerts(room_id, trigger_message_id, rule_code)
   WHERE kind = 'compliance';
+-- 会議室未設定（P4-5）：1ルーム×1面接日時×1宛先につき1件だけ。
+-- rule_code に面接日時が入るので、日程が変われば改めて1件立つ（正しく再通知される）。
+-- trigger_message_id は NULL なのでキーに含めない（NULL は UNIQUE を素通りする）。
+CREATE UNIQUE INDEX IF NOT EXISTS idx_alerts_interview_room_unique
+  ON alerts(kind, room_id, target_user_id, rule_code)
+  WHERE kind = 'interview_room_missing';
 
 -- 通知一覧（自分宛・未読優先・新しい順）
 CREATE INDEX IF NOT EXISTS idx_alerts_target       ON alerts(target_user_id, read_at, created_at DESC);

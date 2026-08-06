@@ -1,7 +1,8 @@
 <script setup>
 // 通知一覧（P4-1・ナビレールのベルから開く）
 //
-// 中身は SLA 監視の結果。学生の最終発言から24時間で担当者へ、48時間で上長へ届く。
+// 中身は監視の結果。SLA（P4-1：学生の最終発言から24時間で担当者へ、48時間で上長へ）と
+// 会議室未設定（P4-5：面接日程は決まっているのに会場が空欄）が並ぶ。
 // コンプライアンス警告（P4-2）はここには出ない。あちらは宛先を持たず、
 // 本人へは送信前ダイアログで伝え、集計はダッシュボード（P4-4）が担う。
 //
@@ -11,7 +12,7 @@
 // 後から見返したいときだけ「すべて」に切り替えて解消済みも出す。
 import { computed, onMounted } from "vue"
 import { useRouter } from "vue-router"
-import { ALERT_KIND, ALERT_KIND_META } from "../constants/index.js"
+import { ALERT_KIND, ALERT_KIND_META, SLA_ALERT_KINDS } from "../constants/index.js"
 import { useUiStore } from "../stores/ui.js"
 
 // #region global state
@@ -29,6 +30,13 @@ const kindLabel = (kind) => ALERT_KIND_META[kind]?.label ?? kind
 
 /** 経過時間は「25.3時間」ではなく「25時間」で十分。桁を減らして読みやすくする */
 const elapsedLabel = (hours) => (hours === null ? "" : `${Math.floor(hours)}時間経過`)
+
+/**
+ * 経過時間＝学生の最終発言からの経過。SLA 通知のときだけ意味を持つ。
+ * 会議室未設定（P4-5）の行に出すと、無関係な数字が理由のように見えてしまう。
+ */
+const showsElapsed = (alert) =>
+  SLA_ALERT_KINDS.includes(alert.kind) && alert.elapsedHours !== null
 
 const formatTime = (iso) =>
   new Date(iso).toLocaleString("ja-JP", {
@@ -112,7 +120,7 @@ const onFilterChange = (includeResolved) => ui.setAlertsIncludeResolved(includeR
         </template>
         <template v-else>
           未対応の通知はありません。<br>
-          返信が24時間滞ると、ここに通知が届きます。
+          返信が24時間滞ったとき、面接の会議室が未設定のときに、ここに通知が届きます。
         </template>
       </p>
 
@@ -155,7 +163,7 @@ const onFilterChange = (includeResolved) => ui.setAlertsIncludeResolved(includeR
               </span>
               <span class="row__detail">{{ alert.detail }}</span>
               <span class="row__meta">
-                <span v-if="alert.elapsedHours !== null">{{ elapsedLabel(alert.elapsedHours) }}</span>
+                <span v-if="showsElapsed(alert)">{{ elapsedLabel(alert.elapsedHours) }}</span>
                 <span
                   v-if="alert.assigneeName"
                   class="row__assignee"

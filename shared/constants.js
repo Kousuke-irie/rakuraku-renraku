@@ -373,6 +373,17 @@ export const SLA_ALERT_EXEMPT_STATUSES = Object.freeze([
 ]);
 
 // ---------------------------------------------------------------------------
+// 面接会議室の未設定通知の閾値（P4-5 / monitoring.md §3b）
+// サーバは INTERVIEW_ROOM_ALERT_LEAD_HOURS で上書きする。
+// ---------------------------------------------------------------------------
+
+/**
+ * 面接開始までこの時間以内になっても会議室が空欄なら通知する。
+ * これより先の面接では鳴らさない（「まだ押さえていないだけ」を通知にすると狼少年になる）。
+ */
+export const INTERVIEW_ROOM_ALERT_LEAD_HOURS = 72;
+
+// ---------------------------------------------------------------------------
 // 監視ダッシュボード（P4-4 / monitoring.md §6）
 // ---------------------------------------------------------------------------
 
@@ -398,12 +409,15 @@ export const ALERT_KIND = Object.freeze({
   SLA_ESCALATE: 'sla_escalate',
   /** 人事の発言から就職差別・オワハラ表現を検知した */
   COMPLIANCE: 'compliance',
+  /** P4-5。面接日程は決まっているのに会議室が空欄のまま */
+  INTERVIEW_ROOM_MISSING: 'interview_room_missing',
 });
 
 export const ALERT_KIND_META = Object.freeze({
   [ALERT_KIND.SLA_NOTIFY]: { label: '未返信24時間' },
   [ALERT_KIND.SLA_ESCALATE]: { label: '上長エスカレーション' },
   [ALERT_KIND.COMPLIANCE]: { label: 'コンプライアンス警告' },
+  [ALERT_KIND.INTERVIEW_ROOM_MISSING]: { label: '会議室未設定' },
 });
 
 export const ALERT_KIND_VALUES = Object.values(ALERT_KIND);

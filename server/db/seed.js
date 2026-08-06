@@ -292,6 +292,23 @@ const SHOWCASE_STUDENTS = [
       { sender: 'student', hoursAgo: 50, body: '先日の面接の結果はいつ頃わかりますでしょうか。他社の選考もあり、ご連絡をお待ちしています。' },
     ],
   },
+  // ★P4-5 のデモ用。面接日程は決まっているのに会議室が空欄のルーム。
+  //   担当は hr1。シード直後から「会議室未設定」の通知が hr1 宛に立つ。
+  //   会議室をプロフィールパネルに入力すると、その場で通知が消えるのを見せる。
+  {
+    loginId: 'student12', displayName: '富田 澪', avatarColor: '#7C9CBF',
+    university: '横浜国立大学', faculty: '都市科学部', gradYear: 2027, selectionStatus: SELECTION_STATUS.INTERVIEW_2,
+    assignee: 'hr1', handlingStatus: HANDLING_STATUS.WAITING_STUDENT,
+    scheduleState: SCHEDULE_STATE.ROOM_PENDING,
+    nextInterviewAt: hoursAheadIso(26),
+    nextInterviewRoom: null,
+    interviewer: '松本 圭',
+    fillerCount: 4,
+    thread: [
+      { sender: 'hr', hoursAgo: 30, body: '二次面接は明後日13時で確定いたしました。会場は追ってご連絡します。' },
+      { sender: 'student', hoursAgo: 28, body: '承知しました。会場が決まりましたら教えてください。' },
+    ],
+  },
   {
     loginId: 'student2', displayName: '佐藤 花子', avatarColor: '#BFB27C',
     university: '早稲田大学', faculty: '商学部', gradYear: 2027, selectionStatus: SELECTION_STATUS.INTERVIEW_4,
@@ -302,10 +319,15 @@ const SHOWCASE_STUDENTS = [
       { sender: 'student', hoursAgo: 13, body: '8/12でお願いしたいのですが、日程を変更できますか。急に都合が悪くなってしまいました。' },
     ],
   },
+  // ★P4-5 の「未アサインなら上長へ直行」を見せるルーム。学生自身が会場を尋ねているのに
+  //   会議室が空欄で、担当者も付いていない＝最も取りこぼしやすい形。
   {
     loginId: 'student3', displayName: '鈴木 一郎', avatarColor: '#7CA8BF',
     university: '慶應義塾大学', faculty: '経済学部', gradYear: 2028, selectionStatus: SELECTION_STATUS.ENTRY,
     assignee: null, handlingStatus: HANDLING_STATUS.NEEDS_REPLY,
+    scheduleState: SCHEDULE_STATE.ROOM_PENDING,
+    nextInterviewAt: hoursAheadIso(40),
+    nextInterviewRoom: null,
     fillerCount: 6,
     thread: [
       { sender: 'hr', hoursAgo: 6, body: '面接会場は本社ビル3階になります。' },
