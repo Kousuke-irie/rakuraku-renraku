@@ -116,6 +116,30 @@
 | GET | `/snippets` | 定型文一覧 |
 | GET | `/summary` | `{needsReply, urgent, overdue24h, unassigned}` |
 
+### 会社情報（P2-10）
+
+| メソッド | パス | 説明 |
+| --- | --- | --- |
+| GET | `/company` | `{company}`。未設定なら `{company: null}` |
+| PUT | `/company` | `{name, description, recruitSiteUrl}` の全置換 |
+
+```json
+{
+  "company": {
+    "name": "株式会社ラクラク",
+    "description": "「はたらく人の毎日を、少しだけ軽くする」をミッションに…",
+    "recruitSiteUrl": "https://example.com/recruit",
+    "updatedAt": "2026-08-06T01:00:00Z"
+  }
+}
+```
+
+- **GET は学生を含む全ロールが参照可。** 学生のトーク画面の会社情報パネル（`frontend.md` §7-2）に出すため
+- **PUT は人事（hr / admin）のみ。** `req.user.role` だけで判定する
+- `description` / `recruitSiteUrl` は任意。空文字を送ると `null`（未設定）で保存される
+- `recruitSiteUrl` は `http:` / `https:` 以外を **400** で弾く（`javascript:` 対策）
+- 更新頻度が低いマスタデータなので **Socket.IO の配信はしない。** 学生の画面には次回の取得時に反映される
+
 ### AI 現況サマリー（P3-1a・未実装）
 
 | メソッド | パス | 説明 |

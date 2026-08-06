@@ -114,6 +114,16 @@ CREATE TABLE IF NOT EXISTS tag_rules (
   priority INTEGER NOT NULL
 );
 
+-- 会社情報（P2-10）。人事が設定し、学生のトーク画面の会社情報パネルに出る。
+-- 単一テナントなので必ず1行だけ。CHECK(id = 1) で2行目を作れないようにする。
+CREATE TABLE IF NOT EXISTS company_info (
+  id INTEGER PRIMARY KEY CHECK(id = 1),
+  name TEXT NOT NULL,
+  description TEXT,
+  recruit_site_url TEXT,
+  updated_at TEXT NOT NULL
+);
+
 -- 監視イベント（P4-0）。SLA 通知もコンプライアンス警告もここに集約する。
 -- 多重登録は下の部分UNIQUEインデックス2本で防ぐ。INSERT OR IGNORE と必ずセットで使うこと。
 -- テーブルレベルの UNIQUE は使えない：SQLite は UNIQUE 中の NULL を互いに異なる値として
