@@ -4,14 +4,73 @@ import {
   AI_SUMMARY_STATUS,
   DEFAULT_AI_SUMMARY_STATUS,
   DEFAULT_SORT_KEY,
+  DEFAULT_TOPIC_TAG,
+  ELAPSED_BADGE_HIDDEN_STATUSES,
+  SLA_ALERT_HOURS,
   SOCKET_EMIT,
+  SORT_KEY,
+  SORT_KEY_VALUES,
+  URGENCY_ORDER,
 } from '../constants/index.js'
 import { roomsApi, toErrorMessage } from '../api/index.js'
 import { emitSocketAck } from '../composables/useSocket.js'
+import { useAuthStore } from './auth.js'
 import { useUiStore } from './ui.js'
 
 /** 対応ステータス変更が失敗したときの既定文言（P1-2） */
 const STATUS_UPDATE_ERROR = '対応ステータスの変更に失敗しました'
+
+/**
+ * 担当者フィルタの「未割当のみ」を表す値（P1-7）。
+ * assigneeId は数値のユーザーIDと排他なので、サーバの query 値（api.md §2）に合わせる。
+ */
+export const UNASSIGNED_FILTER = 'unassigned'
+
+/**
+ * フィルタの初期値。state の初期化と clearFilters / hasActiveFilters が同じ定義を見るよう、
+ * 毎回新しいオブジェクトを返す関数にしておく（共有すると参照が漏れて相互に汚染される）。
+ */
+function initialFilters() {
+  return {
+    /** @type {string[]} HANDLING_STATUS の配列 */
+    handlingStatus: [],
+    /** @type {string[]} SELECTION_STATUS の配列 */
+    selectionStatus: [],
+    /** @type {string[]} TOPIC_TAG の配列 */
+    topicTag: [],
+    /** @type {string[]} URGENCY の配列 */
+    urgency: [],
+    /** @type {number|'unassigned'|null} 担当者ユーザーID。UNASSIGNED_FILTER で未割当のみ */
+    assigneeId: null,
+    /** 「自分の担当のみ」トグル */
+    onlyMine: false,
+    /** 24h超のみ（サマリーバーからの絞り込み用） */
+    overdueOnly: false,
+    /** 氏名・大学の部分一致検索 */
+    q: '',
+  }
+}
+
+/** 未設定の日時を常に最後へ送るための比較用の値。null は「情報が無い」であって最古ではない */
+function timeOf(isoString) {
+  return isoString ? new Date(isoString).getTime() : null
+}
+
+/** 昇順（古い順）。null は末尾 */
+function ascending(a, b) {
+  if (a === b) return 0
+  if (a === null) return 1
+  if (b === null) return -1
+  return a - b
+}
+
+/** 降順（新しい順）。null は末尾 */
+function descending(a, b) {
+  if (a === b) return 0
+  if (a === null) return 1
+  if (b === null) return -1
+  return b - a
+}
 
 /**
  * 受信箱ストア（P1-1 / P1-7 / P1-8・frontend.md §3）
@@ -48,25 +107,8 @@ export const useRoomsStore = defineStore('rooms', {
     /** @type {object[]} 全ルーム。順序は保持しない（並べ替えは sortedRooms が行う） */
     rooms: [],
 
-    /** フィルタ条件（P1-7）。null / 空配列 = 絞り込みなし */
-    filters: {
-      /** @type {string[]} HANDLING_STATUS の配列 */
-      handlingStatus: [],
-      /** @type {string[]} SELECTION_STATUS の配列 */
-      selectionStatus: [],
-      /** @type {string[]} TOPIC_TAG の配列 */
-      topicTag: [],
-      /** @type {string[]} URGENCY の配列 */
-      urgency: [],
-      /** @type {number|null} 担当者ユーザーID。'unassigned' で未割当のみ */
-      assigneeId: null,
-      /** 「自分の担当のみ」トグル */
-      onlyMine: false,
-      /** 24h超のみ（サマリーバーからの絞り込み用） */
-      overdueOnly: false,
-      /** 氏名・大学の部分一致検索 */
-      q: '',
-    },
+    /** フィルタ条件（P1-7）。null / 空配列 = 絞り込みなし。定義は initialFilters() を見ること */
+    filters: initialFilters(),
 
     /** @type {string} SORT_KEY のいずれか */
     sortKey: DEFAULT_SORT_KEY,
@@ -116,14 +158,51 @@ export const useRoomsStore = defineStore('rooms', {
 
     /**
      * filters を適用した結果（並べ替え前）。
-     * まず選考ステータスのみ実装（P1-7）。他条件は次のステップ以降で追加する。
+     * 絞り込みはサーバに投げ直さずここで行う。socket の room:updated が届いた瞬間に
+     * 絞り込み結果へ反映させるため（frontend.md §3）。
      */
     filteredRooms: (s) => {
-      const { selectionStatus } = s.filters
+      const {
+        handlingStatus,
+        selectionStatus,
+        topicTag,
+        urgency,
+        assigneeId,
+        onlyMine,
+        overdueOnly,
+        q,
+      } = s.filters
+      const keyword = q.trim().toLowerCase()
+
       return s.rooms.filter((room) => {
+        if (handlingStatus.length && !handlingStatus.includes(room.handlingStatus)) return false
         if (selectionStatus.length && !selectionStatus.includes(room.student?.selectionStatus)) {
           return false
         }
+        // 用件タグはサーバが最新の学生メッセージから導出する。まだ発言が無いルームは null
+        if (topicTag.length && !topicTag.includes(room.topicTag ?? DEFAULT_TOPIC_TAG)) return false
+        if (urgency.length && !urgency.includes(room.urgency)) return false
+
+        // 担当者：UNASSIGNED_FILTER は「未割当のみ」、数値はそのユーザーの担当のみ
+        if (assigneeId === UNASSIGNED_FILTER && room.assignee) return false
+        if (typeof assigneeId === 'number' && room.assignee?.id !== assigneeId) return false
+        if (onlyMine && room.assignee?.id !== useAuthStore().currentUserId) return false
+
+        // 24h超（P1-8 のサマリーからの絞り込み）。返信済み・完了は SLA の対象外
+        if (
+          overdueOnly &&
+          (ELAPSED_BADGE_HIDDEN_STATUSES.includes(room.handlingStatus) ||
+            (room.elapsedHours ?? 0) < SLA_ALERT_HOURS)
+        ) {
+          return false
+        }
+
+        if (keyword) {
+          const haystack =
+            `${room.student?.displayName ?? ''} ${room.student?.university ?? ''}`.toLowerCase()
+          if (!haystack.includes(keyword)) return false
+        }
+
         return true
       })
     },
@@ -135,13 +214,50 @@ export const useRoomsStore = defineStore('rooms', {
      * SORT_KEY.ELAPSED: lastStudentMessageAt ASC（経過時間が長い順）
      * （business-logic.md §6）
      */
-    sortedRooms: (s) => [],
+    sortedRooms(s) {
+      // getter は元配列を書き換えないこと（sort は破壊的なので複製してから並べ替える）
+      const rooms = [...this.filteredRooms]
+
+      if (s.sortKey === SORT_KEY.LAST_MESSAGE) {
+        return rooms.sort((a, b) => descending(timeOf(a.lastMessage?.createdAt), timeOf(b.lastMessage?.createdAt)))
+      }
+      if (s.sortKey === SORT_KEY.ELAPSED) {
+        return rooms.sort((a, b) => ascending(timeOf(a.lastStudentMessageAt), timeOf(b.lastStudentMessageAt)))
+      }
+
+      // 既定：ピン留め → 緊急度 → 経過時間が長い順
+      return rooms.sort(
+        (a, b) =>
+          Number(Boolean(b.isPinned)) - Number(Boolean(a.isPinned)) ||
+          (URGENCY_ORDER[a.urgency] ?? Number.MAX_SAFE_INTEGER) -
+            (URGENCY_ORDER[b.urgency] ?? Number.MAX_SAFE_INTEGER) ||
+          ascending(timeOf(a.lastStudentMessageAt), timeOf(b.lastStudentMessageAt)) ||
+          a.id - b.id,
+      )
+    },
 
     /** フィルタが1つでも掛かっているか（「条件をクリア」ボタンの活性判定） */
-    hasActiveFilters: (s) => false,
+    hasActiveFilters: (s) =>
+      Object.entries(s.filters).some(([key, value]) => {
+        const initial = initialFilters()[key]
+        return Array.isArray(value) ? value.length > 0 : value !== initial
+      }),
 
     /** 全ルームの未読合計 */
-    totalUnread: (s) => 0,
+    totalUnread: (s) => s.rooms.reduce((total, room) => total + (room.unreadCount ?? 0), 0),
+
+    /**
+     * 担当者フィルタの候補（P2-9 の GET /api/users?role=hr が未実装のため一覧から導出する）。
+     * 絞り込み中に候補が消えないよう filteredRooms ではなく rooms から作る。
+     * @returns {{id: number, displayName: string}[]}
+     */
+    assigneeOptions: (s) => {
+      const byId = new Map()
+      for (const room of s.rooms) {
+        if (room.assignee?.id) byId.set(room.assignee.id, room.assignee)
+      }
+      return [...byId.values()].sort((a, b) => a.displayName.localeCompare(b.displayName, 'ja'))
+    },
 
     /** @returns {(roomId: number) => object[]} 指定ルームのメモ */
     memosOf: (s) => (roomId) => [],
@@ -312,17 +428,41 @@ export const useRoomsStore = defineStore('rooms', {
       this.filters = { ...this.filters, ...patch }
     },
 
-    /** フィルタを初期状態へ戻す（「条件をクリア」） */
-    clearFilters() {},
+    /**
+     * 配列フィルタの1項目をトグルする（チェックボックスからの入口）。
+     * @param {'handlingStatus'|'selectionStatus'|'topicTag'|'urgency'} key
+     * @param {string} value 対応する列挙値
+     */
+    toggleFilterValue(key, value) {
+      const current = this.filters[key]
+      this.applyFilters({
+        [key]: current.includes(value)
+          ? current.filter((item) => item !== value)
+          : [...current, value],
+      })
+    },
+
+    /** フィルタを初期状態へ戻す（「条件をクリア」）。ソート条件は保持する */
+    clearFilters() {
+      this.filters = initialFilters()
+    },
 
     /** @param {string} sortKey SORT_KEY のいずれか */
-    setSortKey(sortKey) {},
+    setSortKey(sortKey) {
+      if (!SORT_KEY_VALUES.includes(sortKey)) return
+      this.sortKey = sortKey
+    },
 
-    /** 「自分の担当のみ」トグル */
-    toggleOnlyMine() {},
+    /** 「自分の担当のみ」トグル。担当者フィルタとは排他にする（条件が矛盾しないように） */
+    toggleOnlyMine() {
+      const onlyMine = !this.filters.onlyMine
+      this.applyFilters({ onlyMine, assigneeId: onlyMine ? null : this.filters.assigneeId })
+    },
 
     reset() {
       this.rooms = []
+      this.filters = initialFilters()
+      this.sortKey = DEFAULT_SORT_KEY
       this.summary = { needsReply: 0, urgent: 0, overdue24h: 0, unassigned: 0 }
       this.aiSummary = {
         status: DEFAULT_AI_SUMMARY_STATUS,
