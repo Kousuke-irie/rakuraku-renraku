@@ -43,6 +43,7 @@ function createDb() {
       actor_user_id INTEGER,
       trigger_message_id INTEGER,
       rule_code TEXT,
+      source TEXT,
       detail TEXT NOT NULL,
       created_at TEXT NOT NULL,
       read_at TEXT,
@@ -227,10 +228,14 @@ test('コンプラ内訳は多い順、無視して送信は別で数える', ()
 
   const { complianceBreakdown, complianceIgnored } = getDashboard(db, NOW);
 
-  assert.deepEqual(complianceBreakdown, [
-    { ruleCode: 'honseki', count: 2 },
-    { ruleCode: 'union', count: 1 },
-  ]);
+  // 画面にコードを出さないので日本語ラベルが付く。AI 由来の件数も分けて返す
+  assert.deepEqual(
+    complianceBreakdown.map((row) => [row.ruleCode, row.label, row.count, row.aiCount]),
+    [
+      ['honseki', '本籍・出生地', 2, 0],
+      ['union', '労働組合・学生運動', 1, 0],
+    ],
+  );
   assert.equal(complianceIgnored, 1, '警告を承知で送信した件数だけ');
 
   db.close();

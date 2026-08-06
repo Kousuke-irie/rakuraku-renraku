@@ -51,6 +51,24 @@ function dropLegacyComplianceRuleUnique(db) {
   db.exec(`DROP TABLE compliance_rules`);
 }
 
+/**
+ * alerts に後から足した列を埋める（P4-4 レビュー反映）。
+ * schema.sql は CREATE TABLE IF NOT EXISTS なので、既存DBには列が増えない。
+ */
+function addMissingAlertColumns(db) {
+  const exists = db
+    .prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'alerts'`)
+    .get();
+  if (!exists) return;
+
+  const columns = new Set(db.prepare(`PRAGMA table_info(alerts)`).all().map((column) => column.name));
+  if (columns.has('source')) return;
+
+  // CHECK 付きの ALTER は SQLite が受け付けないので、制約なしで足す。
+  // 値の妥当性は shared/constants.js の COMPLIANCE_SOURCE_VALUES 側で担保する。
+  db.exec(`ALTER TABLE alerts ADD COLUMN source TEXT`);
+}
+
 function migrate() {
   const dir = path.dirname(DATABASE_PATH);
   fs.mkdirSync(dir, { recursive: true });
@@ -65,6 +83,7 @@ function migrate() {
   const schema = fs.readFileSync(SCHEMA_PATH, 'utf-8');
   db.exec(schema);
   addMissingRoomAiColumns(db);
+  addMissingAlertColumns(db);
 
   db.close();
 }

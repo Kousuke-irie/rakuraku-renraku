@@ -460,6 +460,94 @@ export const COMPLIANCE_CATEGORY_VALUES = Object.values(COMPLIANCE_CATEGORY);
  */
 export const COMPLIANCE_DISCLAIMER = '参考情報です。最終判断は担当者が行ってください。';
 
+/**
+ * コンプライアンス検知のルール（P4-2 / monitoring.md §4）。
+ *
+ * **辞書も AI も同じ語彙を使う。** AI 側だけ `ai_discrimination` のような
+ * 粗い分類にすると、ダッシュボードの内訳で粒度が混ざって比較できなくなる。
+ * AI がどれにも当てはめられなかったときだけ `other_*` に落とす。
+ *
+ * 「辞書が見つけたか AI が見つけたか」は `alerts.source` が持つ。
+ * ルールコードに混ぜないこと。
+ */
+export const COMPLIANCE_RULE = Object.freeze({
+  // 就職差別のおそれ（厚労省「公正な採用選考の基本」の禁止事項）
+  HONSEKI: 'honseki',
+  FAMILY_JOB: 'family_job',
+  FAMILY_EDU: 'family_edu',
+  HOUSING: 'housing',
+  ASSETS: 'assets',
+  RELIGION: 'religion',
+  POLITICS: 'politics',
+  THOUGHT: 'thought',
+  UNION: 'union',
+  NEWSPAPER: 'newspaper',
+  /** 上記のどれにも当てはまらない差別のおそれ（AI のみ） */
+  OTHER_DISCRIMINATION: 'other_discrimination',
+
+  // オワハラのおそれ
+  WITHDRAW_OTHERS: 'withdraw_others',
+  DECIDE_NOW: 'decide_now',
+  OFFER_CONDITION: 'offer_condition',
+  DEADLINE_TODAY: 'deadline_today',
+  PRESSURE_SOFT: 'pressure_soft',
+  /** 上記のどれにも当てはまらないオワハラのおそれ（AI のみ） */
+  OTHER_OWAHARA: 'other_owahara',
+});
+
+/**
+ * 画面に出す短い日本語名。**コードをそのまま見せない。**
+ * `description` は AI にルールを選ばせるときのプロンプトにも使う。
+ */
+export const COMPLIANCE_RULE_META = Object.freeze({
+  [COMPLIANCE_RULE.HONSEKI]: { label: '本籍・出生地', description: '本籍、出生地、国籍を尋ねている' },
+  [COMPLIANCE_RULE.FAMILY_JOB]: { label: '家族の職業', description: '家族の職業、勤務先、家族構成を尋ねている' },
+  [COMPLIANCE_RULE.FAMILY_EDU]: { label: '家族の学歴', description: '家族の学歴や出身校を尋ねている' },
+  [COMPLIANCE_RULE.HOUSING]: { label: '住宅状況', description: '持ち家か賃貸か、間取り、家賃を尋ねている' },
+  [COMPLIANCE_RULE.ASSETS]: { label: '家庭の経済状況', description: '世帯収入、資産、家庭の事情や生活水準を尋ねている' },
+  [COMPLIANCE_RULE.RELIGION]: { label: '宗教・信仰', description: '宗教、信仰、宗派を尋ねている' },
+  [COMPLIANCE_RULE.POLITICS]: { label: '支持政党', description: '支持政党や政治的な考えを尋ねている' },
+  [COMPLIANCE_RULE.THOUGHT]: { label: '思想・信条', description: '尊敬する人物、人生観、信条、座右の銘を尋ねている' },
+  [COMPLIANCE_RULE.UNION]: { label: '労働組合・学生運動', description: '労働組合、学生運動、社会運動への関与を尋ねている' },
+  [COMPLIANCE_RULE.NEWSPAPER]: { label: '購読紙・愛読書', description: '購読新聞や愛読書を尋ねている' },
+  [COMPLIANCE_RULE.OTHER_DISCRIMINATION]: { label: 'その他の差別的質問', description: '上記以外で、本人の適性・能力と関係のない事項を尋ねている' },
+
+  [COMPLIANCE_RULE.WITHDRAW_OTHERS]: { label: '他社辞退の要求', description: '他社の選考辞退や就職活動の終了を求めている' },
+  [COMPLIANCE_RULE.DECIDE_NOW]: { label: '即決の強要', description: 'その場での即答や即決を求めている' },
+  [COMPLIANCE_RULE.OFFER_CONDITION]: { label: '内定の交換条件', description: '内定を交換条件にしている' },
+  [COMPLIANCE_RULE.DEADLINE_TODAY]: { label: '極端に短い回答期限', description: '当日中など極端に短い期限で回答を迫っている' },
+  [COMPLIANCE_RULE.PRESSURE_SOFT]: { label: '判断の急かし', description: '判断を急がせる表現になっている' },
+  [COMPLIANCE_RULE.OTHER_OWAHARA]: { label: 'その他の就活妨害', description: '上記以外で、学生の就職活動の自由を制約している' },
+});
+
+export const COMPLIANCE_RULE_VALUES = Object.values(COMPLIANCE_RULE);
+
+/** ルールコード → カテゴリ。`other_*` も含めて全件そろえる */
+export const COMPLIANCE_RULE_CATEGORY = Object.freeze({
+  [COMPLIANCE_RULE.HONSEKI]: COMPLIANCE_CATEGORY.DISCRIMINATION,
+  [COMPLIANCE_RULE.FAMILY_JOB]: COMPLIANCE_CATEGORY.DISCRIMINATION,
+  [COMPLIANCE_RULE.FAMILY_EDU]: COMPLIANCE_CATEGORY.DISCRIMINATION,
+  [COMPLIANCE_RULE.HOUSING]: COMPLIANCE_CATEGORY.DISCRIMINATION,
+  [COMPLIANCE_RULE.ASSETS]: COMPLIANCE_CATEGORY.DISCRIMINATION,
+  [COMPLIANCE_RULE.RELIGION]: COMPLIANCE_CATEGORY.DISCRIMINATION,
+  [COMPLIANCE_RULE.POLITICS]: COMPLIANCE_CATEGORY.DISCRIMINATION,
+  [COMPLIANCE_RULE.THOUGHT]: COMPLIANCE_CATEGORY.DISCRIMINATION,
+  [COMPLIANCE_RULE.UNION]: COMPLIANCE_CATEGORY.DISCRIMINATION,
+  [COMPLIANCE_RULE.NEWSPAPER]: COMPLIANCE_CATEGORY.DISCRIMINATION,
+  [COMPLIANCE_RULE.OTHER_DISCRIMINATION]: COMPLIANCE_CATEGORY.DISCRIMINATION,
+  [COMPLIANCE_RULE.WITHDRAW_OTHERS]: COMPLIANCE_CATEGORY.OWAHARA,
+  [COMPLIANCE_RULE.DECIDE_NOW]: COMPLIANCE_CATEGORY.OWAHARA,
+  [COMPLIANCE_RULE.OFFER_CONDITION]: COMPLIANCE_CATEGORY.OWAHARA,
+  [COMPLIANCE_RULE.DEADLINE_TODAY]: COMPLIANCE_CATEGORY.OWAHARA,
+  [COMPLIANCE_RULE.PRESSURE_SOFT]: COMPLIANCE_CATEGORY.OWAHARA,
+  [COMPLIANCE_RULE.OTHER_OWAHARA]: COMPLIANCE_CATEGORY.OWAHARA,
+});
+
+/** 未知のコードでも画面が壊れないように、ラベルが無ければコードをそのまま返す */
+export function complianceRuleLabel(code) {
+  return COMPLIANCE_RULE_META[code]?.label ?? code;
+}
+
 /** 検知の出どころ（P4-2b）。ダイアログでどちらが拾ったか示す */
 export const COMPLIANCE_SOURCE = Object.freeze({
   DICTIONARY: 'dictionary',

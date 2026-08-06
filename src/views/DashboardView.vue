@@ -166,12 +166,12 @@ const trendRows = computed(() =>
 )
 
 // --- ⑤ コンプライアンス内訳 ---
-/** ルールコードは英語なので、カテゴリのラベルを添えて読めるようにする */
+// **ルールコード（honseki 等）を画面に出さない。** サーバが日本語ラベルを添えて返す
 const complianceChart = computed(() => {
   const rows = data.value?.complianceBreakdown ?? []
 
   return {
-    labels: rows.map((row) => row.ruleCode),
+    labels: rows.map((row) => row.label),
     datasets: [
       { data: rows.map((row) => row.count), backgroundColor: CHART_COLOR.PRIMARY, ...BAR_STYLE },
     ],
@@ -179,7 +179,13 @@ const complianceChart = computed(() => {
 })
 
 const complianceRows = computed(() =>
-  (data.value?.complianceBreakdown ?? []).map((row) => [row.ruleCode, `${row.count}件`]),
+  (data.value?.complianceBreakdown ?? []).map((row) => [
+    row.label,
+    COMPLIANCE_CATEGORY_META[row.category]?.label ?? '—',
+    `${row.count}件`,
+    // 辞書だけでは届かず AI が拾った件数。AI 層の効き具合が分かる
+    row.aiCount > 0 ? `${row.aiCount}件` : '—',
+  ]),
 )
 
 const escalations = computed(() => data.value?.escalations ?? [])
@@ -308,8 +314,8 @@ const onOpenRoom = (roomId) => router.push(`/inbox/${roomId}`)
 
       <ChartPanel
         title="コンプライアンス検知の内訳"
-        note="ルール別の累計"
-        :columns="['ルール', '件数']"
+        note="ルール別の累計。「AI検知」は辞書では拾えず AI が見つけた件数です"
+        :columns="['ルール', '分類', '件数', 'うちAI検知']"
         :rows="complianceRows"
         empty-text="検知はまだありません"
         :height="chartHeight(complianceRows.length)"
@@ -388,15 +394,6 @@ const onOpenRoom = (roomId) => router.push(`/inbox/${roomId}`)
         </table>
       </div>
     </section>
-
-    <p class="legend">
-      検知カテゴリ：
-      <span
-        v-for="(meta, key) in COMPLIANCE_CATEGORY_META"
-        :key="key"
-        class="legend__item"
-      >{{ key }} = {{ meta.label }}</span>
-    </p>
   </div>
 </template>
 

@@ -6,6 +6,7 @@
 import {
   ALERT_KIND,
   COMPLIANCE_DISCLAIMER,
+  COMPLIANCE_SOURCE,
 } from '../../shared/constants.js';
 import { checkCompliance, isCheckedRole } from './complianceChecker.js';
 import { checkComplianceWithAi } from './complianceAi.js';
@@ -22,9 +23,9 @@ export const ACK_NOTE = Object.freeze({
 
 const INSERT_SQL = `
   INSERT OR IGNORE INTO alerts
-    (kind, severity, room_id, target_user_id, actor_user_id, trigger_message_id, rule_code, detail, created_at)
+    (kind, severity, room_id, target_user_id, actor_user_id, trigger_message_id, rule_code, source, detail, created_at)
   VALUES
-    (@kind, @severity, @roomId, NULL, @actorUserId, @messageId, @ruleCode, @detail, @createdAt)
+    (@kind, @severity, @roomId, NULL, @actorUserId, @messageId, @ruleCode, @source, @detail, @createdAt)
 `;
 
 /**
@@ -100,6 +101,7 @@ function insertAlerts(db, results, { roomId, messageId, actorUserId, acknowledge
         actorUserId,
         messageId,
         ruleCode: result.code,
+        source: result.source ?? COMPLIANCE_SOURCE.DICTIONARY,
         detail: buildDetail(result, resolveAckNote(result.code, acknowledgedCodes)),
         createdAt,
       });
@@ -129,9 +131,10 @@ export function queueAiComplianceRecord(
     const ai = await checkComplianceWithAi(body);
     if (ai.results.length === 0) return;
 
-    // 辞書が既に拾ったカテゴリは記録済みなので重ねない
-    const covered = new Set(checkCompliance(db, body).map((result) => result.category));
-    const fresh = ai.results.filter((result) => !covered.has(result.category));
+    // 辞書が既に拾った**同じルール**は記録済みなので重ねない。
+    // カテゴリ単位で除くと、AI が拾った別論点まで落ちてしまう
+    const covered = new Set(checkCompliance(db, body).map((result) => result.code));
+    const fresh = ai.results.filter((result) => !covered.has(result.code));
     if (fresh.length === 0) return;
 
     insertAlerts(db, fresh, { roomId, messageId, actorUserId, acknowledgedCodes });

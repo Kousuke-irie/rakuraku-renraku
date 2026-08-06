@@ -18,6 +18,7 @@ import {
   COMPLIANCE_AI_STATUS_META,
   COMPLIANCE_CATEGORY_META,
   COMPLIANCE_DISCLAIMER,
+  COMPLIANCE_RULE_META,
   COMPLIANCE_SOURCE,
   COMPLIANCE_SOURCE_META,
 } from "../constants/index.js"
@@ -47,6 +48,8 @@ const title = computed(() =>
 )
 
 const categoryLabel = (category) => COMPLIANCE_CATEGORY_META[category]?.label ?? category
+/** ルールの日本語名。コード（honseki 等）は画面に出さない */
+const ruleLabel = (code) => COMPLIANCE_RULE_META[code]?.label ?? ""
 const severityLabel = (severity) => ALERT_SEVERITY_META[severity]?.label ?? severity
 const sourceLabel = (source) => COMPLIANCE_SOURCE_META[source]?.label ?? source
 
@@ -136,7 +139,8 @@ const onBackdropClick = (event) => {
           class="finding"
         >
           <p class="finding__head">
-            <span class="finding__category">{{ categoryLabel(result.category) }}</span>
+            <span class="finding__category">{{ ruleLabel(result.code) || categoryLabel(result.category) }}</span>
+            <span class="finding__cat-sub">{{ categoryLabel(result.category) }}</span>
             <span
               class="finding__severity"
               :class="`finding__severity--${result.severity}`"
@@ -252,6 +256,11 @@ const onBackdropClick = (event) => {
 .finding__category {
   font-size: 13px;
   font-weight: 600;
+}
+
+.finding__cat-sub {
+  color: var(--color-ink-mute);
+  font-size: 11px;
 }
 
 /* 重大度は色だけでなくテキストでも示す（CLAUDE.md §6-13） */

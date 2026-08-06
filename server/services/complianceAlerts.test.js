@@ -51,6 +51,7 @@ function createDb() {
       actor_user_id INTEGER,
       trigger_message_id INTEGER,
       rule_code TEXT,
+      source TEXT,
       detail TEXT NOT NULL,
       created_at TEXT NOT NULL,
       read_at TEXT,

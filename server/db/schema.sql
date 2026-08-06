@@ -141,6 +141,10 @@ CREATE TABLE IF NOT EXISTS alerts (
   trigger_message_id INTEGER REFERENCES messages(id),
   -- compliance_rules.code。SLA では NULL
   rule_code TEXT,
+  -- 検知の出どころ（'dictionary' / 'ai'）。SLA では NULL。
+  -- ★rule_code に 'ai_' のような接頭辞を付けて代用しないこと。
+  --   ダッシュボードの内訳で辞書とAIの粒度が混ざる（P4-2b の反省）
+  source TEXT CHECK(source IN ('dictionary', 'ai') OR source IS NULL),
   -- 画面に出す短文。本文全体を入れないこと（CLAUDE.md §6-8）
   detail TEXT NOT NULL,
   created_at TEXT NOT NULL,

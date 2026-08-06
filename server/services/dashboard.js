@@ -6,10 +6,13 @@ import {
   ALERT_KIND,
   DASHBOARD_TREND_DAYS,
   HANDLING_STATUS,
+  COMPLIANCE_RULE_CATEGORY,
   ROLE,
   SELECTION_STATUS_VALUES,
+  complianceRuleLabel,
   selectionPhaseOf,
 } from '../../shared/constants.js';
+import { COMPLIANCE_SOURCE } from '../../shared/constants.js';
 import { ACK_NOTE } from './complianceAlerts.js';
 import { SLA_ESCALATE_HOURS, SLA_NOTIFY_HOURS } from './slaMonitor.js';
 
@@ -150,16 +153,31 @@ function buildSlaTrend(db, now) {
   return trend;
 }
 
+/**
+ * ルール別の検知件数。**画面にコードを出さないよう日本語ラベルを添える。**
+ * 辞書とAIは同じルール語彙を使うので、同じ粒度で並べて比較できる。
+ */
 function buildComplianceBreakdown(db) {
   return db
     .prepare(
-      `SELECT rule_code AS ruleCode, COUNT(*) AS count
-         FROM alerts
-        WHERE kind = ? AND rule_code IS NOT NULL
-        GROUP BY rule_code
-        ORDER BY count DESC, rule_code ASC`,
+      `SELECT
+         rule_code AS ruleCode,
+         COUNT(*) AS count,
+         SUM(CASE WHEN source = ? THEN 1 ELSE 0 END) AS aiCount
+       FROM alerts
+      WHERE kind = ? AND rule_code IS NOT NULL
+      GROUP BY rule_code
+      ORDER BY count DESC, rule_code ASC`,
     )
-    .all(ALERT_KIND.COMPLIANCE);
+    .all(COMPLIANCE_SOURCE.AI, ALERT_KIND.COMPLIANCE)
+    .map((row) => ({
+      ruleCode: row.ruleCode,
+      label: complianceRuleLabel(row.ruleCode),
+      category: COMPLIANCE_RULE_CATEGORY[row.ruleCode] ?? null,
+      count: row.count,
+      /** うち AI が拾った件数。辞書だけでは届かない範囲を測る */
+      aiCount: row.aiCount,
+    }));
 }
 
 /**

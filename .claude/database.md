@@ -211,7 +211,8 @@ SLA 通知とコンプライアンス警告を集約する。設計意図は `mo
 | `target_user_id` | INTEGER | FK users | 通知先。compliance では NULL |
 | `actor_user_id` | INTEGER | FK users | 原因を作った人（送信者・担当者） |
 | `trigger_message_id` | INTEGER | FK messages | 起点メッセージ。**冪等キーの一部** |
-| `rule_code` | TEXT | | `compliance_rules.code`。SLA では NULL |
+| `rule_code` | TEXT | | `COMPLIANCE_RULE` のいずれか。SLA では NULL |
+| `source` | TEXT | | `dictionary` / `ai`。SLA では NULL。**`rule_code` に `ai_` 接頭辞を付けて代用しない** |
 | `detail` | TEXT | NOT NULL | 画面用の短文。**本文全体を入れない** |
 | `created_at` | TEXT | NOT NULL | ISO8601 UTC |
 | `read_at` | TEXT | | 既読時刻 |

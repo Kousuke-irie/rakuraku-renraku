@@ -16,7 +16,10 @@ import {
   ALERT_SEVERITY_ORDER,
   ALERT_SEVERITY_VALUES,
   COMPLIANCE_AI_STATUS,
-  COMPLIANCE_CATEGORY_VALUES,
+  COMPLIANCE_RULE,
+  COMPLIANCE_RULE_CATEGORY,
+  COMPLIANCE_RULE_META,
+  COMPLIANCE_RULE_VALUES,
   COMPLIANCE_SOURCE,
 } from '../../shared/constants.js';
 import { COMPLIANCE_AI_TIMEOUT_MS, GEMINI_API_KEY, GEMINI_MODEL } from '../config/gemini.js';
@@ -42,37 +45,44 @@ const OUTPUT_SCHEMA = Object.freeze({
       items: {
         type: 'OBJECT',
         properties: {
-          category: { type: 'STRING', enum: COMPLIANCE_CATEGORY_VALUES },
+          ruleCode: { type: 'STRING', enum: COMPLIANCE_RULE_VALUES },
           severity: { type: 'STRING', enum: ALERT_SEVERITY_VALUES },
           quote: { type: 'STRING' },
           message: { type: 'STRING' },
         },
-        required: ['category', 'severity', 'quote', 'message'],
+        required: ['ruleCode', 'severity', 'quote', 'message'],
       },
     },
   },
   required: ['findings'],
 });
 
+/** ルール一覧をプロンプトに埋める。辞書と同じ語彙から選ばせるため */
+const RULE_CATALOG = COMPLIANCE_RULE_VALUES.map(
+  (code) => `- ${code}: ${COMPLIANCE_RULE_META[code].description}`,
+).join('\n');
+
 const SYSTEM_INSTRUCTION = `あなたは新卒採用の人事が学生へ送る文面を点検する補助システムです。
 入力は人事が送ろうとしている文面です。学生の発言ではありません。
 
-discrimination は、厚生労働省「公正な採用選考の基本」で尋ねてはならないとされる事項を、
-学生に尋ねる・答えさせようとしている場合だけです。該当するのは次の事項です。
-本籍・出生地、家族の職業や続柄や地位や学歴や収入、住宅の状況、生活環境や家庭環境、
-宗教、支持政党、人生観や信条、尊敬する人物、思想、労働組合や学生運動などの社会運動、
-購読新聞や愛読書。
-言い換えや遠回しな聞き方も対象です。例えば「お父様のお仕事は」は家族の職業を尋ねています。
-その事項に触れているだけで、学生に尋ねていない文は該当しません。
+問題があれば、次の一覧から**最も近いruleCodeを1つ選んで**ください。
+
+${RULE_CATALOG}
+
+discrimination 系（honseki〜other_discrimination）は、厚生労働省「公正な採用選考の基本」で
+尋ねてはならないとされる事項を、学生に尋ねる・答えさせようとしている場合だけです。
+言い換えや遠回しな聞き方も対象です。例えば「お父様のお仕事は」は family_job です。
+その事項に触れているだけで学生に尋ねていない文は該当しません。
 例えば「弊社は労働組合と協議して制度を改定しました」は説明であって質問ではないので該当しません。
 「本籍はお伺いしません」のような、尋ねないと明言している文も該当しません。
 
-owahara は、学生の就職活動の自由を制約しようとしている場合だけです。
-他社の選考の辞退や就職活動の終了を求める、内定を交換条件にする、その場での即答を強要する、
-極端に短い回答期限で判断を迫る、が該当します。
-通常の業務連絡や、余裕のある期限の提示は該当しません。
+owahara 系（withdraw_others〜other_owahara）は、学生の就職活動の自由を
+制約しようとしている場合だけです。通常の業務連絡や、余裕のある期限の提示は該当しません。
 
-severity は、上記に明確に当てはまるなら block、判断に迷う程度なら warn にしてください。
+**other_discrimination / other_owahara は最後の手段です。**
+具体的なruleCodeに当てはまるならそちらを選んでください。
+
+severity は、明確に当てはまるなら block、判断に迷う程度なら warn にしてください。
 確信が持てない場合は findings に含めないでください。**見逃しより誤検知の方が有害です。**
 
 quote は該当する部分を入力からそのまま最大40文字で抜き出してください。要約しないでください。
@@ -125,7 +135,8 @@ export function validateAiFindings(value, body) {
   const findings = [];
 
   for (const finding of value.findings) {
-    if (!COMPLIANCE_CATEGORY_VALUES.includes(finding?.category)) continue;
+    // ★辞書と同じ語彙から選ばせる。enum 外は捨てる（'ai_xxx' のような独自コードを作らせない）
+    if (!COMPLIANCE_RULE_VALUES.includes(finding?.ruleCode)) continue;
     if (!ALERT_SEVERITY_VALUES.includes(finding?.severity)) continue;
     if (typeof finding.message !== 'string' || !finding.message.trim()) continue;
     if (typeof finding.quote !== 'string' || !finding.quote.trim()) continue;
@@ -135,9 +146,9 @@ export function validateAiFindings(value, body) {
     if (!body.includes(quote)) continue;
 
     findings.push({
-      // AI 由来は rule_code を code として持たないので、カテゴリで識別する
-      code: `ai_${finding.category}`,
-      category: finding.category,
+      code: finding.ruleCode,
+      // カテゴリはコードから引く。モデルに二重に答えさせて食い違わせない
+      category: COMPLIANCE_RULE_CATEGORY[finding.ruleCode],
       // AI 単独の指摘で送信を止めるのは誤検知の影響が大きい。warn を上限にする
       severity: finding.severity === ALERT_SEVERITY.BLOCK ? ALERT_SEVERITY.BLOCK : ALERT_SEVERITY.WARN,
       message: Array.from(finding.message.trim()).slice(0, 80).join(''),
@@ -146,7 +157,7 @@ export function validateAiFindings(value, body) {
     });
   }
 
-  // 同じカテゴリで複数返ってきたら重い方を1件だけ残す
+  // 同じルールで複数返ってきたら重い方を1件だけ残す
   const byCode = new Map();
   for (const finding of findings) {
     const existing = byCode.get(finding.code);
@@ -236,13 +247,17 @@ export async function checkComplianceWithAi(
  * 辞書が既に同じカテゴリを block で拾っている場合、AI の同カテゴリは重複なので落とす。
  */
 export function mergeFindings(dictionaryResults, aiResults) {
-  const coveredCategories = new Set(dictionaryResults.map((result) => result.category));
+  // 辞書が同じルールを既に拾っているものだけ落とす。
+  // カテゴリ単位で落とすと、AI が拾った別論点まで消えてしまう
+  const coveredCodes = new Set(dictionaryResults.map((result) => result.code));
   const merged = [
     ...dictionaryResults,
-    ...aiResults.filter((result) => !coveredCategories.has(result.category)),
+    ...aiResults.filter((result) => !coveredCodes.has(result.code)),
   ];
 
   return merged.sort(
     (a, b) => ALERT_SEVERITY_ORDER[a.severity] - ALERT_SEVERITY_ORDER[b.severity],
   );
 }
+
+export { COMPLIANCE_RULE };

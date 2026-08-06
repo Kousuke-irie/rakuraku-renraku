@@ -4,6 +4,7 @@ import {
   ALERT_SEVERITY,
   COMPLIANCE_AI_STATUS,
   COMPLIANCE_CATEGORY,
+  COMPLIANCE_RULE,
   COMPLIANCE_SOURCE,
 } from '../../shared/constants.js';
 import {
@@ -16,7 +17,7 @@ import {
 const BODY = 'お父様のお仕事は何ですか';
 
 const FINDING = {
-  category: COMPLIANCE_CATEGORY.DISCRIMINATION,
+  ruleCode: COMPLIANCE_RULE.FAMILY_JOB,
   severity: ALERT_SEVERITY.BLOCK,
   quote: 'お父様のお仕事',
   message: '家族の職業を尋ねているおそれがあります',
@@ -104,7 +105,9 @@ test('enum 外・型違いの項目は捨てる', () => {
   const findings = validateAiFindings(
     {
       findings: [
-        { ...FINDING, category: 'unknown_category' },
+        // 辞書に無い独自コード（ai_xxx など）は作らせない
+        { ...FINDING, ruleCode: 'ai_discrimination' },
+        { ...FINDING, ruleCode: 'unknown_rule' },
         { ...FINDING, severity: 'fatal' },
         { ...FINDING, message: '' },
         { ...FINDING, quote: 123 },
@@ -115,7 +118,8 @@ test('enum 外・型違いの項目は捨てる', () => {
   );
 
   assert.equal(findings.length, 1);
-  assert.equal(findings[0].code, `ai_${COMPLIANCE_CATEGORY.DISCRIMINATION}`);
+  assert.equal(findings[0].code, COMPLIANCE_RULE.FAMILY_JOB, '辞書と同じ語彙になる');
+  assert.equal(findings[0].category, COMPLIANCE_CATEGORY.DISCRIMINATION, 'カテゴリはコードから引く');
   assert.equal(findings[0].source, COMPLIANCE_SOURCE.AI);
 });
 
@@ -124,7 +128,7 @@ test('findings が配列でなければ例外', () => {
   assert.throws(() => validateAiFindings(null, BODY), /invalid_ai_response/);
 });
 
-test('同カテゴリが複数返ってきたら重い方を1件残す', () => {
+test('同じルールが複数返ってきたら重い方を1件残す', () => {
   const findings = validateAiFindings(
     {
       findings: [
@@ -139,38 +143,28 @@ test('同カテゴリが複数返ってきたら重い方を1件残す', () => {
   assert.equal(findings[0].severity, ALERT_SEVERITY.BLOCK);
 });
 
-test('辞書が既に拾ったカテゴリは AI 分を重ねない', () => {
+test('★辞書が既に拾った「ルール」だけ AI 分を落とす（カテゴリ単位では落とさない）', () => {
+  const make = (code, category, severity, source) => ({
+    code, category, severity, source, message: 'x', matched: 'y',
+  });
+
   const dictionary = [
-    {
-      code: 'honseki',
-      category: COMPLIANCE_CATEGORY.DISCRIMINATION,
-      severity: ALERT_SEVERITY.BLOCK,
-      source: COMPLIANCE_SOURCE.DICTIONARY,
-      message: 'x',
-      matched: 'y',
-    },
+    make(COMPLIANCE_RULE.HONSEKI, COMPLIANCE_CATEGORY.DISCRIMINATION, ALERT_SEVERITY.BLOCK, COMPLIANCE_SOURCE.DICTIONARY),
   ];
   const ai = [
-    {
-      code: 'ai_discrimination',
-      category: COMPLIANCE_CATEGORY.DISCRIMINATION,
-      severity: ALERT_SEVERITY.WARN,
-      source: COMPLIANCE_SOURCE.AI,
-      message: 'x',
-      matched: 'y',
-    },
-    {
-      code: 'ai_owahara',
-      category: COMPLIANCE_CATEGORY.OWAHARA,
-      severity: ALERT_SEVERITY.WARN,
-      source: COMPLIANCE_SOURCE.AI,
-      message: 'x',
-      matched: 'y',
-    },
+    // 同じルール → 重複なので落とす
+    make(COMPLIANCE_RULE.HONSEKI, COMPLIANCE_CATEGORY.DISCRIMINATION, ALERT_SEVERITY.WARN, COMPLIANCE_SOURCE.AI),
+    // 同じカテゴリだが別のルール → **残す**。カテゴリ単位で落とすと別論点が消える
+    make(COMPLIANCE_RULE.RELIGION, COMPLIANCE_CATEGORY.DISCRIMINATION, ALERT_SEVERITY.WARN, COMPLIANCE_SOURCE.AI),
+    make(COMPLIANCE_RULE.OTHER_OWAHARA, COMPLIANCE_CATEGORY.OWAHARA, ALERT_SEVERITY.WARN, COMPLIANCE_SOURCE.AI),
   ];
 
   const merged = mergeFindings(dictionary, ai);
-  assert.deepEqual(merged.map((f) => f.code), ['honseki', 'ai_owahara']);
+  assert.deepEqual(merged.map((f) => f.code), [
+    COMPLIANCE_RULE.HONSEKI,
+    COMPLIANCE_RULE.RELIGION,
+    COMPLIANCE_RULE.OTHER_OWAHARA,
+  ]);
 });
 
 test('空文字はAPIを呼ばずに ok を返す', async () => {
