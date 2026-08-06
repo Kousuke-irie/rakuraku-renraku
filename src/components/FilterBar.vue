@@ -8,7 +8,7 @@
 // このコンポーネントは条件を組み立てて applyFilters に渡すだけにする（frontend.md §3）。
 //
 // 列挙値と日本語ラベルは必ず shared/constants.js の *_META から引く（CLAUDE.md §6-1）。
-import { computed, ref } from "vue"
+import { computed, onMounted, ref } from "vue"
 import {
   HANDLING_STATUS_META,
   HANDLING_STATUS_VALUES,
@@ -92,6 +92,11 @@ const selectAssignee = (assigneeId) => {
 
 // #region lifecycle
 useDismissOnOutside(isMenuOpen, closeMenu)
+
+// 担当者フィルタの候補（GET /api/users?role=hr）。取得済みなら何もしない
+onMounted(() => {
+  if (rooms.assignableUsers.length === 0) rooms.fetchAssignableUsers()
+})
 // #endregion
 </script>
 

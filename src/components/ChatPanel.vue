@@ -11,6 +11,7 @@ import { computed, watch } from "vue"
 import { SELECTION_STATUS_META } from "../constants/index.js"
 import { useAuthStore } from "../stores/auth.js"
 import { useMessagesStore } from "../stores/messages.js"
+import { useRoomsStore } from "../stores/rooms.js"
 import { useUiStore } from "../stores/ui.js"
 import MessageList from "./MessageList.vue"
 import StatusChip, { CHIP_KIND } from "./StatusChip.vue"
@@ -24,6 +25,7 @@ const props = defineProps({
 // #region global state
 const auth = useAuthStore()
 const messages = useMessagesStore()
+const rooms = useRoomsStore()
 const ui = useUiStore()
 // #endregion
 
@@ -36,10 +38,17 @@ const selectionStatusLabel = computed(
   () => SELECTION_STATUS_META[student.value.selectionStatus]?.label ?? ""
 )
 
-/** MessageList に渡す送信者の表示情報。学生・自分・担当者を解決できるようにする */
+/**
+ * MessageList に渡す送信者の表示情報。学生・人事全員・自分を解決できるようにする。
+ * 担当者だけでは足りない（担当を外した相手や、代理で返信した別の人事の発言が
+ * 名無しになってしまう）ため、人事の名簿（P2-9 のアサイン候補）も混ぜる。
+ */
 const senders = computed(() => {
   const map = {}
 
+  for (const user of rooms.assignableUsers) {
+    map[user.id] = { displayName: user.displayName, avatarColor: user.avatarColor }
+  }
   if (student.value.userId) {
     map[student.value.userId] = {
       displayName: student.value.displayName,

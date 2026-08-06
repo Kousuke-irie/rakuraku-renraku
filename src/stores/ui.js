@@ -1,9 +1,33 @@
 /* eslint-disable no-unused-vars -- 空実装のため引数が未使用。実装時にこの行を消すこと */
 import { defineStore } from 'pinia'
-import { DEFAULT_BOARD_GROUP_BY, MEMO_SCOPE } from '../constants/index.js'
+import { DEFAULT_BOARD_GROUP_BY, MEMO_SCOPE, MEMO_SCOPE_VALUES } from '../constants/index.js'
 
 /** トーストの連番。Date.now() だと同時 push で衝突する */
 let toastSeq = 0
+
+/**
+ * 受信箱3ペインの幅（px）。既定値とドラッグで動かせる範囲。
+ * 列挙値ではなく画面レイアウトの寸法なので shared/constants.js には置かない。
+ * トークペインが潰れないよう、上限は InboxView が実際の横幅から算出する。
+ */
+export const PANE_WIDTH = Object.freeze({
+  ROOM_LIST: 360,
+  ROOM_LIST_MIN: 280,
+  DETAIL: 320,
+  DETAIL_MIN: 260,
+  /** トークペインに最低限残す幅 */
+  CHAT_MIN: 360,
+  /** 最小化した側に残すレールの幅（アイコンボタン 28px ＋ 左右 8px） */
+  RAIL: 44,
+  /** ペインの隙間＝ドラッグ用のつまみの幅 */
+  RESIZER: 12,
+})
+
+/** 幅を変えられるペイン → state のキー */
+const PANE_WIDTH_KEY = Object.freeze({
+  roomList: 'roomListWidth',
+  detail: 'detailWidth',
+})
 
 /**
  * UI状態ストア（frontend.md §3）
@@ -24,6 +48,12 @@ export const useUiStore = defineStore('ui', {
 
     /** 右側の学生プロフィールパネル（P2-4）。既定は開く */
     profilePanelOpen: true,
+
+    /** ルーム一覧ペインの幅（px）。ペイン間のつまみをドラッグして変える */
+    roomListWidth: PANE_WIDTH.ROOM_LIST,
+
+    /** 詳細ペインの幅（px） */
+    detailWidth: PANE_WIDTH.DETAIL,
 
     /** プロフィールパネル内の申し送りメモ（P2-5） */
     memoPanelOpen: true,
@@ -82,7 +112,21 @@ export const useUiStore = defineStore('ui', {
       this.profilePanelOpen = !this.profilePanelOpen
     },
 
-    toggleMemoPanel() {},
+    /**
+     * ペインの幅を変える（つまみのドラッグ／キーボード操作）。
+     * 上限・下限の判定は呼び出し側（PaneResizer）が行う。
+     * @param {'roomList'|'detail'} pane
+     * @param {number} width px
+     */
+    setPaneWidth(pane, width) {
+      const key = PANE_WIDTH_KEY[pane]
+      if (!key || !Number.isFinite(width)) return
+      this[key] = Math.round(width)
+    },
+
+    toggleMemoPanel() {
+      this.memoPanelOpen = !this.memoPanelOpen
+    },
 
     /** ホームの AI パネル開閉（右下の円形ボタン／カードの閉じるボタン） */
     toggleAiPanel() {
@@ -103,8 +147,11 @@ export const useUiStore = defineStore('ui', {
       this.profileDialogOpen = false
     },
 
-    /** @param {string} scope MEMO_SCOPE のいずれか */
-    setMemoScope(scope) {},
+    /** @param {string} scope MEMO_SCOPE のいずれか（メモのタブ切替・P2-5） */
+    setMemoScope(scope) {
+      if (!MEMO_SCOPE_VALUES.includes(scope)) return
+      this.memoScope = scope
+    },
 
     /** GET /api/snippets（初回のみ） */
     async fetchSnippets() {},
@@ -140,9 +187,12 @@ export const useUiStore = defineStore('ui', {
 
     reset() {
       this.selectedRoomId = null
+      this.roomListWidth = PANE_WIDTH.ROOM_LIST
+      this.detailWidth = PANE_WIDTH.DETAIL
       this.aiPanelOpen = true
       this.boardGroupBy = DEFAULT_BOARD_GROUP_BY
       this.profileDialogOpen = false
+      this.memoScope = MEMO_SCOPE.PRIVATE
       this.snippetPaletteOpen = false
       this.snippetQuery = ''
       this.snippetHighlightIndex = 0
