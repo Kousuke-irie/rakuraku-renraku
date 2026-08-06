@@ -3,10 +3,11 @@
 import db from '../../db/index.js';
 import { assertRoomMember, RoomAccessDeniedError } from '../../services/roomAuth.js';
 import { insertMessage, findMessageByClientMsgId } from '../../routes/messages.js';
+import { emitMessageNew, emitSummaryUpdated } from '../../services/realtime.js';
 import { SOCKET_EMIT, SOCKET_ON } from '../../../shared/constants.js';
 
 export function registerMessageHandlers(io, socket) {
-  socket.on(SOCKET_EMIT.MESSAGE_SEND, ({ roomId, body, clientMsgId }) => {
+  socket.on(SOCKET_EMIT.MESSAGE_SEND, async ({ roomId, body, clientMsgId } = {}) => {
     const numericRoomId = Number(roomId);
 
     try {
@@ -16,7 +17,11 @@ export function registerMessageHandlers(io, socket) {
         socket.emit(SOCKET_ON.ERROR, { code: err.code, message: err.message });
         return;
       }
-      throw err;
+      socket.emit(SOCKET_ON.ERROR, {
+        code: 'internal_error',
+        message: 'メッセージの送信に失敗しました',
+      });
+      return;
     }
 
     if (typeof body !== 'string' || body.trim() === '' || typeof clientMsgId !== 'string' || clientMsgId === '') {
@@ -24,19 +29,28 @@ export function registerMessageHandlers(io, socket) {
       return;
     }
 
-    const message =
-      findMessageByClientMsgId(clientMsgId) ||
-      insertMessage({
-        roomId: numericRoomId,
-        senderId: socket.data.user.id,
-        senderRole: socket.data.user.role,
-        body,
-        clientMsgId,
-      });
+    try {
+      const existing = findMessageByClientMsgId(clientMsgId);
+      const message =
+        existing ||
+        insertMessage({
+          roomId: numericRoomId,
+          senderId: socket.data.user.id,
+          senderRole: socket.data.user.role,
+          body,
+          clientMsgId,
+        });
 
-    socket.emit(SOCKET_ON.MESSAGE_SENT, { clientMsgId, message });
-    io.to(`room:${numericRoomId}`)
-      .to('hr')
-      .emit(SOCKET_ON.MESSAGE_NEW, { message, room: { id: numericRoomId } });
+      socket.emit(SOCKET_ON.MESSAGE_SENT, { clientMsgId, message });
+      if (!existing) {
+        await emitMessageNew(io, db, message);
+        emitSummaryUpdated(io, db);
+      }
+    } catch {
+      socket.emit(SOCKET_ON.ERROR, {
+        code: 'internal_error',
+        message: 'メッセージの送信に失敗しました',
+      });
+    }
   });
 }

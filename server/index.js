@@ -8,6 +8,9 @@ import { PORT, CLIENT_ORIGIN } from './config/env.js';
 import routes from './routes/index.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { registerSocketHandlers } from './sockets/index.js';
+import db from './db/index.js';
+import { recalculateAllUrgencies } from './services/urgencyCalculator.js';
+import { emitRoomUpdated, emitSummaryUpdated } from './services/realtime.js';
 
 const app = express();
 app.use(cors({ origin: CLIENT_ORIGIN, credentials: true }));
@@ -22,7 +25,22 @@ const io = new Server(httpServer, {
   cors: { origin: CLIENT_ORIGIN, credentials: true },
 });
 
+app.set('io', io);
 registerSocketHandlers(io);
+
+const URGENCY_RECALC_INTERVAL_MS = 60_000;
+const urgencyTimer = setInterval(async () => {
+  try {
+    const changedRoomIds = recalculateAllUrgencies(db);
+    if (changedRoomIds.length === 0) return;
+
+    await Promise.all(changedRoomIds.map((roomId) => emitRoomUpdated(io, db, roomId)));
+    emitSummaryUpdated(io, db);
+  } catch (error) {
+    console.error('server: urgency recalculation failed', error.stack);
+  }
+}, URGENCY_RECALC_INTERVAL_MS);
+urgencyTimer.unref();
 
 httpServer.listen(PORT, () => {
   console.log(`server: listening on port ${PORT}`);

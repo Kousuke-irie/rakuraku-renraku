@@ -6,6 +6,8 @@ import { listMemberRoomIds } from '../services/roomAuth.js';
 import db from '../db/index.js';
 import { ROLE } from '../../shared/constants.js';
 import { registerMessageHandlers } from './handlers/message.js';
+import { registerRoomHandlers } from './handlers/room.js';
+import { registerReadHandlers } from './handlers/read.js';
 
 // Cookieヘッダから指定した名前の値だけを取り出す（依存追加を避けた最小実装）。
 function readCookie(cookieHeader, name) {
@@ -50,6 +52,8 @@ export function registerSocketHandlers(io) {
     }
 
     registerMessageHandlers(io, socket);
+    registerRoomHandlers(io, socket);
+    registerReadHandlers(io, socket);
 
     socket.on('disconnect', () => {});
   });
