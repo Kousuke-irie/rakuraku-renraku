@@ -7,7 +7,7 @@
 // - 上端に到達したら `before` カーソルで過去50件を追い足し、**スクロール位置を補正**して
 //   表示位置がジャンプしないようにする
 // - socket の購読は composables/useSocket.js に集約されている（CLAUDE.md §6-12）
-import { computed, nextTick, onMounted, ref, watch } from "vue"
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { MESSAGE_TYPE } from "../constants/index.js"
 import { useAuthStore } from "../stores/auth.js"
 import { useMessagesStore } from "../stores/messages.js"
@@ -152,7 +152,28 @@ const isEmpty = computed(() => items.value.length === 0 && !isLoadingHistory.val
 // #endregion
 
 // #region lifecycle
-onMounted(scrollToBottom)
+/**
+ * 入力欄が伸びる（useComposerHeight）と一覧の高さが縮み、最新のメッセージが
+ * 隠れてしまう。最下部を見ていたときは高さが変わっても最下部に留める。
+ */
+let observer = null
+
+onMounted(() => {
+  scrollToBottom()
+
+  const element = scroller.value
+  if (typeof ResizeObserver === "undefined" || !element) return
+
+  observer = new ResizeObserver(() => {
+    if (atBottom.value) scrollToBottom()
+  })
+  observer.observe(element)
+})
+
+onBeforeUnmount(() => {
+  observer?.disconnect()
+  observer = null
+})
 
 // ルームを切り替えたら最下部から見せる
 watch(
