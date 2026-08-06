@@ -6,9 +6,13 @@
 // ★ロール（auth ストア）を見て決めないこと。
 //   通知の kind が読者を一意に決めるので kind から引くほうが正確で、
 //   ストア間の循環 import（auth → ui → auth）も生まれない。
+import { ALERT_AUDIENCE, ALERT_KIND_AUDIENCE } from "../constants/index.js"
 
 /** 通知一覧。まとめバナー（未読が溜まっている）から開く先 */
 export const NOTIFICATIONS_PATH = "/notifications"
+
+/** 学生向けの通知はマイページ（S-09）で確認する。選考の進捗もFBもそこに載る */
+const STUDENT_PATH = "/mypage"
 
 /**
  * その通知を開くべき画面のパス。
@@ -18,7 +22,8 @@ export const NOTIFICATIONS_PATH = "/notifications"
  * @returns {string}
  */
 export function alertDestination(alert) {
-  if (!alert?.roomId) return NOTIFICATIONS_PATH
+  if (!alert) return NOTIFICATIONS_PATH
+  if (ALERT_KIND_AUDIENCE[alert.kind] === ALERT_AUDIENCE.STUDENT) return STUDENT_PATH
 
-  return `/inbox/${alert.roomId}`
+  return alert.roomId ? `/inbox/${alert.roomId}` : NOTIFICATIONS_PATH
 }

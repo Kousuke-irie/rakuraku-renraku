@@ -130,7 +130,13 @@ CREATE TABLE IF NOT EXISTS company_info (
 -- 扱うため、target_user_id が NULL のコンプライアンス行が重複し放題になる。
 CREATE TABLE IF NOT EXISTS alerts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  kind TEXT NOT NULL CHECK(kind IN ('sla_notify', 'sla_escalate', 'compliance', 'interview_room_missing')),
+  -- 人事向けの監視イベントと学生向けのお知らせを1テーブルで持つ。
+  -- ★どちらの読者に属するかは shared/constants.js の ALERT_KIND_AUDIENCE が正で、
+  --   読み出し側（services/alertView.js）が users.role と突き合わせて混ざらないようにする。
+  kind TEXT NOT NULL CHECK(kind IN (
+    'sla_notify', 'sla_escalate', 'compliance', 'interview_room_missing',
+    'student_selection_advanced', 'student_feedback_published'
+  )),
   severity TEXT NOT NULL CHECK(severity IN ('block', 'warn', 'info')),
   room_id INTEGER NOT NULL REFERENCES rooms(id),
   -- 通知先。SLA は担当者／上長、コンプライアンスは NULL（本人へは即時ダイアログで伝える）
@@ -236,6 +242,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_alerts_compliance_unique
 CREATE UNIQUE INDEX IF NOT EXISTS idx_alerts_interview_room_unique
   ON alerts(kind, room_id, target_user_id, rule_code)
   WHERE kind = 'interview_room_missing';
+-- 学生向け（P4-7）：1学生×1ステップ×1種別につき1件だけ。
+-- rule_code に選考ステップ（status_key）が入る。
+-- 「二次面接に進んだ」「一次面接のFBが公開された」は同じ学生でも別の行になる。
+CREATE UNIQUE INDEX IF NOT EXISTS idx_alerts_student_unique
+  ON alerts(kind, room_id, target_user_id, rule_code)
+  WHERE kind IN ('student_selection_advanced', 'student_feedback_published');
 
 -- 通知一覧（自分宛・未読優先・新しい順）
 CREATE INDEX IF NOT EXISTS idx_alerts_target       ON alerts(target_user_id, read_at, created_at DESC);

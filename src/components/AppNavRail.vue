@@ -68,8 +68,11 @@ const navItems = computed(() =>
  */
 const alertCount = computed(() => ui.alertsUnreadCount)
 
+/** 学生には「お知らせ」。届く中身が監視イベントではなく自分の選考の連絡なので（P4-7） */
+const alertTitle = computed(() => (auth.isStudent ? "お知らせ" : "通知"))
+
 /** 件数は色でなくテキストでも伝える（CLAUDE.md §6-13） */
-const alertLabel = computed(() => `通知：未読 ${alertCount.value}件`)
+const alertLabel = computed(() => `${alertTitle.value}：未読 ${alertCount.value}件`)
 
 const accountLabel = computed(
   () => `${auth.user?.displayName ?? ""}のプロフィールを編集する`
@@ -78,18 +81,16 @@ const accountLabel = computed(
 
 // #region lifecycle
 /**
- * ベルの件数を取りに行く（P4-1）。
+ * ベルの件数を取りに行く（P4-1 / P4-7）。
  * 新着は socket（alert:new）で届くので、ここは初回とログインし直したときだけ。
- * 学生には通知を出さないので取得もしない。
+ * 学生も自分の選考についての通知を受け取るので、ロールで分けない。
  */
-onMounted(() => {
-  if (auth.isHr) ui.fetchAlertCount()
-})
+onMounted(() => ui.fetchAlertCount())
 
 watch(
   () => auth.user?.id,
   (userId, previousId) => {
-    if (userId && userId !== previousId && auth.isHr) ui.fetchAlertCount()
+    if (userId && userId !== previousId) ui.fetchAlertCount()
   }
 )
 // #endregion
@@ -147,8 +148,8 @@ const onLogout = async () => {
         </RouterLink>
       </li>
 
-      <!-- 通知は人事の受信箱に対する機能なので学生には出さない -->
-      <li v-if="auth.isHr">
+      <!-- 通知は人事にも学生にも出す（P4-7）。中身はロールで別（サーバが絞る） -->
+      <li>
         <RouterLink
           class="rail__item"
           :to="NOTIFICATIONS_PATH"
@@ -163,7 +164,7 @@ const onLogout = async () => {
               aria-hidden="true"
             >{{ alertCount }}</span>
           </span>
-          <span class="rail__label">通知</span>
+          <span class="rail__label">{{ alertTitle }}</span>
         </RouterLink>
       </li>
 

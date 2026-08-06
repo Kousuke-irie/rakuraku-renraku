@@ -13,6 +13,12 @@ import { alertDestination, NOTIFICATIONS_PATH } from '../utils/alertLink.js'
 /** トーストの連番。Date.now() だと同時 push で衝突する */
 let toastSeq = 0
 
+/**
+ * 同時に見せるバナーの上限（P4-6）。
+ * これを超えたら古いものから捨てる。画面の右側がバナーで埋まると操作できなくなる。
+ */
+const MAX_TOASTS = 3
+
 /** 定型文の設定画面（P2-1 拡張）での失敗時の既定文言 */
 const SNIPPET_ERROR = Object.freeze({
   FETCH: '定型文の取得に失敗しました',
@@ -537,8 +543,11 @@ export const useUiStore = defineStore('ui', {
      *
      * - 初回接続（ログイン直後）：未読があれば「未読の通知が N 件あります」
      * - 再接続：**増えた分があるときだけ**出す。変化が無いときに出すとうるさい
+     *
+     * @param {{label?: string}} options 呼び名。学生には「お知らせ」（P4-7）。
+     *   ロールは呼び出し側（useSocket）が知っているので、ここで auth を import しない
      */
-    async syncAlertSummary() {
+    async syncAlertSummary({ label = '通知' } = {}) {
       const previousCount = this.alertsUnreadCount
       const isFirstSync = !this.alertsSyncedOnce
 
@@ -558,12 +567,12 @@ export const useUiStore = defineStore('ui', {
 
       const emphasis = (data.unreadImportantCount ?? 0) > 0
       const message = isFirstSync
-        ? `未読の通知が ${data.unreadCount} 件あります。`
-        : `未読の通知が ${added} 件増えました（未読 ${data.unreadCount} 件）。`
+        ? `未読の${label}が ${data.unreadCount} 件あります。`
+        : `未読の${label}が ${added} 件増えました（未読 ${data.unreadCount} 件）。`
 
       this.pushToast({
         type: 'info',
-        title: emphasis ? '通知（重要なものがあります）' : '通知',
+        title: emphasis ? `${label}（重要なものがあります）` : label,
         message,
         emphasis,
         to: NOTIFICATIONS_PATH,
@@ -683,6 +692,13 @@ export const useUiStore = defineStore('ui', {
       if (key) this.toasts = this.toasts.filter((toast) => toast.key !== key)
 
       this.toasts.push({ id: ++toastSeq, type, message, title, emphasis, to, key })
+
+      // ★上限を超えたら古いものから捨てる。
+      //   60秒タイマーが一度に何件も通知を作ることがあり（シード直後が典型）、
+      //   そのぶんバナーを積むと画面の右側が埋まって操作できなくなる。実測で踏んだ。
+      if (this.toasts.length > MAX_TOASTS) {
+        this.toasts = this.toasts.slice(this.toasts.length - MAX_TOASTS)
+      }
     },
 
     dismissToast(id) {

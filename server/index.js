@@ -15,9 +15,8 @@ import {
   detectInterviewRoomGaps,
   resolveStaleInterviewRoomAlerts,
 } from './services/interviewRoomMonitor.js';
-import { findAlertForUser } from './services/alertView.js';
 import {
-  emitAlertNew,
+  emitAlertsNew,
   emitAlertsResolved,
   emitRoomUpdated,
   emitSummaryUpdated,
@@ -56,10 +55,7 @@ const monitorTimer = setInterval(async () => {
   // 緊急度の更新に失敗しても SLA 監視は独立して動かす（try を分ける）
   try {
     // 新規に作られた通知だけが返る。既に通知済みのものは含まない
-    for (const created of detectSlaBreaches(db)) {
-      const alert = findAlertForUser(db, created.targetUserId, created.id);
-      emitAlertNew(io, created.targetUserId, alert);
-    }
+    emitAlertsNew(io, db, detectSlaBreaches(db));
   } catch (error) {
     console.error('server: SLA monitoring failed', error.stack);
   }
@@ -68,11 +64,7 @@ const monitorTimer = setInterval(async () => {
   try {
     // 先に掃除する。日程が変わった通知を閉じてから新しい日時のぶんを立てる
     emitAlertsResolved(io, db, resolveStaleInterviewRoomAlerts(db));
-
-    for (const created of detectInterviewRoomGaps(db)) {
-      const alert = findAlertForUser(db, created.targetUserId, created.id);
-      emitAlertNew(io, created.targetUserId, alert);
-    }
+    emitAlertsNew(io, db, detectInterviewRoomGaps(db));
   } catch (error) {
     console.error('server: interview room monitoring failed', error.stack);
   }

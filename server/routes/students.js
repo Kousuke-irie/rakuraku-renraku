@@ -2,8 +2,12 @@ import { Router } from 'express';
 import db from '../db/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { assertRoomMember } from '../services/roomAuth.js';
-import { emitAlertsResolved, emitRoomUpdated } from '../services/realtime.js';
+import { emitAlertsNew, emitAlertsResolved, emitRoomUpdated } from '../services/realtime.js';
 import { resolveStaleInterviewRoomAlerts } from '../services/interviewRoomMonitor.js';
+import {
+  notifySelectionAdvanced,
+  notifyVisibleFeedbacks,
+} from '../services/studentNotifier.js';
 import { findRoomIdByStudent, findStudent, updateStudent } from '../services/studentProfile.js';
 import { listFeedbacksForHr, saveFeedback } from '../services/selectionFlow.js';
 import {
@@ -122,6 +126,8 @@ router.patch('/:userId', requireAuth, requireHr, async (req, res, next) => {
       return invalidRequest(res, '更新内容が不正です');
     }
 
+    // 選考が進んだかの判定に使うので、更新の**前**に現在値を控える（P4-7）
+    const previousStatus = findStudent(db, userId).selectionStatus;
     const student = updateStudent(db, userId, patch);
     const io = req.app.get('io');
 
@@ -129,6 +135,23 @@ router.patch('/:userId', requireAuth, requireHr, async (req, res, next) => {
     // ★閉じるのは即時、立てるのは60秒タイマー。日時を入れた直後に会議室を
     //   入力するのが普通の操作順なので、即時に検知すると入力途中で通知が飛ぶ。
     emitAlertsResolved(io, db, resolveStaleInterviewRoomAlerts(db, { roomId }));
+
+    // P4-7：選考が進んだら本人へ知らせる。あわせて、先に書かれていたFBが
+    // 完了扱いになって見えるようになったぶんも拾う（順序が逆でも取りこぼさない）
+    emitAlertsNew(io, db, [
+      ...notifySelectionAdvanced(db, {
+        roomId,
+        studentUserId: userId,
+        actorUserId: req.user.id,
+        previousStatus,
+        nextStatus: student.selectionStatus,
+      }),
+      ...notifyVisibleFeedbacks(db, {
+        roomId,
+        studentUserId: userId,
+        actorUserId: req.user.id,
+      }),
+    ]);
 
     // 受信箱の行にも選考ステータスが出ているので、他の人事の画面にも反映する
     await emitRoomUpdated(io, db, roomId);
@@ -161,7 +184,8 @@ router.get('/:userId/feedbacks', requireAuth, requireHr, (req, res, next) => {
 router.put('/:userId/feedbacks/:statusKey', requireAuth, requireHr, (req, res, next) => {
   try {
     const userId = Number(req.params.userId);
-    if (!findStudent(db, userId) || assertStudentAccess(userId, req) === null) {
+    const roomId = findStudent(db, userId) ? assertStudentAccess(userId, req) : null;
+    if (roomId === null) {
       return res.status(404).json({ error: 'not_found', message: '学生が存在しません' });
     }
 
@@ -189,6 +213,15 @@ router.put('/:userId/feedbacks/:statusKey', requireAuth, requireHr, (req, res, n
       body,
       authorId: req.user.id,
     });
+
+    // P4-7：**本人に見えるようになったFBだけ**を知らせる（判定は buildStudentFlow）。
+    // 進行中のステップに書いたぶんは通知しない。合否連絡より先に本人へ漏れる。
+    // 取り消し（空文字）でも通知は消さない。一度公開した事実は残す
+    emitAlertsNew(
+      req.app.get('io'),
+      db,
+      notifyVisibleFeedbacks(db, { roomId, studentUserId: userId, actorUserId: req.user.id }),
+    );
 
     res.json({ feedback });
   } catch (error) {

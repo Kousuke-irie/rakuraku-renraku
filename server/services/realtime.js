@@ -1,5 +1,5 @@
 import { MESSAGE_TYPE, ROLE, SOCKET_ON } from '../../shared/constants.js';
-import { countUnreadAlerts } from './alertView.js';
+import { countUnreadAlerts, findAlertForUser } from './alertView.js';
 import { findRoomForUser } from './roomView.js';
 import { getSummary } from './summary.js';
 
@@ -61,6 +61,22 @@ export function emitMemoUpdated(io, memo) {
 export function emitAlertNew(io, targetUserId, alert) {
   if (!io || !targetUserId || !alert) return;
   io.to(`user:${targetUserId}`).emit(SOCKET_ON.ALERT_NEW, { alert });
+}
+
+/**
+ * 新規に作られた通知をまとめて宛先へ配信する（P4-7）。
+ *
+ * `findAlertForUser` を通すので、**宛先のロールに合わない kind は null になり配信されない**
+ * （読者の壁は services/alertView.js が持つ）。作る側が宛先を取り違えても外へ出ない。
+ *
+ * @param {{id: number, targetUserId: number}[]} created detect/notify が返した新規ぶん
+ */
+export function emitAlertsNew(io, db, created) {
+  if (!io || !Array.isArray(created)) return;
+
+  for (const alert of created) {
+    emitAlertNew(io, alert.targetUserId, findAlertForUser(db, alert.targetUserId, alert.id));
+  }
 }
 
 /**

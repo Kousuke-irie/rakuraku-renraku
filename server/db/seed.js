@@ -12,6 +12,7 @@ import db from './index.js';
 import { classifyTopicTag, clearTagRuleCache } from '../services/tagClassifier.js';
 import { clearComplianceRuleCache } from '../services/complianceChecker.js';
 import { calculateUrgency } from '../services/urgencyCalculator.js';
+import { notifySelectionAdvanced, notifyVisibleFeedbacks } from '../services/studentNotifier.js';
 import {
   ALERT_SEVERITY,
   COMPLIANCE_CATEGORY,
@@ -840,6 +841,36 @@ function insertSelectionFeedbacks(studentUserIds, authorId) {
   }
 }
 
+/**
+ * 学生向けのお知らせ（P4-7）。**通知を作るのは本番と同じサービス**に任せる。
+ * 手書きで alerts に INSERT すると、可視条件（完了済みステップだけFBを見せる）が
+ * シードと本番で食い違う。
+ *
+ * FB は SELECTION_FEEDBACKS のうち本人に見えているぶんだけが通知になる。
+ * 選考の進行は student1（二次面接）に1件だけ用意して、
+ * 学生でログインした直後からお知らせが並んでいる状態にする。
+ */
+function insertStudentAlerts(studentUserIds, actorUserId) {
+  for (const [loginId, studentUserId] of Object.entries(studentUserIds)) {
+    const roomId = db
+      .prepare('SELECT id FROM rooms WHERE student_user_id = ?')
+      .get(studentUserId)?.id;
+    if (!roomId) continue;
+
+    if (loginId === 'student1') {
+      notifySelectionAdvanced(db, {
+        roomId,
+        studentUserId,
+        actorUserId,
+        previousStatus: SELECTION_STATUS.INTERVIEW_1,
+        nextStatus: SELECTION_STATUS.INTERVIEW_2,
+      });
+    }
+
+    notifyVisibleFeedbacks(db, { roomId, studentUserId, actorUserId });
+  }
+}
+
 function insertUser({ loginId, displayName, role, avatarColor }, passwordHash) {
   const now = new Date().toISOString();
   const { lastInsertRowid } = db
@@ -997,6 +1028,7 @@ function seed() {
     }
 
     insertSelectionFeedbacks(studentUserIds, hrUserIds.hr1);
+    insertStudentAlerts(studentUserIds, hrUserIds.hr1);
   });
 
   run();

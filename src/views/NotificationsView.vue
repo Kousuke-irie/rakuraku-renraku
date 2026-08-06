@@ -1,8 +1,11 @@
 <script setup>
-// 通知一覧（P4-1・ナビレールのベルから開く）
+// 通知一覧（P4-1 / P4-7・ナビレールのベルから開く）
 //
-// 中身は監視の結果。SLA（P4-1：学生の最終発言から24時間で担当者へ、48時間で上長へ）と
-// 会議室未設定（P4-5：面接日程は決まっているのに会場が空欄）が並ぶ。
+// **人事と学生で中身が違う。** 何が見えるかはサーバ（services/alertView.js）が
+// users.role と kind の対応で絞るので、この画面はロールで出し分けない。
+// - 人事：SLA（P4-1：24時間で担当者へ、48時間で上長へ）／会議室未設定（P4-5）
+// - 学生：選考が進んだ／FBが公開された（P4-7）
+//
 // コンプライアンス警告（P4-2）はここには出ない。あちらは宛先を持たず、
 // 本人へは送信前ダイアログで伝え、集計はダッシュボード（P4-4）が担う。
 //
@@ -10,13 +13,16 @@
 // 「上から処理すれば終わる」状態を保つため、片付いたものを残さない。
 // 解消は socket（alert:resolved）で届くので、開いたままでも消える（P4-1b）。
 // 後から見返したいときだけ「すべて」に切り替えて解消済みも出す。
+// 学生向けのお知らせは解消の概念を持たない（既読になるだけ）。
 import { computed, onMounted } from "vue"
 import { useRouter } from "vue-router"
 import { ALERT_KIND, ALERT_KIND_META, SLA_ALERT_KINDS } from "../constants/index.js"
+import { useAuthStore } from "../stores/auth.js"
 import { useUiStore } from "../stores/ui.js"
 import { alertDestination } from "../utils/alertLink.js"
 
 // #region global state
+const auth = useAuthStore()
 const ui = useUiStore()
 // #endregion
 
@@ -70,7 +76,7 @@ const onFilterChange = (includeResolved) => ui.setAlertsIncludeResolved(includeR
       <header class="card__head">
         <div class="card__title-row">
           <h1 class="card__title">
-            通知
+            {{ auth.isStudent ? "お知らせ" : "通知" }}
           </h1>
           <button
             v-if="unreadCount > 0"
@@ -85,8 +91,12 @@ const onFilterChange = (includeResolved) => ui.setAlertsIncludeResolved(includeR
           未読 {{ unreadCount }}件 ／ 表示 {{ ui.alerts.length }}件
         </p>
 
-        <!-- 解消済みは既定で隠れる。見返す口をここで開ける（P4-1b） -->
+        <!--
+          解消済みは既定で隠れる。見返す口をここで開ける（P4-1b）。
+          学生のお知らせは解消されないので切り替えを出さない（常に同じ結果になる）
+        -->
         <div
+          v-if="!auth.isStudent"
           class="filter"
           role="group"
           aria-label="通知の絞り込み"
@@ -118,6 +128,10 @@ const onFilterChange = (includeResolved) => ui.setAlertsIncludeResolved(includeR
       >
         <template v-if="ui.alertsIncludeResolved">
           通知はまだありません。
+        </template>
+        <template v-else-if="auth.isStudent">
+          お知らせはまだありません。<br>
+          選考が次のステップへ進んだとき、フィードバックが公開されたときに、ここに届きます。
         </template>
         <template v-else>
           未対応の通知はありません。<br>
@@ -151,7 +165,11 @@ const onFilterChange = (includeResolved) => ui.setAlertsIncludeResolved(includeR
                   class="row__kind"
                   :class="{ 'row__kind--escalate': alert.kind === ALERT_KIND.SLA_ESCALATE }"
                 >{{ kindLabel(alert.kind) }}</span>
-                <span class="row__student">{{ alert.studentName }}</span>
+                <!-- 学生向けの通知に氏名は載らない（自分の名前は情報にならない・P4-7） -->
+                <span
+                  v-if="alert.studentName"
+                  class="row__student"
+                >{{ alert.studentName }}</span>
                 <span
                   v-if="!alert.readAt"
                   class="sr-only"

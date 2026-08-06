@@ -80,12 +80,13 @@ const routes = [
     meta: { requiresAuth: true, roles: [ROLE.STUDENT] },
   },
   {
-    // 通知一覧（ナビレールのベルから開く）。受信箱に対する機能なので人事のみ。
-    // ★雛形。要件IDが無い画面なので frontend.md §1 の S-xx は割り当てていない
+    // 通知一覧（ナビレールのベルから開く・P4-1/P4-7）。
+    // 人事は監視イベント（未返信・会議室未設定）、学生は自分の選考のお知らせを見る。
+    // 何が見えるかはサーバ（services/alertView.js）が users.role で絞る。
     path: "/notifications",
     name: "notifications",
     component: NotificationsView,
-    meta: { requiresAuth: true, roles: [ROLE.HR, ROLE.ADMIN] },
+    meta: { requiresAuth: true },
   },
   {
     path: "/settings/profile",

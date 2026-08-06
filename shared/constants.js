@@ -411,6 +411,10 @@ export const ALERT_KIND = Object.freeze({
   COMPLIANCE: 'compliance',
   /** P4-5。面接日程は決まっているのに会議室が空欄のまま */
   INTERVIEW_ROOM_MISSING: 'interview_room_missing',
+  /** P4-7。学生本人へ：選考が次のステップへ進んだ */
+  STUDENT_SELECTION_ADVANCED: 'student_selection_advanced',
+  /** P4-7。学生本人へ：選考フィードバックが本人に見える状態になった */
+  STUDENT_FEEDBACK_PUBLISHED: 'student_feedback_published',
 });
 
 export const ALERT_KIND_META = Object.freeze({
@@ -418,9 +422,50 @@ export const ALERT_KIND_META = Object.freeze({
   [ALERT_KIND.SLA_ESCALATE]: { label: '上長エスカレーション' },
   [ALERT_KIND.COMPLIANCE]: { label: 'コンプライアンス警告' },
   [ALERT_KIND.INTERVIEW_ROOM_MISSING]: { label: '会議室未設定' },
+  [ALERT_KIND.STUDENT_SELECTION_ADVANCED]: { label: '選考が進みました' },
+  [ALERT_KIND.STUDENT_FEEDBACK_PUBLISHED]: { label: 'フィードバック公開' },
 });
 
 export const ALERT_KIND_VALUES = Object.values(ALERT_KIND);
+
+// ---------------------------------------------------------------------------
+// 通知の読者（P4-7 / monitoring.md §3c）★混ざらないための単一の情報源
+//
+// `alerts` テーブルは人事の監視イベントと学生向けのお知らせを共用する。
+// 分離は**この対応表だけ**で行い、読み出し側（server/services/alertView.js）が
+// users.role と kind を必ず突き合わせる。宛先（target_user_id）の取り違えが
+// あっても、ロールに合わない kind は返らない。
+//
+// ★新しい kind を足したら必ずここにも足すこと。
+//   ALERT_KIND_AUDIENCE に無い kind はどちらのロールにも返らない（安全側に倒す）。
+// ---------------------------------------------------------------------------
+
+export const ALERT_AUDIENCE = Object.freeze({
+  /** 人事（hr / admin）。受信箱の運用のための監視イベント */
+  HR: 'hr',
+  /** 学生本人。自分の選考についてのお知らせ */
+  STUDENT: 'student',
+});
+
+export const ALERT_AUDIENCE_VALUES = Object.values(ALERT_AUDIENCE);
+
+export const ALERT_KIND_AUDIENCE = Object.freeze({
+  [ALERT_KIND.SLA_NOTIFY]: ALERT_AUDIENCE.HR,
+  [ALERT_KIND.SLA_ESCALATE]: ALERT_AUDIENCE.HR,
+  [ALERT_KIND.COMPLIANCE]: ALERT_AUDIENCE.HR,
+  [ALERT_KIND.INTERVIEW_ROOM_MISSING]: ALERT_AUDIENCE.HR,
+  [ALERT_KIND.STUDENT_SELECTION_ADVANCED]: ALERT_AUDIENCE.STUDENT,
+  [ALERT_KIND.STUDENT_FEEDBACK_PUBLISHED]: ALERT_AUDIENCE.STUDENT,
+});
+
+/** @param {string} audience ALERT_AUDIENCE のいずれか */
+const kindsForAudience = (audience) =>
+  Object.freeze(
+    ALERT_KIND_VALUES.filter((kind) => ALERT_KIND_AUDIENCE[kind] === audience),
+  );
+
+export const HR_ALERT_KINDS = kindsForAudience(ALERT_AUDIENCE.HR);
+export const STUDENT_ALERT_KINDS = kindsForAudience(ALERT_AUDIENCE.STUDENT);
 
 /** SLA 系の kind。解消処理（返信時の resolved_at 更新）の対象。 */
 export const SLA_ALERT_KINDS = Object.freeze([

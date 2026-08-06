@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
+import { ALERT_KIND_VALUES } from '../../shared/constants.js';
 
 const DATABASE_PATH = process.env.DATABASE_PATH || './data/app.db';
 const SCHEMA_PATH = path.resolve(import.meta.dirname, 'schema.sql');
@@ -69,17 +70,19 @@ function addMissingAlertColumns(db) {
   db.exec(`ALTER TABLE alerts ADD COLUMN source TEXT`);
 }
 
-/** alerts.kind の CHECK に載っている必要がある最新の種別（P4-5） */
-const LATEST_ALERT_KIND = 'interview_room_missing';
 const LEGACY_ALERTS_TABLE = 'alerts_legacy';
 
 /**
- * alerts.kind の CHECK 制約を作り直す（P4-5）。
+ * alerts.kind の CHECK 制約を作り直す（P4-5 / P4-7）。
  *
  * `CREATE TABLE IF NOT EXISTS` では既存DBの CHECK が更新されないため、
  * 新しい kind を INSERT した瞬間に CONSTRAINT エラーで落ちる。
  * SQLite は CHECK だけを ALTER で差し替えられないのでテーブルごと作り直す。
  * **compliance_rules と違い、こちらは通知の履歴なのでデータを移送する。**
+ *
+ * ★判定は ALERT_KIND_VALUES の全件が CHECK 文に載っているかで行う。
+ *   「最新の1件」を目印にすると、kind を足すたびにこのファイルの定数を
+ *   更新し忘れて静かに壊れる。
  *
  * schema.sql の適用「前」に呼び、退避だけを行う。復元は restoreLegacyAlerts。
  * @returns {boolean} 退避したか
@@ -88,7 +91,8 @@ function stashLegacyAlerts(db) {
   const table = db
     .prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'alerts'`)
     .get();
-  if (!table || table.sql.includes(LATEST_ALERT_KIND)) return false;
+  if (!table) return false;
+  if (ALERT_KIND_VALUES.every((kind) => table.sql.includes(`'${kind}'`))) return false;
 
   // 旧インデックスは RENAME 後も同じ名前で退避先に残る。名前が衝突すると
   // schema.sql の CREATE INDEX IF NOT EXISTS が黙って飛ばされ、

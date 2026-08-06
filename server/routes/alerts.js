@@ -4,7 +4,7 @@
 // （403 だと「その通知は存在する」ことが漏れる。CLAUDE.md §6-6）。
 import { Router } from 'express';
 import db from '../db/index.js';
-import { requireAuth, requireHr } from '../middleware/auth.js';
+import { requireAuth } from '../middleware/auth.js';
 import {
   countUnreadAlerts,
   countUnreadImportantAlerts,
@@ -17,9 +17,13 @@ const router = Router();
 
 const DEFAULT_LIMIT = 50;
 
-// 通知の宛先は担当人事と上長だけ。学生に届く通知は存在しないので、
-// 存在しないものを問い合わせられる口を開けておかない（CLAUDE.md §6-6）。
-router.use(requireAuth, requireHr);
+// 人事も学生も自分宛の通知を取れる（P4-7）。
+//
+// ★ロールによる出し分けはここでは行わない。`alerts` は人事の監視イベントと
+//   学生向けのお知らせを共用するが、**どちらが見えるかは services/alertView.js が
+//   users.role と kind の対応で必ず絞る。** この層でロールを見て分岐すると、
+//   壁が2箇所に散って片方の更新漏れで漏洩する。
+router.use(requireAuth);
 
 router.get('/', (req, res) => {
   const limit = Math.min(Number(req.query.limit) || DEFAULT_LIMIT, DEFAULT_LIMIT);
