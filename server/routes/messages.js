@@ -9,6 +9,7 @@ import { calculateRoomUrgency } from '../services/urgencyCalculator.js';
 import { emitMessageNew, emitSummaryUpdated } from '../services/realtime.js';
 import { applyStatusTransition } from '../services/statusTransition.js';
 import { queueStudentMessageAnalysis } from '../services/aiPriority.js';
+import { findScheduleRequest } from '../services/scheduleRequests.js';
 import { MESSAGE_TYPE, ROLE } from '../../shared/constants.js';
 
 const router = Router();
@@ -25,9 +26,15 @@ const MESSAGE_COLUMNS = `
   type,
   topic_tag     AS topicTag,
   client_msg_id AS clientMsgId,
+  schedule_request_id AS scheduleRequestId,
   created_at    AS createdAt,
   deleted_at    AS deletedAt
 `;
+
+function attachScheduleRequest(message) {
+  if (!message?.scheduleRequestId) return message;
+  return { ...message, scheduleRequest: findScheduleRequest(db, message.scheduleRequestId) };
+}
 
 export function findMessageByClientMsgId(clientMsgId) {
   return db.prepare(`SELECT ${MESSAGE_COLUMNS} FROM messages WHERE client_msg_id = ?`).get(clientMsgId);
@@ -70,7 +77,7 @@ router.get('/rooms/:id/messages', requireAuth, (req, res) => {
         )
         .all(params);
 
-  res.json({ messages: rows });
+  res.json({ messages: rows.map(attachScheduleRequest) });
 });
 
 router.post('/rooms/:id/messages', requireAuth, async (req, res, next) => {

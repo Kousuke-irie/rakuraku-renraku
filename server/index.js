@@ -10,7 +10,12 @@ import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { registerSocketHandlers } from './sockets/index.js';
 import db from './db/index.js';
 import { recalculateAllUrgencies } from './services/urgencyCalculator.js';
-import { emitRoomUpdated, emitSummaryUpdated } from './services/realtime.js';
+import {
+  emitRoomUpdated,
+  emitScheduleRequestUpdated,
+  emitSummaryUpdated,
+} from './services/realtime.js';
+import { expireWaitingScheduleRequests } from './services/scheduleRequests.js';
 
 const app = express();
 app.use(cors({ origin: CLIENT_ORIGIN, credentials: true }));
@@ -41,6 +46,21 @@ const urgencyTimer = setInterval(async () => {
   }
 }, URGENCY_RECALC_INTERVAL_MS);
 urgencyTimer.unref();
+
+const scheduleExpiryTimer = setInterval(async () => {
+  try {
+    const expired = expireWaitingScheduleRequests(db);
+    if (expired.length === 0) return;
+    const roomIds = [...new Set(expired.map((request) => request.roomId))];
+    await Promise.all([
+      ...expired.map((request) => emitScheduleRequestUpdated(io, request)),
+      ...roomIds.map((roomId) => emitRoomUpdated(io, db, roomId)),
+    ]);
+  } catch (error) {
+    console.error('server: schedule expiry update failed', error.stack);
+  }
+}, 60_000);
+scheduleExpiryTimer.unref();
 
 httpServer.listen(PORT, () => {
   console.log(`server: listening on port ${PORT}`);

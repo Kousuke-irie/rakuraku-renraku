@@ -23,6 +23,8 @@ import {
   HANDLING_STATUS,
   LAST_MESSAGE_PREVIEW_LENGTH,
   SELECTION_STATUS_META,
+  SCHEDULE_REQUEST_STATUS,
+  SCHEDULE_REQUEST_STATUS_META,
   TOPIC_TAG_META,
   URGENCY,
   URGENCY_META,
@@ -50,6 +52,21 @@ const selectionLabel = computed(
 )
 
 const topicLabel = computed(() => TOPIC_TAG_META[props.room.topicTag]?.label ?? "")
+
+const scheduleLabel = computed(() => {
+  const request = props.room.scheduleRequest
+  if (!request) return ""
+  if (request.needsAttention) return "[要対応] 予約可能枠なし"
+  if (request.status === SCHEDULE_REQUEST_STATUS.BOOKED && request.bookedStartsAt) {
+    const date = new Date(request.bookedStartsAt).toLocaleString("ja-JP", {
+      month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit",
+    })
+    return `[日程確定] ${date}`
+  }
+  if (request.status === SCHEDULE_REQUEST_STATUS.EXPIRED) return "[要対応] 日程選択期限切れ"
+  if (request.status === SCHEDULE_REQUEST_STATUS.WAITING_STUDENT) return "[日程調整] 学生日程選択待ち"
+  return SCHEDULE_REQUEST_STATUS_META[request.status]?.label ?? ""
+})
 
 /** 緊急（high）の行だけ面を着色し、テキストラベルを添える */
 const isUrgent = computed(() => props.room.urgency === URGENCY.HIGH)
@@ -152,6 +169,17 @@ const time = computed(() => {
             aria-hidden="true"
           >/</span>
           <span>{{ topicLabel }}</span>
+          <span
+            v-if="scheduleLabel"
+            class="room__schedule"
+            :class="{
+              'room__schedule--alert':
+                room.scheduleRequest?.status === SCHEDULE_REQUEST_STATUS.EXPIRED ||
+                room.scheduleRequest?.needsAttention,
+            }"
+          >
+            ・{{ scheduleLabel }}
+          </span>
         </p>
       </div>
     </RouterLink>
@@ -266,5 +294,16 @@ const time = computed(() => {
 
 .room__sep {
   color: var(--color-hairline);
+}
+
+.room__schedule {
+  overflow: hidden;
+  color: var(--color-primary);
+  font-weight: 700;
+  text-overflow: ellipsis;
+}
+
+.room__schedule--alert {
+  color: var(--color-error);
 }
 </style>

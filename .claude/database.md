@@ -23,6 +23,8 @@ users ──┬─< room_members >── rooms ──< messages ──< read_rec
 snippets（ルーム非依存・全社共有）
 tag_rules（キーワード辞書）
 company_info（ルーム非依存・全社共有・必ず1行）
+calendar_interviewers ──< calendar_events
+calendar_interviewers ──< schedule_requests ──1 calendar_bookings
 ```
 
 ---
@@ -96,6 +98,18 @@ company_info（ルーム非依存・全社共有・必ず1行）
 | `client_msg_id` | TEXT | UNIQUE | クライアント生成 UUID。重複排除用 |
 | `created_at` | TEXT | NOT NULL | |
 | `deleted_at` | TEXT | | NULL でなければ送信取消済み |
+| `schedule_request_id` | INTEGER | NULL, FK→schedule_requests.id | 日程予約カードとの関連 |
+
+### 面接日程予約（P3-4）
+
+- `calendar_interviewers`：擬似カレンダーの面接官。チャット利用者ではないため `users` と分離
+- `calendar_events`：面接官の既存予定。重なる生成枠を受付終了にする
+- `schedule_requests`：学生へ送る予約依頼。`status` が予約フローの正
+- `calendar_bookings`：確定予約の監査テーブル。`external_slot_id` と `schedule_request_id` は UNIQUE
+- `idx_schedule_one_waiting_per_room`：1ルームの有効な `waiting_student` を1件に制限
+
+予約確定は `calendar_bookings` INSERT、`schedule_requests` 更新、`students` 更新、確定メッセージ追加を
+同一SQLiteトランザクションで実行する。
 
 ### `read_receipts`
 

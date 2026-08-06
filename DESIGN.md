@@ -480,3 +480,10 @@ Product UI mockups use `srcset` for desktop / tablet / mobile crops; the mobile 
 5. Default body to `{typography.body-md}`; reserve `{typography.body-lg}` for marketing leads.
 6. Keep orange scarce — one filled orange button per viewport.
 7. Pair every hero band with the pastel-mesh gradient backdrop; bare-canvas heroes read as off-brand.
+
+## Transactional Scheduling UI
+
+面接日程予約の業務画面は既存のトーク画面と同じトークンを使う。予約カード・作成モーダル・
+週間表・確認カードはいずれも `canvas`、`hairline`、`rounded.lg/xl`、8px spacingを再利用する。
+予約可能・受付終了・選択中は `○` / `×` / `✓ 選択中` を必ず併記し、色だけに依存しない。
+各画面の主操作はオレンジの塗りボタン1つに限定し、副操作は既存のラベンダー面ボタンを使う。

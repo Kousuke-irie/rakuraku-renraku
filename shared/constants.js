@@ -142,6 +142,47 @@ export const SCHEDULE_STATE_META = Object.freeze({
 
 export const SCHEDULE_STATE_VALUES = Object.values(SCHEDULE_STATE);
 
+// ---------------------------------------------------------------------------
+// 面接日程予約（P3-4 改訂）
+// schedule_requests.status が予約フローの正。students.schedule_state は互換表示用に同期する。
+// ---------------------------------------------------------------------------
+
+export const SCHEDULE_REQUEST_STATUS = Object.freeze({
+  DRAFT: 'draft',
+  WAITING_STUDENT: 'waiting_student',
+  BOOKED: 'booked',
+  EXPIRED: 'expired',
+  CANCELLED: 'cancelled',
+});
+
+export const SCHEDULE_REQUEST_STATUS_META = Object.freeze({
+  [SCHEDULE_REQUEST_STATUS.DRAFT]: { label: '作成中' },
+  [SCHEDULE_REQUEST_STATUS.WAITING_STUDENT]: { label: '学生日程選択待ち' },
+  [SCHEDULE_REQUEST_STATUS.BOOKED]: { label: '日程確定' },
+  [SCHEDULE_REQUEST_STATUS.EXPIRED]: { label: '回答期限切れ' },
+  [SCHEDULE_REQUEST_STATUS.CANCELLED]: { label: '取消' },
+});
+
+export const SCHEDULE_REQUEST_STATUS_VALUES = Object.values(SCHEDULE_REQUEST_STATUS);
+
+export const INTERVIEW_FORMAT = Object.freeze({
+  ONLINE: 'online',
+  ONSITE: 'onsite',
+});
+
+export const INTERVIEW_FORMAT_META = Object.freeze({
+  [INTERVIEW_FORMAT.ONLINE]: { label: 'オンライン' },
+  [INTERVIEW_FORMAT.ONSITE]: { label: '対面' },
+});
+
+export const INTERVIEW_FORMAT_VALUES = Object.values(INTERVIEW_FORMAT);
+
+export const INTERVIEW_DURATION_OPTIONS = Object.freeze([30, 60, 90]);
+export const DEFAULT_INTERVIEW_DURATION_MINUTES = 60;
+export const DEFAULT_DAILY_START_TIME = '10:00';
+export const DEFAULT_DAILY_END_TIME = '18:00';
+export const SCHEDULE_REFRESH_INTERVAL_MS = 30_000;
+
 export const MESSAGE_TYPE = Object.freeze({
   TEXT: 'text',
   SYSTEM: 'system',
@@ -276,6 +317,8 @@ export const DEFAULT_TOPIC_TAG = TOPIC_TAG.OTHER;
 export const DEFAULT_URGENCY = URGENCY.NORMAL;
 export const DEFAULT_AI_ANALYSIS_STATUS = AI_ANALYSIS_STATUS.SKIPPED;
 export const DEFAULT_SCHEDULE_STATE = SCHEDULE_STATE.NONE;
+export const DEFAULT_SCHEDULE_REQUEST_STATUS = SCHEDULE_REQUEST_STATUS.DRAFT;
+export const DEFAULT_INTERVIEW_FORMAT = INTERVIEW_FORMAT.ONLINE;
 export const DEFAULT_MEMO_SCOPE = MEMO_SCOPE.PRIVATE;
 export const DEFAULT_AI_SUMMARY_STATUS = AI_SUMMARY_STATUS.IDLE;
 
@@ -305,6 +348,8 @@ export const SOCKET_EMIT = Object.freeze({
   MESSAGE_SEND: 'message:send',
   MESSAGE_READ: 'message:read',
   ROOM_STATUS_UPDATE: 'room:status_update',
+  SCHEDULE_WATCH: 'schedule:watch',
+  SCHEDULE_UNWATCH: 'schedule:unwatch',
 });
 
 // Server → Client
@@ -318,6 +363,9 @@ export const SOCKET_ON = Object.freeze({
   SUMMARY_UPDATED: 'summary:updated',
   /** P3-1a。生成を依頼した本人にのみ配信する */
   AI_SUMMARY_UPDATED: 'ai:summary_updated',
+  SCHEDULE_SLOT_UPDATED: 'schedule:slot_updated',
+  SCHEDULE_REQUEST_UPDATED: 'schedule:request_updated',
+  SCHEDULE_BOOKED: 'schedule:booked',
   ERROR: 'error',
 });
 

@@ -63,3 +63,23 @@ export function emitReadUpdated(io, payload) {
   if (!io) return;
   io.to(`room:${payload.roomId}`).emit(SOCKET_ON.READ_UPDATED, payload);
 }
+
+export function emitScheduleRequestUpdated(io, request) {
+  if (!io || !request) return;
+  io.to(`room:${request.roomId}`).emit(SOCKET_ON.SCHEDULE_REQUEST_UPDATED, { request });
+}
+
+export function emitScheduleBooked(io, request) {
+  if (!io || !request) return;
+  io.to(`room:${request.roomId}`).emit(SOCKET_ON.SCHEDULE_BOOKED, { request });
+}
+
+export function emitScheduleSlotUpdated(io, { interviewerId, slotId, available }) {
+  if (!io) return;
+  io.to(`calendar:${interviewerId}`).emit(SOCKET_ON.SCHEDULE_SLOT_UPDATED, {
+    interviewerId,
+    slotId,
+    available,
+    updatedAt: new Date().toISOString(),
+  });
+}

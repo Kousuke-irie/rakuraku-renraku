@@ -62,7 +62,7 @@
 | `normal` | 通常 | 標準表示 |
 | `low` | 低 | 行全体を薄く表示 |
 
-## 5. 日程調整進捗 `SCHEDULE_STATE`（P3-4）
+## 5. 日程調整進捗 `SCHEDULE_STATE`（旧P3-4・互換用）
 
 | 値 | 表示名 |
 | --- | --- |
@@ -71,6 +71,20 @@
 | `interviewer_check` | 面接官確認中 |
 | `room_pending` | 会議室未押さえ |
 | `confirmed` | 確定 |
+
+改訂版P3-4では予約状態の正として使わない。既存プロフィールとの互換表示に必要な範囲だけ同期する。
+
+### 面接日程予約 `SCHEDULE_REQUEST_STATUS`（改訂版P3-4）
+
+| 値 | 表示名 |
+| --- | --- |
+| `draft` | 作成中 |
+| `waiting_student` | 学生日程選択待ち |
+| `booked` | 日程確定 |
+| `expired` | 回答期限切れ |
+| `cancelled` | 取消 |
+
+面接形式は `INTERVIEW_FORMAT`（`online` / `onsite`）を使用する。
 
 ## 6. ロール `ROLE`
 

@@ -11,6 +11,7 @@ import {
 } from '../services/realtime.js';
 import { updateAssignee, updateHandlingStatus } from '../services/roomStatus.js';
 import { markRoomRead } from '../services/readReceipt.js';
+import { expireWaitingScheduleRequests } from '../services/scheduleRequests.js';
 import {
   DEFAULT_SORT_KEY,
   HANDLING_STATUS_VALUES,
@@ -90,6 +91,7 @@ function parseRoomFilters(query, userId) {
 }
 
 router.get('/', requireAuth, (req, res) => {
+  expireWaitingScheduleRequests(db);
   const filters = parseRoomFilters(req.query, req.user.id);
   if (!filters) {
     return res.status(400).json({
@@ -102,6 +104,7 @@ router.get('/', requireAuth, (req, res) => {
 });
 
 router.get('/:id', requireAuth, (req, res) => {
+  expireWaitingScheduleRequests(db);
   const roomId = Number(req.params.id);
   assertRoomMember(db, req.user.id, roomId);
 

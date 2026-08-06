@@ -13,11 +13,14 @@ import { classifyTopicTag, clearTagRuleCache } from '../services/tagClassifier.j
 import { calculateUrgency } from '../services/urgencyCalculator.js';
 import {
   HANDLING_STATUS,
+  INTERVIEW_FORMAT,
   MESSAGE_TYPE,
   ROLE,
   ROOM_TYPE,
   SCHEDULE_STATE,
+  SCHEDULE_REQUEST_STATUS,
   SELECTION_STATUS,
+  URGENCY,
 } from '../../shared/constants.js';
 
 const BCRYPT_COST = 10;
@@ -519,7 +522,11 @@ const STUDENTS = [...SHOWCASE_STUDENTS, ...buildGeneratedStudents()];
 function clearExistingData() {
   // rooms.last_message_id が messages を参照する循環FKがあるため、先にNULL化してから削除する。
   db.prepare(`UPDATE rooms SET last_message_id = NULL, ai_analyzed_message_id = NULL`).run();
-  const tables = ['read_receipts', 'memos', 'room_members', 'messages', 'rooms', 'students', 'users', 'tag_rules', 'snippets', 'company_info'];
+  const tables = [
+    'read_receipts', 'memos', 'room_members', 'calendar_bookings', 'calendar_events',
+    'messages', 'schedule_requests', 'rooms', 'students', 'calendar_interviewers',
+    'users', 'tag_rules', 'snippets', 'company_info',
+  ];
   for (const table of tables) {
     db.prepare(`DELETE FROM ${table}`).run();
   }
@@ -645,6 +652,179 @@ function insertStudentRoom(student, { hrUserIds, allHrIds, passwordHash }) {
   db.prepare(
     `UPDATE rooms SET last_message_id = ?, last_message_at = ?, last_student_message_at = ?, urgency = ? WHERE id = ?`,
   ).run(lastMessageId, lastMessageAt, lastStudentMessageAt, urgency, roomId);
+
+  return { roomId: Number(roomId), studentUserId: Number(studentUserId), assigneeUserId };
+}
+
+function localDateTimeIso(daysFromNow, hours, minutes = 0) {
+  const now = new Date();
+  return new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate() + daysFromNow,
+    hours,
+    minutes,
+    0,
+    0,
+  ).toISOString();
+}
+
+function seedInterviewScheduling({ hrUserIds, studentRefs }) {
+  const now = new Date().toISOString();
+  const interviewers = [
+    { externalId: 'mock-sato', displayName: '佐藤 健', department: '開発部' },
+    { externalId: 'mock-suzuki', displayName: '鈴木 彩', department: '事業企画部' },
+    { externalId: 'mock-takahashi', displayName: '高橋 翔', department: '人事部' },
+  ];
+  const interviewerIds = {};
+  for (const interviewer of interviewers) {
+    const result = db.prepare(
+      `INSERT INTO calendar_interviewers (
+         external_id, display_name, department, is_active, created_at, updated_at
+       ) VALUES (?, ?, ?, 1, ?, ?)`,
+    ).run(interviewer.externalId, interviewer.displayName, interviewer.department, now, now);
+    interviewerIds[interviewer.externalId] = Number(result.lastInsertRowid);
+  }
+
+  // 既存予定を混ぜ、初回表示から ○ と × の両方が見えるようにする。
+  for (const interviewerId of Object.values(interviewerIds)) {
+    for (const event of [
+      { day: 3, start: 11, end: 12 },
+      { day: 4, start: 14, end: 15 },
+      { day: 6, start: 10, end: 11 },
+    ]) {
+      db.prepare(
+        `INSERT INTO calendar_events (interviewer_id, starts_at, ends_at, created_at)
+         VALUES (?, ?, ?, ?)`,
+      ).run(
+        interviewerId,
+        localDateTimeIso(event.day, event.start),
+        localDateTimeIso(event.day, event.end),
+        now,
+      );
+    }
+  }
+
+  const createDemoRequest = ({
+    studentLoginId,
+    interviewerExternalId,
+    status,
+    deadline,
+    bookedStart = null,
+  }) => {
+    const student = studentRefs[studentLoginId];
+    const interviewerId = interviewerIds[interviewerExternalId];
+    const interviewerName = interviewers.find((item) => item.externalId === interviewerExternalId)?.displayName;
+    const bookedEnd = bookedStart ? new Date(new Date(bookedStart).getTime() + 60 * 60_000).toISOString() : null;
+    const bookedSlotId = bookedStart
+      ? `interviewer-${interviewerId}-${bookedStart.replace(/[-:]/g, '').slice(0, 13)}Z`
+      : null;
+    const result = db.prepare(
+      `INSERT INTO schedule_requests (
+         room_id, student_user_id, interviewer_id, created_by_user_id,
+         selection_stage, duration_minutes, available_from, available_until,
+         daily_start_time, daily_end_time, response_deadline,
+         interview_format, location_text, status,
+         booked_slot_id, booked_starts_at, booked_ends_at, booked_at,
+         created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      student.roomId,
+      student.studentUserId,
+      interviewerId,
+      hrUserIds.hr1,
+      '一次面接',
+      60,
+      localDateTimeIso(2, 10),
+      localDateTimeIso(8, 18),
+      '10:00',
+      '18:00',
+      deadline,
+      INTERVIEW_FORMAT.ONLINE,
+      'URLは確定後に案内します',
+      status,
+      bookedSlotId,
+      bookedStart,
+      bookedEnd,
+      bookedStart ? hoursAgoIso(1) : null,
+      hoursAgoIso(2),
+      now,
+    );
+    const requestId = Number(result.lastInsertRowid);
+    const messageResult = db.prepare(
+      `INSERT INTO messages (
+         room_id, sender_id, body, type, schedule_request_id, created_at
+       ) VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(
+      student.roomId,
+      hrUserIds.hr1,
+      '一次面接の日程を選択してください',
+      MESSAGE_TYPE.TEXT,
+      requestId,
+      hoursAgoIso(2),
+    );
+
+    if (status === SCHEDULE_REQUEST_STATUS.WAITING_STUDENT) {
+      db.prepare(`UPDATE students SET schedule_state = ?, updated_at = ? WHERE user_id = ?`).run(
+        SCHEDULE_STATE.PROPOSED,
+        now,
+        student.studentUserId,
+      );
+    }
+    if (status === SCHEDULE_REQUEST_STATUS.BOOKED) {
+      db.prepare(
+        `INSERT INTO calendar_bookings (
+           schedule_request_id, interviewer_id, external_slot_id,
+           starts_at, ends_at, status, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ).run(requestId, interviewerId, bookedSlotId, bookedStart, bookedEnd, status, now);
+      db.prepare(
+        `UPDATE students SET next_interview_at = ?, interviewer = ?, schedule_state = ?, updated_at = ?
+         WHERE user_id = ?`,
+      ).run(bookedStart, interviewerName, SCHEDULE_STATE.CONFIRMED, now, student.studentUserId);
+    }
+
+    // 待機中カードはチャット最下部へ置き、デモで見つけやすくする。
+    if (status === SCHEDULE_REQUEST_STATUS.WAITING_STUDENT) {
+      db.prepare(
+        `UPDATE rooms SET last_message_id = ?, last_message_at = ?, handling_status = ?, urgency = ? WHERE id = ?`,
+      ).run(
+        Number(messageResult.lastInsertRowid),
+        hoursAgoIso(2),
+        HANDLING_STATUS.WAITING_STUDENT,
+        URGENCY.LOW,
+        student.roomId,
+      );
+    }
+  };
+
+  const futureDeadline = localDateTimeIso(1, 18);
+  createDemoRequest({
+    studentLoginId: 'student2',
+    interviewerExternalId: 'mock-sato',
+    status: SCHEDULE_REQUEST_STATUS.WAITING_STUDENT,
+    deadline: futureDeadline,
+  });
+  // 同じ面接官を対象にして、student2 の予約で共通枠が ○→× になるデモ用。
+  createDemoRequest({
+    studentLoginId: 'student9',
+    interviewerExternalId: 'mock-sato',
+    status: SCHEDULE_REQUEST_STATUS.WAITING_STUDENT,
+    deadline: futureDeadline,
+  });
+  createDemoRequest({
+    studentLoginId: 'student5',
+    interviewerExternalId: 'mock-suzuki',
+    status: SCHEDULE_REQUEST_STATUS.BOOKED,
+    deadline: futureDeadline,
+    bookedStart: localDateTimeIso(3, 10),
+  });
+  createDemoRequest({
+    studentLoginId: 'student4',
+    interviewerExternalId: 'mock-takahashi',
+    status: SCHEDULE_REQUEST_STATUS.EXPIRED,
+    deadline: hoursAgoIso(24),
+  });
 }
 
 function seed() {
@@ -663,9 +843,11 @@ function seed() {
     }
     const allHrIds = Object.values(hrUserIds);
 
+    const studentRefs = {};
     for (const student of STUDENTS) {
-      insertStudentRoom(student, { hrUserIds, allHrIds, passwordHash });
+      studentRefs[student.loginId] = insertStudentRoom(student, { hrUserIds, allHrIds, passwordHash });
     }
+    seedInterviewScheduling({ hrUserIds, studentRefs });
   });
 
   run();
@@ -676,6 +858,7 @@ function seed() {
     messages: db.prepare('SELECT COUNT(*) AS c FROM messages').get().c,
     tagRules: db.prepare('SELECT COUNT(*) AS c FROM tag_rules').get().c,
     snippets: db.prepare('SELECT COUNT(*) AS c FROM snippets').get().c,
+    scheduleRequests: db.prepare('SELECT COUNT(*) AS c FROM schedule_requests').get().c,
   };
   const perAssignee = db
     .prepare(

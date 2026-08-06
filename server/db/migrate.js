@@ -28,6 +28,18 @@ function addMissingRoomAiColumns(db) {
   }
 }
 
+function addMissingMessageScheduleColumn(db) {
+  const table = db
+    .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`)
+    .get('messages');
+  if (!table) return;
+
+  const columns = new Set(db.prepare(`PRAGMA table_info(messages)`).all().map((column) => column.name));
+  if (!columns.has('schedule_request_id')) {
+    db.exec(`ALTER TABLE messages ADD COLUMN schedule_request_id INTEGER REFERENCES schedule_requests(id)`);
+  }
+}
+
 function migrate() {
   const dir = path.dirname(DATABASE_PATH);
   fs.mkdirSync(dir, { recursive: true });
@@ -36,6 +48,8 @@ function migrate() {
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
 
+  // schema.sql 内の idx_messages_schedule 作成より先に既存 messages を拡張する。
+  addMissingMessageScheduleColumn(db);
   const schema = fs.readFileSync(SCHEMA_PATH, 'utf-8');
   db.exec(schema);
   addMissingRoomAiColumns(db);

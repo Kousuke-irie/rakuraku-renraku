@@ -14,6 +14,9 @@
 | S-06 | 設定 | `/settings/profile` | 全員（※セクション単位でロール制限あり） |
 | S-07 | **ホーム（学生一覧ダッシュボード）** | `/home` | hr / admin |
 | S-08 | **全学生（担当人事別ボード）** | `/students` | hr / admin |
+| S-09 | 面接日程選択 | `/schedules/:id/select` | student |
+| S-10 | 面接日程確認 | `/schedules/:id/confirm` | student |
+| S-11 | 面接予約完了 | `/schedules/:id/complete` | student |
 
 **S-07 が人事のログイン後の着地点**、**S-03/S-04 が対応の主画面**。
 S-07 は「今日どの学生に対応すべきか」を全幅の一覧で俯瞰する画面、S-04 は選んだ1名に返信する画面、と役割を分ける。
@@ -72,14 +75,16 @@ router.beforeEach(async (to) => {
 | `useRoomsStore` | `rooms`, `filters`, `sortKey`, `summary`, `sortedRooms`(getter), `upsertRoom()`, `applyFilters()` |
 | `useMessagesStore` | `byRoomId`（ルームIDをキーにしたキャッシュ）, `hasMore`, `loadHistory()`, `appendMessage()`, `markSent()`, `markFailed()` |
 | `useUiStore` | 選択中ルームID、パネル開閉、スニペットパレットの表示状態、会社情報（P2-10） |
+| `useSchedulesStore` | 面接官、予約依頼、最新空き枠、選択中枠、Socket更新（P3-4） |
 
 ### ルール
 
 - **フィルタ・ソート条件は `useRoomsStore` に保持する。** ルーム切替で失われないこと
 - **メッセージは `byRoomId` にキャッシュし、ルーム再訪時に再フェッチしない**
 - Socket イベントによる更新も必ずストアの action 経由で行う
-- **ストアは上の4つに固定する。** 定型文（`snippets`）・会社情報（`company`）のような
-  ルームに紐づかない全社共有マスタデータは `useUiStore` に置く。ストアを増やさない
+- 基盤ストアは従来の4つを維持し、改訂版P3-4だけは独立した予約ライフサイクルを持つため
+  `useSchedulesStore` に分離する。定型文（`snippets`）・会社情報（`company`）のような
+  ルームに紐づかない全社共有マスタデータは `useUiStore` に置く。予約以外の都合でストアを増やさない
 
 ---
 
@@ -94,7 +99,9 @@ useSocket.js
   ├ socket.on('room:updated')   → roomsStore.upsertRoom()
   ├ socket.on('read:updated')   → messagesStore.updateReadState()
   ├ socket.on('memo:updated')   → memo の反映
-  └ socket.on('summary:updated')→ roomsStore.summary の更新
+  ├ socket.on('summary:updated')→ roomsStore.summary の更新
+  ├ socket.on('schedule:slot_updated') → schedulesStore.handleSlotUpdated()
+  └ socket.on('schedule:request_updated') → schedulesStore.handleRequestUpdated()
 ```
 
 - **コンポーネント内で直接 `socket.on()` を書かない**
@@ -379,7 +386,16 @@ useSocket.js
 
 ---
 
-## 10. 禁止事項
+## 10. 面接日程予約画面（P3-4）
+
+- 人事側はトーク入力欄の「日程調整を作成」からモーダルを開き、空き枠確認後だけ送信できる
+- 学生チャットは候補日時を列挙せず `ScheduleRequestCard` を表示する
+- 日程選択は `ScheduleWeekGrid` で日付を列、時刻を行にし、○・×・選択中を文字でも示す
+- 選択、確認、完了を別ルートにし、確認画面を開いたときも最新状態を取得する
+- 選択画面表示中だけ30秒更新し、タブ復帰・window focusでも再取得する
+- Socket購読は画面から `useSchedulesStore.watchRequest()` を呼び、イベント登録自体は `useSocket.js` に置く
+
+## 11. 禁止事項
 
 1. **`v-html` を使わない。** メッセージ本文はテキスト補間で描画する（XSS対策）
 2. **`provide/inject` のバケツリレーを使わない**

@@ -9,7 +9,7 @@
 //   入力欄のキー操作をストアの action に取り次ぐだけ
 // - 変数展開（P2-2）のロジックは utils/snippetRenderer.js に集約する（business-logic.md §5）
 // - socket の購読は composables/useSocket.js に集約されている（CLAUDE.md §6-12）
-import { computed, watch } from "vue"
+import { computed, ref, watch } from "vue"
 import { useComposerHeight } from "../composables/useComposerHeight.js"
 import { SELECTION_STATUS_META } from "../constants/index.js"
 import { useAuthStore } from "../stores/auth.js"
@@ -23,6 +23,7 @@ import MessageList from "./MessageList.vue"
 import SnippetPalette from "./SnippetPalette.vue"
 import StatusChip, { CHIP_KIND } from "./StatusChip.vue"
 import UserAvatar from "./UserAvatar.vue"
+import ScheduleRequestDialog from "./ScheduleRequestDialog.vue"
 
 const props = defineProps({
   /** rooms ストアの room（stores/rooms.js の JSDoc 参照） */
@@ -34,6 +35,7 @@ const auth = useAuthStore()
 const messages = useMessagesStore()
 const rooms = useRoomsStore()
 const ui = useUiStore()
+const scheduleDialogOpen = ref(false)
 // #endregion
 
 // #region computed
@@ -184,6 +186,11 @@ const onSubmit = async () => {
   if (!canSend.value) return
   await messages.sendMessage(roomId.value, draft.value)
 }
+
+const openSnippetFromButton = () => {
+  messages.setDraft(roomId.value, "/")
+  textareaRef.value?.focus()
+}
 // #endregion
 </script>
 
@@ -276,6 +283,22 @@ const onSubmit = async () => {
           未設定の項目が残っています。内容を確認してから送信してください。
         </p>
         <div class="composer__actions">
+          <div class="composer__tools">
+            <button
+              type="button"
+              class="button-normal"
+              @click="openSnippetFromButton"
+            >
+              定型文
+            </button>
+            <button
+              type="button"
+              class="button-normal"
+              @click="scheduleDialogOpen = true"
+            >
+              日程調整を作成
+            </button>
+          </div>
           <p class="composer__hint">
             ⌘ / Ctrl + Enter で送信
           </p>
@@ -289,6 +312,12 @@ const onSubmit = async () => {
         </div>
       </div>
     </form>
+
+    <ScheduleRequestDialog
+      v-if="scheduleDialogOpen"
+      :room="room"
+      @close="scheduleDialogOpen = false"
+    />
   </div>
 </template>
 
@@ -401,6 +430,11 @@ const onSubmit = async () => {
   align-items: center;
   justify-content: space-between;
   padding: var(--space-sm) var(--space-md) var(--space-md) var(--space-lg);
+}
+
+.composer__tools {
+  display: flex;
+  gap: var(--space-sm);
 }
 
 .composer__hint {

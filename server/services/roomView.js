@@ -32,6 +32,14 @@ const ROOM_SELECT_SQL = `
     st.next_interview_room     AS nextInterviewRoom,
     st.interviewer,
     st.schedule_state          AS scheduleState,
+    sr.id                      AS scheduleRequestId,
+    sr.status                  AS scheduleRequestStatus,
+    sr.selection_stage         AS scheduleSelectionStage,
+    sr.response_deadline       AS scheduleResponseDeadline,
+    sr.booked_starts_at        AS scheduleBookedStartsAt,
+    sr.booked_ends_at          AS scheduleBookedEndsAt,
+    sr.needs_attention         AS scheduleNeedsAttention,
+    ci.display_name            AS scheduleInterviewerName,
     au.id                      AS assigneeId,
     au.display_name            AS assigneeDisplayName,
     lm.id                      AS lastMessageId,
@@ -52,6 +60,14 @@ const ROOM_SELECT_SQL = `
   JOIN users viewer ON viewer.id = rm.user_id
   LEFT JOIN users su ON su.id = r.student_user_id
   LEFT JOIN students st ON st.user_id = su.id
+  LEFT JOIN schedule_requests sr ON sr.id = (
+    SELECT request.id
+    FROM schedule_requests request
+    WHERE request.room_id = r.id
+    ORDER BY request.id DESC
+    LIMIT 1
+  )
+  LEFT JOIN calendar_interviewers ci ON ci.id = sr.interviewer_id
   LEFT JOIN users au ON au.id = r.assignee_user_id
   LEFT JOIN messages lm ON lm.id = r.last_message_id
   LEFT JOIN messages sm ON sm.id = (
@@ -158,6 +174,18 @@ export function toRoom(row) {
       : null,
     lastStudentMessageAt: row.lastStudentMessageAt,
     elapsedHours: elapsedHours(row.lastStudentMessageAt),
+    scheduleRequest: row.scheduleRequestId
+      ? {
+          id: row.scheduleRequestId,
+          status: row.scheduleRequestStatus,
+          selectionStage: row.scheduleSelectionStage,
+          responseDeadline: row.scheduleResponseDeadline,
+          bookedStartsAt: row.scheduleBookedStartsAt,
+          bookedEndsAt: row.scheduleBookedEndsAt,
+          needsAttention: Boolean(row.scheduleNeedsAttention),
+          interviewerName: row.scheduleInterviewerName,
+        }
+      : null,
     aiRecommendation: canViewAiRecommendation
       ? {
           status: row.aiAnalysisStatus ?? AI_ANALYSIS_STATUS.SKIPPED,

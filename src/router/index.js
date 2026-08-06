@@ -9,6 +9,9 @@ import StudentsView from "../views/StudentsView.vue"
 import ChatView from "../views/ChatView.vue"
 import NotificationsView from "../views/NotificationsView.vue"
 import ProfileSettingsView from "../views/ProfileSettingsView.vue"
+import ScheduleSelectView from "../views/ScheduleSelectView.vue"
+import ScheduleConfirmView from "../views/ScheduleConfirmView.vue"
+import ScheduleCompleteView from "../views/ScheduleCompleteView.vue"
 
 /**
  * 画面一覧は frontend.md §1（S-01〜S-06）に対応する。
@@ -68,6 +71,24 @@ const routes = [
     path: "/chat",
     name: "chat",
     component: ChatView,
+    meta: { requiresAuth: true, roles: [ROLE.STUDENT] },
+  },
+  {
+    path: "/schedules/:scheduleRequestId/select",
+    name: "schedule-select",
+    component: ScheduleSelectView,
+    meta: { requiresAuth: true, roles: [ROLE.STUDENT] },
+  },
+  {
+    path: "/schedules/:scheduleRequestId/confirm",
+    name: "schedule-confirm",
+    component: ScheduleConfirmView,
+    meta: { requiresAuth: true, roles: [ROLE.STUDENT] },
+  },
+  {
+    path: "/schedules/:scheduleRequestId/complete",
+    name: "schedule-complete",
+    component: ScheduleCompleteView,
     meta: { requiresAuth: true, roles: [ROLE.STUDENT] },
   },
   {
