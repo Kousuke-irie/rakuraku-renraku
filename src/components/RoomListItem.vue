@@ -51,6 +51,12 @@ const preview = computed(() => {
     : body
 })
 
+/**
+ * この行の対応ステータスのドロップダウンが開いているか。
+ * 開いている間は行の淡色化（緊急度 low）を解除して選択肢を読めるようにする。
+ */
+const isStatusMenuOpen = computed(() => ui.statusMenuRoomId === props.room.id)
+
 /** 保存・送受信は UTC、表示のみローカル変換（CLAUDE.md §6-2） */
 const time = computed(() => {
   const createdAt = props.room.lastMessage?.createdAt
@@ -72,6 +78,7 @@ const time = computed(() => {
       'room--active': room.id === ui.selectedRoomId,
       'room--low': room.urgency === URGENCY.LOW,
       'room--unread': room.unreadCount > 0,
+      'room--menu-open': isStatusMenuOpen,
     }"
   >
     <RouterLink
@@ -169,6 +176,12 @@ const time = computed(() => {
 /* 緊急度 low は行全体を薄く表示（frontend.md §6） */
 .room--low .room__link {
   opacity: 0.62;
+}
+
+/* opacity は子孫にまとめて掛かり、内側だけ不透明に戻せない。
+   ステータスを選んでいる間は選択肢が読めないと困るので、行ごと不透明に戻す（P1-2） */
+.room--low.room--menu-open .room__link {
+  opacity: 1;
 }
 
 .room__body {
