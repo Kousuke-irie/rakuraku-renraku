@@ -64,14 +64,7 @@ const isLow = computed(() => props.room.urgency === URGENCY.LOW)
         :color="room.student?.avatarColor ?? ''"
         size="md"
       />
-      <span class="card__name">
-        <span
-          v-if="room.isPinned"
-          class="card__pin"
-          aria-label="ピン留め"
-        >📌</span>
-        {{ room.student?.displayName }}
-      </span>
+      <span class="card__name">{{ room.student?.displayName }}</span>
       <!-- 件数ではなく「新着があるか」だけを点で示す -->
       <UnreadBadge
         :count="room.unreadCount ?? 0"
@@ -142,10 +135,6 @@ const isLow = computed(() => props.room.urgency === URGENCY.LOW)
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.card__pin {
-  font-size: 10px;
 }
 
 .card__chips {

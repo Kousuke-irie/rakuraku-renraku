@@ -15,8 +15,10 @@
     "handlingStatus": "needs_reply",
     "urgency": "high",
     "topicTag": "absence_late",
-    "isPinned": true,
-    "assignee": { "id": 1, "displayName": "田中" },
+    "assignee": {
+      "id": 1,
+      "displayName": "田中"
+    },
     "unreadCount": 2,
     "lastMessage": {
       "id": 1103,
@@ -43,7 +45,6 @@
     "handlingStatus": "in_progress",
     "urgency": "high",
     "topicTag": "scheduling",
-    "isPinned": false,
     "assignee": null,
     "unreadCount": 1,
     "lastMessage": {
@@ -71,8 +72,10 @@
     "handlingStatus": "needs_reply",
     "urgency": "normal",
     "topicTag": "other",
-    "isPinned": false,
-    "assignee": { "id": 1, "displayName": "田中" },
+    "assignee": {
+      "id": 1,
+      "displayName": "田中"
+    },
     "unreadCount": 1,
     "lastMessage": {
       "id": 1302,
@@ -99,8 +102,10 @@
     "handlingStatus": "needs_reply",
     "urgency": "normal",
     "topicTag": "aptitude_test",
-    "isPinned": false,
-    "assignee": { "id": 2, "displayName": "鈴木" },
+    "assignee": {
+      "id": 2,
+      "displayName": "鈴木"
+    },
     "unreadCount": 1,
     "lastMessage": {
       "id": 1401,
@@ -127,8 +132,10 @@
     "handlingStatus": "waiting_student",
     "urgency": "low",
     "topicTag": "question",
-    "isPinned": false,
-    "assignee": { "id": 1, "displayName": "田中" },
+    "assignee": {
+      "id": 1,
+      "displayName": "田中"
+    },
     "unreadCount": 0,
     "lastMessage": {
       "id": 1502,
@@ -155,8 +162,10 @@
     "handlingStatus": "done",
     "urgency": "low",
     "topicTag": "result_waiting",
-    "isPinned": false,
-    "assignee": { "id": 1, "displayName": "田中" },
+    "assignee": {
+      "id": 1,
+      "displayName": "田中"
+    },
     "unreadCount": 0,
     "lastMessage": {
       "id": 1603,
@@ -183,8 +192,10 @@
     "handlingStatus": "on_hold",
     "urgency": "low",
     "topicTag": "other",
-    "isPinned": false,
-    "assignee": { "id": 2, "displayName": "鈴木" },
+    "assignee": {
+      "id": 2,
+      "displayName": "鈴木"
+    },
     "unreadCount": 0,
     "lastMessage": {
       "id": 1702,
@@ -211,8 +222,10 @@
     "handlingStatus": "needs_reply",
     "urgency": "high",
     "topicTag": "result_waiting",
-    "isPinned": false,
-    "assignee": { "id": 2, "displayName": "鈴木" },
+    "assignee": {
+      "id": 2,
+      "displayName": "鈴木"
+    },
     "unreadCount": 1,
     "lastMessage": {
       "id": 1802,
@@ -239,8 +252,10 @@
     "handlingStatus": "done",
     "urgency": "low",
     "topicTag": "other",
-    "isPinned": false,
-    "assignee": { "id": 1, "displayName": "田中" },
+    "assignee": {
+      "id": 1,
+      "displayName": "田中"
+    },
     "unreadCount": 0,
     "lastMessage": {
       "id": 1905,
@@ -267,8 +282,10 @@
     "handlingStatus": "on_hold",
     "urgency": "low",
     "topicTag": "other",
-    "isPinned": false,
-    "assignee": { "id": 1, "displayName": "田中" },
+    "assignee": {
+      "id": 1,
+      "displayName": "田中"
+    },
     "unreadCount": 0,
     "lastMessage": {
       "id": 2002,

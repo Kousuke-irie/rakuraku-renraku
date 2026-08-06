@@ -79,9 +79,6 @@ export const useUiStore = defineStore('ui', {
     /** @type {object[]} GET /api/snippets の結果 */
     snippets: [],
 
-    /** @type {number|null} 対応ステータスのドロップダウンを開いているルームID（P1-2） */
-    statusMenuRoomId: null,
-
     /** @type {'connected'|'connecting'|'disconnected'} socket の接続状態バナー用 */
     connectionState: 'connecting',
 
@@ -164,14 +161,6 @@ export const useUiStore = defineStore('ui', {
     /** @param {number} delta ↑=-1 / ↓=+1 */
     moveSnippetHighlight(delta) {},
 
-    /** 対応ステータスのドロップダウン開閉（P1-2。1クリックで変更するため単一管理） */
-    openStatusMenu(roomId) {
-      this.statusMenuRoomId = roomId
-    },
-    closeStatusMenu() {
-      this.statusMenuRoomId = null
-    },
-
     /** @param {'connected'|'connecting'|'disconnected'} state */
     setConnectionState(state) {
       this.connectionState = state
@@ -197,7 +186,6 @@ export const useUiStore = defineStore('ui', {
       this.snippetQuery = ''
       this.snippetHighlightIndex = 0
       this.snippets = []
-      this.statusMenuRoomId = null
       this.connectionState = 'connecting'
       this.toasts = []
     },

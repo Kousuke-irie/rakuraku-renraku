@@ -4,8 +4,8 @@
 // ラベルは必ず shared/constants.js の *_META から引く（日本語を直書きしない・CLAUDE.md §6-1）。
 // 色を持つのは対応ステータスのみ（constants.md §1）。他の種別はニュートラル配色にする。
 //
-// **ドロップダウンによるステータス変更（P1-2）は RoomListItem の責務**（frontend.md §9）。
-// このコンポーネントは表示のみを担い、interactive=true のときに @click を親へフォールスルーさせる。
+// **対応ステータスの変更（P1-2）は ProfilePanel の責務**（frontend.md §9）。
+// このコンポーネントは表示のみを担う。
 //
 // ※ defineProps は `<script setup>` 内の変数を参照できないため、
 //   props の既定値に使う定数はこの通常 `<script>` ブロック（モジュールスコープ）に置く。
@@ -53,8 +53,6 @@ const props = defineProps({
     default: "md",
     validator: (value) => SIZES.includes(value),
   },
-  /** クリック可能な見た目にする（P1-2 のステータス変更トリガ用）。@click は親が受け取る */
-  interactive: { type: Boolean, default: false },
 })
 
 // #region computed
@@ -71,10 +69,8 @@ const color = computed(() => meta.value?.color ?? NEUTRAL_COLOR)
   <span
     v-if="meta"
     class="status-chip"
-    :class="[`status-chip--${size}`, { 'status-chip--interactive': interactive }]"
+    :class="`status-chip--${size}`"
     :style="{ '--chip-color': color }"
-    :role="interactive ? 'button' : undefined"
-    :tabindex="interactive ? 0 : undefined"
   >{{ label }}</span>
 </template>
 
@@ -102,18 +98,5 @@ const color = computed(() => meta.value?.color ?? NEUTRAL_COLOR)
 .status-chip--md {
   padding: 3px 8px;
   font-size: 12px;
-}
-
-.status-chip--interactive {
-  cursor: pointer;
-}
-
-.status-chip--interactive:hover {
-  background-color: color-mix(in srgb, var(--chip-color) 20%, #fff);
-}
-
-.status-chip--interactive:focus-visible {
-  outline: 2px solid var(--chip-color);
-  outline-offset: 1px;
 }
 </style>

@@ -1,66 +1,27 @@
 <script setup>
 // 受信箱の左ペイン（frontend.md §5 のレイアウト枠）
 //
-// ★このコンポーネントの責務はヘッダ（検索・サマリー・フィルタ）と行の反復のみ。
-//   1行の見た目とふるまいは RoomListItem が単独で持つので、行に項目を足すときは
-//   このファイルではなく RoomListItem を触ること。
-//   絞り込み・並べ替えの UI は FilterBar、判定は roomsStore が持つ（P1-7）。
-//
-//   サマリーのクリックによる絞り込みは**まだ未実装**。P1-8（SummaryBar）で
-//   このブロックを置き換え、件数も GET /api/summary（roomsStore.summary）へ寄せる。
+// ★このコンポーネントの責務は検索欄・各パーツの配置・行の反復のみ。
+//   1行 → RoomListItem、未対応サマリー → SummaryBar（P1-8）、
+//   絞り込みと並べ替え → FilterBar（P1-7）がそれぞれ単独で持つ。
+//   項目を足すときはこのファイルではなく、該当のコンポーネントを触ること。
+//   絞り込みの判定そのものは roomsStore（filteredRooms / sortedRooms）にある。
 import { computed } from "vue"
-import {
-  ELAPSED_BADGE_HIDDEN_STATUSES,
-  HANDLING_STATUS,
-  SLA_ALERT_HOURS,
-  URGENCY,
-} from "../constants/index.js"
 import { useRoomsStore } from "../stores/rooms.js"
 import { useUiStore } from "../stores/ui.js"
 import FilterBar from "./FilterBar.vue"
 import PanelIcon from "./PanelIcon.vue"
 import RoomListItem from "./RoomListItem.vue"
+import SummaryBar from "./SummaryBar.vue"
 
 // #region global state
 const rooms = useRoomsStore()
 const ui = useUiStore()
 // #endregion
 
-// #region local methods
-/** 24h超の集計対象か（返信済み・完了は SLA の対象外・constants.md §9） */
-const isOverdue = (room) =>
-  !ELAPSED_BADGE_HIDDEN_STATUSES.includes(room.handlingStatus) &&
-  (room.elapsedHours ?? 0) >= SLA_ALERT_HOURS
-// #endregion
-
 // #region computed
 /** 絞り込みと並べ替えの結果（P1-7）。判定は roomsStore 側にある */
 const roomList = computed(() => rooms.sortedRooms)
-
-/**
- * P1-8 で GET /api/summary に置き換える暫定集計。
- * **絞り込み前の自分の担当ルーム全件**を数える。
- * - 絞り込むたびに減ると「あと何件残っているか」という役割が壊れるので filteredRooms は使わない
- * - 一覧に出ない他人の担当まで数えると件数と行数が食い違うので rooms も使わない（#28）
- */
-const summaryItems = computed(() => [
-  {
-    key: "needsReply",
-    label: "要返信",
-    count: rooms.myRooms.filter((room) => room.handlingStatus === HANDLING_STATUS.NEEDS_REPLY)
-      .length,
-  },
-  {
-    key: "urgent",
-    label: "緊急",
-    count: rooms.myRooms.filter((room) => room.urgency === URGENCY.HIGH).length,
-  },
-  {
-    key: "overdue24h",
-    label: `${SLA_ALERT_HOURS}h超`,
-    count: rooms.myRooms.filter(isOverdue).length,
-  },
-])
 
 /** 絞り込み中は「表示件数 / 全件数」を出して、隠れている行があることを分かるようにする */
 const countLabel = computed(() =>
@@ -108,17 +69,10 @@ const searchQuery = computed({
         aria-label="氏名・大学で検索"
       >
 
-      <!-- サマリーバー（P1-8）：件数は実データ、クリックでの絞り込みは未実装 -->
-      <ul class="summary">
-        <li
-          v-for="item in summaryItems"
-          :key="item.key"
-          class="summary__item"
-        >
-          <span class="summary__label">{{ item.label }}</span>
-          <span class="summary__count">{{ item.count }}</span>
-        </li>
-      </ul>
+      <!-- 未対応サマリー（P1-8）。押すとその条件で絞り込む -->
+      <div class="summary-row">
+        <SummaryBar />
+      </div>
 
       <!-- フィルタ＆ソート（P1-7） -->
       <div class="filters">
@@ -205,32 +159,9 @@ const searchQuery = computed({
   font-size: 13px;
 }
 
-.summary {
-  display: flex;
-  gap: var(--space-sm);
+/* 中身の見た目は SummaryBar が持つ。ここは配置だけ */
+.summary-row {
   margin-top: var(--space-md);
-  list-style: none;
-}
-
-.summary__item {
-  display: flex;
-  flex: 1 1 0;
-  gap: var(--space-xs);
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-sm) var(--space-xs);
-  border-radius: var(--radius-md);
-  background-color: var(--color-orange-soft);
-}
-
-.summary__label {
-  color: var(--color-ink-mute);
-  font-size: 11px;
-}
-
-.summary__count {
-  font-size: 14px;
-  font-weight: 700;
 }
 
 /* 中身の見た目は FilterBar が持つ。ここは配置だけ */

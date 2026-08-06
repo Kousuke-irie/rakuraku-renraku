@@ -8,7 +8,6 @@ const ROOM_SELECT_SQL = `
     r.id,
     r.handling_status          AS handlingStatus,
     r.urgency,
-    r.is_pinned                AS isPinned,
     r.last_student_message_at  AS lastStudentMessageAt,
     su.id                      AS studentUserId,
     su.display_name            AS studentDisplayName,
@@ -82,7 +81,6 @@ const ROOM_LIST_SQL = `${ROOM_SELECT_SQL}
       OR st.university LIKE @queryPattern
     )
   ORDER BY
-    CASE WHEN @sort = @defaultSort THEN r.is_pinned END DESC,
     CASE WHEN @sort = @defaultSort THEN
       CASE r.urgency
         WHEN @highUrgency THEN 0
@@ -128,7 +126,6 @@ export function toRoom(row) {
     handlingStatus: row.handlingStatus,
     urgency: row.urgency,
     topicTag: row.topicTag,
-    isPinned: Boolean(row.isPinned),
     assignee: row.assigneeId
       ? { id: row.assigneeId, displayName: row.assigneeDisplayName }
       : null,

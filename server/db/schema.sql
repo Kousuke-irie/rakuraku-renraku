@@ -42,7 +42,6 @@ CREATE TABLE IF NOT EXISTS rooms (
   )),
   assignee_user_id INTEGER REFERENCES users(id),
   urgency TEXT NOT NULL DEFAULT 'normal' CHECK(urgency IN ('high', 'normal', 'low')),
-  is_pinned INTEGER NOT NULL DEFAULT 0 CHECK(is_pinned IN (0, 1)),
   last_message_id INTEGER REFERENCES messages(id),
   last_message_at TEXT,
   last_student_message_at TEXT,
@@ -106,7 +105,7 @@ CREATE TABLE IF NOT EXISTS tag_rules (
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_room       ON messages(room_id, id DESC);
-CREATE INDEX IF NOT EXISTS idx_rooms_sort          ON rooms(is_pinned DESC, urgency, last_student_message_at);
+CREATE INDEX IF NOT EXISTS idx_rooms_sort          ON rooms(urgency, last_student_message_at);
 CREATE INDEX IF NOT EXISTS idx_rooms_status        ON rooms(handling_status);
 CREATE INDEX IF NOT EXISTS idx_rooms_assignee       ON rooms(assignee_user_id);
 CREATE INDEX IF NOT EXISTS idx_room_members_user   ON room_members(user_id);

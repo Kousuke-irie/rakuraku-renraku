@@ -113,7 +113,7 @@ router.get('/:id', requireAuth, (req, res) => {
   res.json({ room });
 });
 
-/** PATCH /rooms/:id で変更できる項目。P2-8（isPinned）は未実装 */
+/** PATCH /rooms/:id で変更できる項目 */
 const PATCHABLE_KEYS = Object.freeze(['handlingStatus', 'assigneeUserId']);
 
 /** 担当人事に指定できるのは hr / admin のユーザーのみ。null は「未割当」 */

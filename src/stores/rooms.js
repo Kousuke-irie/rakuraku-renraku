@@ -33,13 +33,10 @@ const timestampOf = (value) => {
 const byRoomId = (left, right) => Number(left.id) - Number(right.id)
 
 /**
- * 既定の優先順位。ピン留め → 緊急度 → 学生最終メッセージが古い順。
+ * 既定の優先順位。緊急度 → 学生最終メッセージが古い順。
  * 時刻がないルームは経過時間を算出できないため、同条件の末尾に置く。
  */
 const byDefaultPriority = (left, right) => {
-  const pin = Number(Boolean(right.isPinned)) - Number(Boolean(left.isPinned))
-  if (pin !== 0) return pin
-
   const urgency = (URGENCY_ORDER[left.urgency] ?? Infinity) - (URGENCY_ORDER[right.urgency] ?? Infinity)
   if (urgency !== 0) return urgency
 
@@ -158,7 +155,6 @@ function initialFilters() {
  *   handlingStatus: HANDLING_STATUS,
  *   urgency: URGENCY,
  *   topicTag: TOPIC_TAG,
- *   isPinned: boolean,
  *   assignee: { id: number, displayName: string } | null,   // null = 未割当
  *   unreadCount: number,
  *   lastMessage: { id, body, createdAt, senderId } | null,
@@ -249,7 +245,7 @@ export const useRoomsStore = defineStore('rooms', {
 
     /**
      * 表示用の最終リスト。
-     * SORT_KEY.DEFAULT: is_pinned DESC → urgency（high→normal→low）→ lastStudentMessageAt ASC
+     * SORT_KEY.DEFAULT: urgency（high→normal→low）→ lastStudentMessageAt ASC
      * SORT_KEY.LAST_MESSAGE: lastMessage.createdAt DESC
      * SORT_KEY.ELAPSED: lastStudentMessageAt ASC（経過時間が長い順）
      * （business-logic.md §6）
@@ -515,9 +511,6 @@ export const useRoomsStore = defineStore('rooms', {
         return false
       }
     },
-
-    /** PATCH /api/rooms/:id { isPinned }（P2-8） */
-    async togglePin(roomId) {},
 
     /**
      * PATCH /api/students/:userId（P2-4 プロフィールのインライン編集 / P3-4 日程調整）
