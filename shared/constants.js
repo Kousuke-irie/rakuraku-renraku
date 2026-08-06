@@ -184,6 +184,37 @@ export const SEND_STATUS_META = Object.freeze({
 export const SEND_STATUS_VALUES = Object.values(SEND_STATUS);
 
 // ---------------------------------------------------------------------------
+// AI 現況サマリーの状態（P3-1a / api.md「AI 現況サマリー」・business-logic.md §7-2）
+// GET /api/ai/summary のレスポンス status と、ホームの AiSummaryCard の表示状態を兼ねる。
+// ---------------------------------------------------------------------------
+
+export const AI_SUMMARY_STATUS = Object.freeze({
+  /** 未生成（まだ一度も要求していない） */
+  IDLE: 'idle',
+  /** 生成中 */
+  LOADING: 'loading',
+  /** 生成済み */
+  READY: 'ready',
+  /** タイムアウト・APIエラー・JSON不正 */
+  ERROR: 'error',
+  /** GEMINI_API_KEY 未設定。AI 機能そのものが使えない */
+  UNAVAILABLE: 'unavailable',
+});
+
+export const AI_SUMMARY_STATUS_META = Object.freeze({
+  [AI_SUMMARY_STATUS.IDLE]: { label: '未生成' },
+  [AI_SUMMARY_STATUS.LOADING]: { label: '生成中' },
+  [AI_SUMMARY_STATUS.READY]: { label: '生成済み' },
+  [AI_SUMMARY_STATUS.ERROR]: { label: '生成に失敗しました' },
+  [AI_SUMMARY_STATUS.UNAVAILABLE]: { label: '準備中' },
+});
+
+export const AI_SUMMARY_STATUS_VALUES = Object.values(AI_SUMMARY_STATUS);
+
+/** AI が提示する TODO の最大件数（business-logic.md §7-2：多いと「上から処理する」が崩れる） */
+export const AI_SUMMARY_TODO_LIMIT = 3;
+
+// ---------------------------------------------------------------------------
 // 初期値
 // ---------------------------------------------------------------------------
 
@@ -193,6 +224,7 @@ export const DEFAULT_TOPIC_TAG = TOPIC_TAG.OTHER;
 export const DEFAULT_URGENCY = URGENCY.NORMAL;
 export const DEFAULT_SCHEDULE_STATE = SCHEDULE_STATE.NONE;
 export const DEFAULT_MEMO_SCOPE = MEMO_SCOPE.PRIVATE;
+export const DEFAULT_AI_SUMMARY_STATUS = AI_SUMMARY_STATUS.IDLE;
 
 // ---------------------------------------------------------------------------
 // SLA 閾値（P1-4 / business-logic.md §3）
@@ -231,6 +263,8 @@ export const SOCKET_ON = Object.freeze({
   ROOM_UPDATED: 'room:updated',
   MEMO_UPDATED: 'memo:updated',
   SUMMARY_UPDATED: 'summary:updated',
+  /** P3-1a。生成を依頼した本人にのみ配信する */
+  AI_SUMMARY_UPDATED: 'ai:summary_updated',
   ERROR: 'error',
 });
 

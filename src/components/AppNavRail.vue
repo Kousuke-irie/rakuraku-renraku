@@ -23,6 +23,7 @@ import UserAvatar from "./UserAvatar.vue"
 // #region constants
 /** ワードマークの表記は「楽楽連ラク」に統一する（CLAUDE.md §1） */
 const BRAND_NAME = "楽楽連ラク"
+const INBOX_PATH = "/inbox"
 const NOTIFICATIONS_PATH = "/notifications"
 const SETTINGS_PATH = "/settings/profile"
 // #endregion
@@ -38,11 +39,18 @@ const router = useRouter()
 // #endregion
 
 // #region computed
-/** ホームはロールで変わる（人事＝受信箱／学生＝自分のトーク） */
-const home = computed(() =>
+/**
+ * ロールごとのナビ項目（frontend.md §1）。
+ * 人事は「ホーム（S-07・俯瞰）」と「受信箱（S-03/S-04・返信）」の2枚を行き来する。
+ * 学生は自分のトーク1枚だけ。着地点は必ず auth.homePath から取り、パスを直書きしない。
+ */
+const navItems = computed(() =>
   auth.isStudent
-    ? { to: auth.homePath, icon: "chat", label: "チャット" }
-    : { to: auth.homePath, icon: "inbox", label: "受信箱" }
+    ? [{ to: auth.homePath, icon: "chat", label: "チャット" }]
+    : [
+        { to: auth.homePath, icon: "home", label: "ホーム" },
+        { to: INBOX_PATH, icon: "inbox", label: "受信箱" },
+      ]
 )
 
 /**
@@ -79,7 +87,7 @@ const onLogout = async () => {
   >
     <RouterLink
       class="rail__brand"
-      :to="home.to"
+      :to="auth.homePath"
       :title="BRAND_NAME"
     >
       <!-- 円マークは画像左端の 227x227px ちょうど。枠幅を高さと同じにすると
@@ -100,14 +108,17 @@ const onLogout = async () => {
     </RouterLink>
 
     <ul class="rail__list">
-      <li>
+      <li
+        v-for="item in navItems"
+        :key="item.to"
+      >
         <RouterLink
           class="rail__item"
-          :to="home.to"
-          :title="home.label"
+          :to="item.to"
+          :title="item.label"
         >
-          <NavIcon :name="home.icon" />
-          <span class="rail__label">{{ home.label }}</span>
+          <NavIcon :name="item.icon" />
+          <span class="rail__label">{{ item.label }}</span>
         </RouterLink>
       </li>
 

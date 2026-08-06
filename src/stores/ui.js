@@ -28,6 +28,9 @@ export const useUiStore = defineStore('ui', {
     /** プロフィールパネル内の申し送りメモ（P2-5） */
     memoPanelOpen: true,
 
+    /** ホーム右カラムの AI 現況サマリー（S-07 / P3-1a）。右下の円形ボタンで開閉する */
+    aiPanelOpen: true,
+
     /** 自分のプロフィール編集ダイアログ（ナビレールのアイコンから開く。B-5） */
     profileDialogOpen: false,
 
@@ -78,6 +81,11 @@ export const useUiStore = defineStore('ui', {
 
     toggleMemoPanel() {},
 
+    /** ホームの AI パネル開閉（右下の円形ボタン／カードの閉じるボタン） */
+    toggleAiPanel() {
+      this.aiPanelOpen = !this.aiPanelOpen
+    },
+
     /** 自分のプロフィール編集ダイアログ（B-5） */
     openProfileDialog() {
       this.profileDialogOpen = true
@@ -124,6 +132,7 @@ export const useUiStore = defineStore('ui', {
 
     reset() {
       this.selectedRoomId = null
+      this.aiPanelOpen = true
       this.profileDialogOpen = false
       this.snippetPaletteOpen = false
       this.snippetQuery = ''

@@ -3,6 +3,7 @@ import { ROLE } from "../constants/index.js"
 import { useAuthStore } from "../stores/auth.js"
 import LoginView from "../views/LoginView.vue"
 import RegisterView from "../views/RegisterView.vue"
+import HomeView from "../views/HomeView.vue"
 import InboxView from "../views/InboxView.vue"
 import ChatView from "../views/ChatView.vue"
 import NotificationsView from "../views/NotificationsView.vue"
@@ -17,9 +18,9 @@ import ProfileSettingsView from "../views/ProfileSettingsView.vue"
 const routes = [
   {
     // 認証状態に応じた振り分けは beforeEach に任せる。
-    // hr/admin はそのまま /inbox、student は roles 不一致で /chat へ送られる。
+    // hr/admin はそのまま /home、student は roles 不一致で /chat へ送られる。
     path: "/",
-    redirect: "/inbox",
+    redirect: "/home",
   },
   {
     path: "/login",
@@ -30,6 +31,14 @@ const routes = [
     path: "/register",
     name: "register",
     component: RegisterView,
+  },
+  {
+    // S-07 ホーム。人事のログイン後の着地点（frontend.md §1・§5-2）。
+    // 返信はここでは行わず、行クリックで /inbox/:roomId へ渡す。
+    path: "/home",
+    name: "home",
+    component: HomeView,
+    meta: { requiresAuth: true, roles: [ROLE.HR, ROLE.ADMIN] },
   },
   {
     path: "/inbox",
@@ -68,7 +77,7 @@ const routes = [
   },
   {
     path: "/:pathMatch(.*)*",
-    redirect: "/inbox",
+    redirect: "/home",
   },
 ]
 

@@ -12,7 +12,13 @@ import { computed } from "vue"
  * 丸いつまみ（settings）も circle 要素を混ぜずに済むよう円弧パスで描く。
  */
 const PATHS = Object.freeze({
-  // 受信箱（人事のホーム）
+  // 家（S-07 ホーム）
+  home: [
+    "M4 10.5 L12 4 l8 6.5",
+    "M5.75 9.5 V18.5 a1.5 1.5 0 0 0 1.5 1.5 h9.5 a1.5 1.5 0 0 0 1.5-1.5 V9.5",
+    "M9.75 20 v-5.5 h4.5 V20",
+  ],
+  // 受信箱（対応の主画面）
   inbox: [
     "M3.5 13.5 L6 5.5 h12 l2.5 8",
     "M3.5 13.5 h4.5 l1.5 2.5 h5 l1.5-2.5 h4.5 v4 a2 2 0 0 1-2 2 H5.5 a2 2 0 0 1-2-2 z",
@@ -47,11 +53,11 @@ const PATHS = Object.freeze({
 // defineProps の既定値・validator はコンパイル時に巻き上げられるため、
 // setup スコープの PATHS を参照できない。ここだけ名前をリテラルで書く。
 const props = defineProps({
-  /** "inbox" | "chat" | "bell" | "settings" | "logout" */
+  /** "home" | "inbox" | "chat" | "bell" | "settings" | "logout" */
   name: {
     type: String,
     required: true,
-    validator: (value) => ["inbox", "chat", "bell", "settings", "logout"].includes(value),
+    validator: (value) => ["home", "inbox", "chat", "bell", "settings", "logout"].includes(value),
   },
 })
 
