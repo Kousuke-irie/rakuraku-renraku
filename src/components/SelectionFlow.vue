@@ -19,7 +19,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { FLOW_STEP_STATE, FLOW_STEP_STATE_META } from "../constants/index.js"
 
 const props = defineProps({
-  /** @type {{statusKey: string, label: string, state: string, feedback: object|null}[]} */
+  /** @type {{statusKey: string, label: string, state: string, feedback: object|null,
+   *          isUnreadFeedback: boolean}[]} */
   steps: { type: Array, required: true },
   /** 選択中のステップ（詳細を表示しているもの） */
   selectedKey: { type: String, default: null },
@@ -112,6 +113,8 @@ const nodes = computed(() =>
     isCurrent: step.state === FLOW_STEP_STATE.CURRENT,
     stateLabel: FLOW_STEP_STATE_META[step.state]?.label ?? "",
     hasFeedback: Boolean(step.feedback),
+    /** まだ読んでいないFB。未読だけを動かして、読んだら静かにする */
+    isUnread: Boolean(step.isUnreadFeedback),
     delayMs: Math.min(index, MAX_STAGGER_INDEX) * STAGGER_MS,
     /** 丸の持ち上げ量。線と同じガウス関数から出すので、線は必ず中心を通る */
     lift: lifts.value[index] ?? 0,
@@ -309,30 +312,35 @@ watch(() => props.steps, scheduleMeasure, { deep: true })
                 aria-hidden="true"
               >{{ node.order }}</span>
 
-              <!-- 完了ステップに企業からのFBが届いているときの目印 -->
+              <!-- 完了ステップに企業からのFBが届いているときの目印。
+                   未読は塗り＋パルス、既読は輪郭だけにして静かにする -->
               <span
                 v-if="node.hasFeedback"
                 class="flow__mark"
+                :class="node.isUnread ? 'flow__mark--unread' : 'flow__mark--read'"
                 aria-hidden="true"
               />
             </span>
 
             <span class="flow__label">{{ node.label }}</span>
 
-            <!-- 進行中だけは画面上にも状態を出す。残りは読み上げ用に持たせる -->
+            <!-- 画面に出す短いラベルは1つだけ。
+                 「進行中」と「新着」は同時に起きない（進行中ステップのFBはサーバが返さない） -->
             <span
-              v-if="node.isCurrent"
+              v-if="node.isCurrent || node.isUnread"
               class="flow__state"
-            >{{ node.stateLabel }}</span>
+            >{{ node.isCurrent ? node.stateLabel : "新着" }}</span>
+
+            <!-- 読み上げ用。画面に出ていない状態は必ずここで補う（色と動きだけで伝えない） -->
             <span
-              v-else
+              v-if="!node.isCurrent"
               class="sr-only"
             >{{ node.stateLabel }}</span>
 
             <span
               v-if="node.hasFeedback"
               class="sr-only"
-            >企業からのフィードバックあり</span>
+            >企業からのフィードバックあり{{ node.isUnread ? "（未読）" : "" }}</span>
           </button>
         </li>
       </ol>
@@ -518,7 +526,8 @@ watch(() => props.steps, scheduleMeasure, { deep: true })
   height: 18px;
 }
 
-/* FB が届いている目印。丸の右上の弧の上に載せる */
+/* FB が届いている目印。丸の右上の弧の上に載せる。
+   外側の白い縁は、ノードの枠線と点が溶け合わないようにするためのもの */
 .flow__mark {
   position: absolute;
   top: 2px;
@@ -528,6 +537,42 @@ watch(() => props.steps, scheduleMeasure, { deep: true })
   border: 2px solid var(--color-canvas);
   border-radius: var(--radius-pill);
   background-color: var(--color-primary);
+}
+
+/* 既読：塗りを白に落とし、輪郭だけ残して静かにする。
+   「FBがある」ことは伝え続けるが、もう学生を呼ばない */
+.flow__mark--read {
+  background-color: var(--color-canvas);
+  box-shadow: inset 0 0 0 2px var(--color-primary);
+}
+
+/* 未読：点の外へ広がる波。現在地リングと同じ 2.4s の言語に揃える。
+   ★動かすのは transform と opacity だけ。
+     .flow__dot が transform を持つためスタッキングコンテキストが立っており、
+     z-index: -1 は「丸の面より前・点の塗りより後ろ」に収まる */
+.flow__mark--unread::after {
+  position: absolute;
+  z-index: -1;
+  border-radius: var(--radius-pill);
+  background-color: var(--color-primary);
+  content: "";
+  inset: -2px;
+}
+
+.flow--entered .flow__mark--unread::after {
+  animation: mark-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes mark-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0;
+    transform: scale(2.1);
+  }
 }
 
 /* これからのステップのラベル。丸ほどは薄くしない（読めなくなるため） */
@@ -590,6 +635,11 @@ watch(() => props.steps, scheduleMeasure, { deep: true })
   }
 
   .flow--entered .flow__step--current .flow__dot::after {
+    animation: none;
+  }
+
+  /* パルスは止めるが、点そのものは残す（未読は塗り・既読は輪郭で見分けられる） */
+  .flow--entered .flow__mark--unread::after {
     animation: none;
   }
 }

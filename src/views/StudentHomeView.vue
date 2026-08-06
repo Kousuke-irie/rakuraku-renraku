@@ -10,6 +10,7 @@
 // ★見せてよいフィードバックの判断はサーバが持つ。ここでは受け取ったものを描くだけ。
 import { computed, onMounted, ref, watch } from "vue"
 import { FLOW_STEP_STATE, STUDENT_NOTE_OVERALL_KEY } from "../constants/index.js"
+import { useFeedbackReads } from "../composables/useFeedbackReads.js"
 import { useAuthStore } from "../stores/auth.js"
 import { useUiStore } from "../stores/ui.js"
 import CompanyPanel from "../components/CompanyPanel.vue"
@@ -20,6 +21,11 @@ import StudentNoteEditor from "../components/StudentNoteEditor.vue"
 // #region global state
 const auth = useAuthStore()
 const ui = useUiStore()
+// #endregion
+
+// #region local variable
+// 既読は端末に持つ（useFeedbackReads）。ログイン中は本人が変わらないので初期化は1回でよい
+const { isUnread, markRead } = useFeedbackReads(auth.currentUserId)
 // #endregion
 
 // #region local state
@@ -37,6 +43,28 @@ const isDeclined = computed(() => Boolean(flow.value?.isDeclined))
 const currentStep = computed(
   () => steps.value.find((step) => step.state === FLOW_STEP_STATE.CURRENT) ?? null
 )
+
+/** 図に渡すステップ。未読かどうかの判定はここで済ませ、SelectionFlow は描くことに専念させる */
+const flowSteps = computed(() =>
+  steps.value.map((step) => ({ ...step, isUnreadFeedback: isUnread(step) }))
+)
+
+const feedbackCount = computed(() => steps.value.filter((step) => step.feedback).length)
+const unreadCount = computed(() => steps.value.filter((step) => isUnread(step)).length)
+
+/**
+ * フロー図の上の一文。
+ * 未読があるならその件数を先に言う。図の点を探す前に「何か届いている」と分かるように。
+ */
+const flowNote = computed(() => {
+  if (unreadCount.value > 0) {
+    return `新しいフィードバックが${unreadCount.value}件届いています。丸を選ぶと読めます。`
+  }
+  if (feedbackCount.value > 0) {
+    return `企業からのフィードバックが${feedbackCount.value}件届いています。`
+  }
+  return "各ステップを選ぶと、内容とポイントを確認できます。"
+})
 
 const selectedStep = computed(
   () => steps.value.find((step) => step.statusKey === selectedKey.value) ?? null
@@ -75,6 +103,10 @@ watch(
 watch(steps, (list) => {
   if (selectedKey.value === null && list.length > 0) selectedKey.value = list[0].statusKey
 })
+
+// 詳細を開いた＝FBの本文が画面に出た、とみなして既読にする。
+// 開くまでは未読のまま残るので、学生が気づかないうちに目印が消えることはない
+watch(selectedStep, (step) => markRead(step), { immediate: true })
 // #endregion
 
 // #region browser event handler
@@ -107,8 +139,9 @@ const onSelect = (statusKey) => {
         <p
           v-if="!isDeclined && steps.length > 0"
           class="board__note"
+          :class="{ 'board__note--alert': unreadCount > 0 }"
         >
-          各ステップを選ぶと、内容とポイントを確認できます。
+          {{ flowNote }}
         </p>
       </header>
 
@@ -121,7 +154,7 @@ const onSelect = (statusKey) => {
 
       <template v-else-if="steps.length > 0">
         <SelectionFlow
-          :steps="steps"
+          :steps="flowSteps"
           :selected-key="selectedKey"
           @select="onSelect"
         />
@@ -202,6 +235,13 @@ const onSelect = (statusKey) => {
   margin: var(--space-sm) 0 0;
   color: var(--color-ink-mute);
   font-size: 12px;
+}
+
+/* 未読のFBがあるときだけ、この一文を本文の濃さまで持ち上げる。
+   面や枠は足さない（主役はあくまで下のフロー図） */
+.board__note--alert {
+  color: var(--color-primary);
+  font-weight: 700;
 }
 
 /* 全体メモは選考フローのカードとは別の紙にする。
