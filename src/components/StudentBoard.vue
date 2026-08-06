@@ -78,13 +78,12 @@ const axis = computed(() => AXES[ui.boardGroupBy] ?? AXES[BOARD_GROUP_BY.SELECTI
 
 /**
  * 表示用の列。
- * ★P1-7 で roomsStore.sortedRooms（フィルタ適用済み）が入ったら、
- *   rooms.rooms ではなくそちらを入力にすること。
+ * 入力は roomsStore.sortedRooms（フィルタ・並べ替え適用済み・P1-7）。
  */
 const columns = computed(() => {
   const grouped = new Map(axis.value.values.map((value) => [value, []]))
 
-  for (const room of rooms.rooms) {
+  for (const room of rooms.sortedRooms) {
     // 列挙にない値（データ不整合）は列を作らず捨てる。画面に不正値を出さない
     grouped.get(axis.value.of(room))?.push(room)
   }
