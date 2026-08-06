@@ -103,7 +103,7 @@ project/
 # 初回セットアップ
 npm install                 # ルートで workspaces を一括インストール
 npm run db:migrate          # schema.sql を適用
-npm run db:seed             # デモ用シードデータ投入（学生10名・メッセージ80件）
+npm run db:seed             # デモ用シードデータ投入（学生40名・メッセージ約330件。人事1人あたり12名担当）
 
 # 開発
 npm run dev:server          # Express + Socket.IO (localhost:3000)
