@@ -57,9 +57,10 @@ const navItems = computed(() =>
  * 通知バッジの件数。
  * ★P1-8 で GET /api/summary が入ったら `rooms.summary.needsReply` に差し替える。
  *   それまでは InboxSidebar と同じ暫定集計（ルーム一覧からの数え上げ）で出す。
+ *   受信箱は担当制なので、数えるのは自分の担当ルームだけ（#28・roomsStore.myRooms）。
  */
 const alertCount = computed(
-  () => rooms.rooms.filter((room) => room.handlingStatus === HANDLING_STATUS.NEEDS_REPLY).length
+  () => rooms.myRooms.filter((room) => room.handlingStatus === HANDLING_STATUS.NEEDS_REPLY).length
 )
 
 /** 件数は色でなくテキストでも伝える（CLAUDE.md §6-13） */

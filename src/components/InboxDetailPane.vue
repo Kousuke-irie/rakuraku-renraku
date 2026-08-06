@@ -1,27 +1,22 @@
 <script setup>
 // 受信箱の右ペイン（frontend.md §5 のレイアウト枠）
 //
-// ★このコンポーネントは**表示専用のガワ**である。
-//   トーク画面（B-2）の見た目を確認できるようにするために置いてある。
-//   インライン編集・担当者変更・メモの読み書き・日程調整の進捗更新は**未実装**。
-//   P2-4（ProfilePanel）／P2-5（MemoPanel）／P3-4 で置き換えること。
-//
-// 面接日時・会議室・面接官・日程調整進捗は GET /api/rooms がまだ返していないため
-// 「未設定」と表示される（サーバ側の対応は P2-4 のスコープ）。
+// ★プロフィールの編集（P2-4/P2-9）は ProfilePanel、申し送りメモ（P2-5/P2-6）は MemoPanel に委譲済み。
+//   日程調整の進捗更新（P3-4）は**未実装**で、現在の値の表示だけを行う。
 import { computed } from "vue"
 import {
   DEFAULT_SCHEDULE_STATE,
   SCHEDULE_STATE_META,
-  SELECTION_STATUS_META,
 } from "../constants/index.js"
 import { useUiStore } from "../stores/ui.js"
+import MemoPanel from "./MemoPanel.vue"
 import PanelIcon from "./PanelIcon.vue"
+import ProfilePanel from "./ProfilePanel.vue"
 import StatusChip, { CHIP_KIND } from "./StatusChip.vue"
 import UserAvatar from "./UserAvatar.vue"
 
 // #region constants
 const UNSET_LABEL = "未設定"
-const UNASSIGNED_LABEL = "未割当"
 // #endregion
 
 const props = defineProps({
@@ -41,17 +36,6 @@ const scheduleStateLabel = computed(
     SCHEDULE_STATE_META[student.value.scheduleState ?? DEFAULT_SCHEDULE_STATE]?.label ?? UNSET_LABEL
 )
 
-/** 定義リストの行。値が無いものは「未設定」で埋める（引き継ぎ時に欠落が見えるように） */
-const detailRows = computed(() => [
-  { label: "担当人事", value: props.room?.assignee?.displayName ?? UNASSIGNED_LABEL },
-  {
-    label: "選考ステータス",
-    value: SELECTION_STATUS_META[student.value.selectionStatus]?.label ?? UNSET_LABEL,
-  },
-  { label: "次回面接", value: student.value.nextInterviewAt ?? UNSET_LABEL },
-  { label: "会議室", value: student.value.nextInterviewRoom ?? UNSET_LABEL },
-  { label: "担当面接官", value: student.value.interviewer ?? UNSET_LABEL },
-])
 // #endregion
 </script>
 
@@ -106,32 +90,13 @@ const detailRows = computed(() => [
         />
       </div>
 
-      <dl class="detail__list">
-        <template
-          v-for="row in detailRows"
-          :key="row.label"
-        >
-          <dt class="detail__label">
-            {{ row.label }}
-          </dt>
-          <dd
-            class="detail__value"
-            :class="{ 'detail__value--unset': row.value === UNSET_LABEL }"
-          >
-            {{ row.value }}
-          </dd>
-        </template>
-      </dl>
+      <!-- 担当人事・選考ステータス・次回面接・会議室・面接官のインライン編集（P2-4/P2-9） -->
+      <ProfilePanel :room="room" />
 
-      <!-- 申し送りメモ（P2-5）：見出しのみ -->
-      <section class="section">
-        <h3 class="section__title">
-          申し送りメモ
-        </h3>
-        <p class="section__empty">
-          共有メモはまだありません。
-        </p>
-      </section>
+      <!-- 申し送りメモ（P2-5/P2-6） -->
+      <div class="section">
+        <MemoPanel :room-id="room.id" />
+      </div>
 
       <!-- 日程調整トラッカー（P3-4）：現在の進捗の表示のみ -->
       <section class="section">
@@ -171,8 +136,7 @@ const detailRows = computed(() => [
   letter-spacing: 0.4px;
 }
 
-.detail__empty,
-.section__empty {
+.detail__empty {
   color: var(--color-ink-mute);
   font-size: 12px;
 }
@@ -206,30 +170,6 @@ const detailRows = computed(() => [
 .detail__university {
   color: var(--color-ink-mute);
   font-size: 12px;
-}
-
-.detail__list {
-  display: grid;
-  grid-template-columns: 84px 1fr;
-  gap: var(--space-sm) var(--space-md);
-  padding: var(--space-lg) 0;
-  border-bottom: 1px solid var(--color-hairline);
-}
-
-.detail__label {
-  color: var(--color-ink-mute);
-  font-size: 11px;
-  line-height: 1.5;
-}
-
-.detail__value {
-  font-size: 12px;
-  line-height: 1.5;
-  word-break: break-word;
-}
-
-.detail__value--unset {
-  color: var(--color-ink-mute);
 }
 
 .section {

@@ -14,6 +14,12 @@ export function errorHandler(err, req, res, next) {
     return res.status(err.statusCode).json({ error: err.code, message: err.message });
   }
 
+  // services が投げる想定内のエラー（statusCode と機械可読な code を持つもの）は
+  // そのまま `{ error, message }` に変換する。想定外の例外だけ 500 に落とす。
+  if (Number.isInteger(err?.statusCode) && typeof err?.code === 'string') {
+    return res.status(err.statusCode).json({ error: err.code, message: err.message });
+  }
+
   // ログに個人情報（メッセージ本文・氏名）を出さない（CLAUDE.md §6-8）。
   // 経路とスタックのみ記録する。
   console.error(`server: unhandled error on ${req.method} ${req.originalUrl}`, err.stack);

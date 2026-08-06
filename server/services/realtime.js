@@ -44,6 +44,15 @@ export function emitSummaryUpdated(io, db) {
   io.to('hr').emit(SOCKET_ON.SUMMARY_UPDATED, getSummary(db));
 }
 
+/**
+ * 共有メモの追加・更新を人事全員へ配信する（P2-5）。
+ * 呼び出し側で `scope === 'shared'` を確認すること。個人メモは配信しない。
+ */
+export function emitMemoUpdated(io, memo) {
+  if (!io) return;
+  io.to('hr').emit(SOCKET_ON.MEMO_UPDATED, { roomId: memo.roomId, memo });
+}
+
 export function emitReadUpdated(io, payload) {
   if (!io) return;
   io.to(`room:${payload.roomId}`).emit(SOCKET_ON.READ_UPDATED, payload);

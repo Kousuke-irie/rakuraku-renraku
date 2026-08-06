@@ -4,8 +4,9 @@ import { http } from "./client.js"
  * 申し送りメモエンドポイント（api.md §2「メモ・定型文・サマリー」/ P2-5・P2-6）
  *
  * memo の形:
- * { id, roomId, authorId, authorName, scope, body, createdAt, updatedAt }
- * `scope` は MEMO_SCOPE（personal / shared）。personal は作成者本人にしか返らない。
+ * { id, roomId, author: { id, displayName }, body, scope, createdAt, updatedAt }
+ * `scope` は MEMO_SCOPE（private / shared）。private は作成者本人にしか返らない。
+ * メモは人事の社内情報なので、学生ロールはどのエンドポイントも 403 になる。
  */
 export const memosApi = {
   /**

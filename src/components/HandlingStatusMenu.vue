@@ -9,8 +9,9 @@
 //
 // 一覧行は RouterLink の中にあるため、このコンポーネント内のクリックは
 // ルート要素で止めてトーク画面への遷移を防ぐ。
-import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue"
+import { computed, nextTick, ref, watch } from "vue"
 import { HANDLING_STATUS_META, HANDLING_STATUS_VALUES } from "../constants/index.js"
+import { useDismissOnOutside } from "../composables/useDismissOnOutside.js"
 import { useRoomsStore } from "../stores/rooms.js"
 import { useUiStore } from "../stores/ui.js"
 import StatusChip, { CHIP_KIND } from "./StatusChip.vue"
@@ -72,37 +73,19 @@ const select = (status) => {
   rooms.updateHandlingStatus(props.roomId, status)
 }
 
-/** 開いている間だけ「外側クリック」「Escape」で閉じる */
-const onDocumentClick = () => close()
-const onDocumentKeydown = (event) => {
-  if (event.key === "Escape") close()
-}
-
-const bindDismiss = () => {
-  document.addEventListener("click", onDocumentClick)
-  document.addEventListener("keydown", onDocumentKeydown)
-}
-
-const unbindDismiss = () => {
-  document.removeEventListener("click", onDocumentClick)
-  document.removeEventListener("keydown", onDocumentKeydown)
-}
 // #endregion
 
 // #region lifecycle
-watch(isOpen, async (open) => {
-  if (!open) {
-    unbindDismiss()
-    return
-  }
+// 外側クリック・Escape で閉じる（FilterBar と共通）
+useDismissOnOutside(isOpen, close)
 
-  bindDismiss()
+watch(isOpen, async (open) => {
+  if (!open) return
+
   // キーボード操作でも選択肢へ入れるようにする（以降は Tab で移動できる）
   await nextTick()
   optionRefs.value[0]?.focus()
 })
-
-onBeforeUnmount(unbindDismiss)
 // #endregion
 </script>
 

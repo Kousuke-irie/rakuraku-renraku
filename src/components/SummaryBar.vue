@@ -3,6 +3,10 @@
 //
 // 「要返信 7件・緊急 2件・24h超 1件」を常時表示する。ホーム（S-07）のヘッダで使う。
 //
+// ★件数は**自分の担当ルーム**（roomsStore.myRooms）から数える。
+//   受信箱は担当制で他人の担当は一覧に出ないため（#28）、rooms 全件を数えると
+//   件数と実際に見えている行数が食い違う。
+//
 // ★件数の情報源について
 //   本来は GET /api/summary（roomsStore.summary）を使う（P1-8）。
 //   まだ fetchSummary() が空実装なので、**ルーム一覧からの暫定集計**で出している。
@@ -46,19 +50,20 @@ const items = computed(() => [
   {
     key: "urgent",
     label: URGENCY_META[URGENCY.HIGH].label,
-    count: rooms.rooms.filter((room) => room.urgency === URGENCY.HIGH).length,
+    count: rooms.myRooms.filter((room) => room.urgency === URGENCY.HIGH).length,
     tone: TONE.ALERT,
   },
   {
     key: "needsReply",
     label: HANDLING_STATUS_META[HANDLING_STATUS.NEEDS_REPLY].label,
-    count: rooms.rooms.filter((room) => room.handlingStatus === HANDLING_STATUS.NEEDS_REPLY).length,
+    count: rooms.myRooms.filter((room) => room.handlingStatus === HANDLING_STATUS.NEEDS_REPLY)
+      .length,
     tone: TONE.WARN,
   },
   {
     key: "overdue24h",
     label: `${SLA_ALERT_HOURS}h超`,
-    count: rooms.rooms.filter(isOverdue).length,
+    count: rooms.myRooms.filter(isOverdue).length,
     tone: TONE.ALERT,
   },
 ])
