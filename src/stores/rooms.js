@@ -81,6 +81,22 @@ const byElapsedTime = (left, right) => {
   return elapsed !== 0 ? elapsed : byRoomId(left, right)
 }
 
+/**
+ * ソートキーに対応する比較関数（business-logic.md §6）。
+ * 受信箱（sortedRooms）と全学生（allSortedRooms）で同じ並びになるよう1箇所に集約する。
+ */
+const comparatorOf = (sortKey) => {
+  switch (sortKey) {
+    case SORT_KEY.LAST_MESSAGE:
+      return byLastMessage
+    case SORT_KEY.ELAPSED:
+      return byElapsedTime
+    case SORT_KEY.DEFAULT:
+    default:
+      return byDefaultPriority
+  }
+}
+
 /** フィルタ条件を満たすルームだけを残す（P1-7）。 */
 const filterRooms = (rooms, filters) => {
   const {
@@ -268,17 +284,19 @@ export const useRoomsStore = defineStore('rooms', {
      */
     sortedRooms(s) {
       // filteredRooms は毎回新しい配列を返すので、sort が s.rooms を壊すことはない
-      const rooms = [...this.filteredRooms]
+      return [...this.filteredRooms].sort(comparatorOf(s.sortKey))
+    },
 
-      switch (s.sortKey) {
-        case SORT_KEY.LAST_MESSAGE:
-          return rooms.sort(byLastMessage)
-        case SORT_KEY.ELAPSED:
-          return rooms.sort(byElapsedTime)
-        case SORT_KEY.DEFAULT:
-        default:
-          return rooms.sort(byDefaultPriority)
-      }
+    /**
+     * 全学生（S-08）用の一覧。**担当外・未配属も含む全ルーム**に
+     * filters と sortKey を適用した結果。
+     *
+     * 受信箱・ホームは担当制で myRooms に絞るが、この画面だけは
+     * 「どの人事の受信箱にも出ていない学生」を拾い上げるために全件を見る。
+     * filterRooms は新しい配列を返すので、sort が s.rooms を壊すことはない。
+     */
+    allSortedRooms(s) {
+      return filterRooms(s.rooms, s.filters).sort(comparatorOf(s.sortKey))
     },
 
     /** フィルタが1つでも掛かっているか（「条件をクリア」ボタンの活性判定） */
