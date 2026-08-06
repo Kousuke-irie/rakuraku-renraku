@@ -14,15 +14,21 @@ function socketError(socket, code, message) {
 }
 
 export function registerRoomHandlers(io, socket) {
-  socket.on(SOCKET_EMIT.ROOM_STATUS_UPDATE, async ({ roomId, handlingStatus } = {}) => {
+  // 第2引数の ack はクライアントが楽観更新をロールバックするために使う（P1-2）。
+  // ack がある場合は `error` イベントを二重に投げない（トーストが2回出るため）。
+  socket.on(SOCKET_EMIT.ROOM_STATUS_UPDATE, async ({ roomId, handlingStatus } = {}, ack) => {
     const numericRoomId = Number(roomId);
+    const fail = (code, message) => {
+      if (typeof ack === 'function') ack({ ok: false, code, message });
+      else socketError(socket, code, message);
+    };
 
     if (socket.data.user.role !== ROLE.HR && socket.data.user.role !== ROLE.ADMIN) {
-      socketError(socket, 'forbidden', '人事担当者のみ変更できます');
+      fail('forbidden', '人事担当者のみ変更できます');
       return;
     }
     if (!HANDLING_STATUS_VALUES.includes(handlingStatus)) {
-      socketError(socket, 'invalid_payload', '対応ステータスが不正です');
+      fail('invalid_payload', '対応ステータスが不正です');
       return;
     }
 
@@ -39,12 +45,14 @@ export function registerRoomHandlers(io, socket) {
         await emitRoomUpdated(io, db, numericRoomId);
         emitSummaryUpdated(io, db);
       }
+
+      if (typeof ack === 'function') ack({ ok: true });
     } catch (error) {
       if (error instanceof RoomAccessDeniedError) {
-        socketError(socket, error.code, error.message);
+        fail(error.code, error.message);
         return;
       }
-      socketError(socket, 'internal_error', 'ステータスの更新に失敗しました');
+      fail('internal_error', 'ステータスの更新に失敗しました');
     }
   });
 }

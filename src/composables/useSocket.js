@@ -1,5 +1,5 @@
 import { io } from 'socket.io-client'
-import { SOCKET_EMIT, SOCKET_ON } from '../constants/index.js'
+import { SEND_ACK_TIMEOUT_MS, SOCKET_EMIT, SOCKET_ON } from '../constants/index.js'
 import { useAuthStore } from '../stores/auth.js'
 import { useRoomsStore } from '../stores/rooms.js'
 import { useMessagesStore } from '../stores/messages.js'
@@ -156,8 +156,32 @@ export function emitSocket(event, payload) {
 }
 
 /**
+ * ack（サーバからの応答）を待つ送信口。楽観更新を**失敗時に戻す**必要がある操作で使う
+ * （P1-2 の対応ステータス変更など）。サーバは `{ ok: true }` / `{ ok: false, code, message }` を返す。
+ *
+ * 未接続なら null を返す。呼び出し側は REST にフォールバックすること。
+ * @param {string} event SOCKET_EMIT のいずれか
+ * @param {object} payload
+ * @returns {Promise<{ok: boolean, code?: string, message?: string}>|null}
+ */
+export function emitSocketAck(event, payload) {
+  if (!socket?.connected) return null
+
+  return new Promise((resolve) => {
+    // 応答が返らないまま固まらないよう socket.io のタイムアウト機構に乗せる
+    socket.timeout(SEND_ACK_TIMEOUT_MS).emit(event, payload, (timeoutError, response) => {
+      if (timeoutError) {
+        resolve({ ok: false, code: 'timeout', message: 'サーバから応答がありませんでした' })
+        return
+      }
+      resolve(response ?? { ok: true })
+    })
+  })
+}
+
+/**
  * コンポーネントから使う参照。接続状態は uiStore.connectionState を見ること。
  */
 export function useSocket() {
-  return { connectSocket, disconnectSocket, emitSocket, SOCKET_EMIT, SOCKET_ON }
+  return { connectSocket, disconnectSocket, emitSocket, emitSocketAck, SOCKET_EMIT, SOCKET_ON }
 }

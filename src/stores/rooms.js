@@ -1,7 +1,12 @@
 /* eslint-disable no-unused-vars -- 空実装のため引数が未使用。実装時にこの行を消すこと */
 import { defineStore } from 'pinia'
-import { DEFAULT_SORT_KEY } from '../constants/index.js'
+import { DEFAULT_SORT_KEY, SOCKET_EMIT } from '../constants/index.js'
 import { roomsApi, toErrorMessage } from '../api/index.js'
+import { emitSocketAck } from '../composables/useSocket.js'
+import { useUiStore } from './ui.js'
+
+/** 対応ステータス変更が失敗したときの既定文言（P1-2） */
+const STATUS_UPDATE_ERROR = '対応ステータスの変更に失敗しました'
 
 /**
  * 受信箱ストア（P1-1 / P1-7 / P1-8・frontend.md §3）
@@ -180,10 +185,45 @@ export const useRoomsStore = defineStore('rooms', {
     // ---- 更新系（人事の操作） ---------------------------------------------
 
     /**
-     * 対応ステータスの変更（P1-2）。socket `room:status_update` で送り、
-     * 応答の room:updated で確定する。楽観更新してよいが失敗時は戻すこと。
+     * 対応ステータスの変更（P1-2）。
+     *
+     * 一覧を離れず1クリックで色が変わることが受入条件なので、まず楽観更新する。
+     * 送信は socket `room:status_update`（低遅延）、切断中は REST にフォールバックする。
+     * 確定値はサーバの `room:updated`（＝他の人事の画面にも即座に反映される経路）で上書きされ、
+     * 失敗したときだけ元のステータスへ戻してトーストを出す。
+     *
+     * @param {number} roomId
+     * @param {string} handlingStatus HANDLING_STATUS のいずれか
      */
-    async updateHandlingStatus(roomId, handlingStatus) {},
+    async updateHandlingStatus(roomId, handlingStatus) {
+      const room = this.roomById(roomId)
+      if (!room || room.handlingStatus === handlingStatus) return
+
+      const previous = room.handlingStatus
+      this.upsertRoom({ id: room.id, handlingStatus })
+
+      const rollback = (message) => {
+        this.upsertRoom({ id: room.id, handlingStatus: previous })
+        useUiStore().pushToast({ type: 'error', message })
+      }
+
+      const ack = await emitSocketAck(SOCKET_EMIT.ROOM_STATUS_UPDATE, {
+        roomId: room.id,
+        handlingStatus,
+      })
+      if (ack) {
+        if (!ack.ok) rollback(ack.message ?? STATUS_UPDATE_ERROR)
+        return
+      }
+
+      // 未接続時のフォールバック（api.md §1 責務分担）。レスポンスの room をそのまま反映する
+      try {
+        const { data } = await roomsApi.update(room.id, { handlingStatus })
+        this.upsertRoom(data.room)
+      } catch (error) {
+        rollback(toErrorMessage(error, STATUS_UPDATE_ERROR))
+      }
+    },
 
     /** PATCH /api/rooms/:id { assigneeUserId }（P2-9） */
     async assign(roomId, assigneeUserId) {},
