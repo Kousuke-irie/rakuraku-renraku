@@ -9,8 +9,10 @@
 // ナビレールの列幅は開閉しても変えない。レールは絶対配置で右へ重なる（AppNavRail 参照）。
 //
 // プロフィール編集ダイアログはレールの中ではなくここに置く。開閉状態は ui ストアが持つ。
+// トーストも同様に、どの画面からでも出せるようにここへ1つだけ置く。
 import AppNavRail from "./AppNavRail.vue"
 import ProfileDialog from "./ProfileDialog.vue"
+import ToastStack from "./ToastStack.vue"
 </script>
 
 <template>
@@ -24,6 +26,7 @@ import ProfileDialog from "./ProfileDialog.vue"
     </div>
 
     <ProfileDialog />
+    <ToastStack />
   </div>
 </template>
 
