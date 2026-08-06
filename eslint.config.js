@@ -17,6 +17,9 @@ export default [
         clearTimeout: 'readonly',
         // crypto.randomUUID()（clientMsgId の生成）。Node 20+ とブラウザの両方で使える
         crypto: 'readonly',
+        // ドロップダウンの「外側クリック」「Escape」検知と開く向きの判定（HandlingStatusMenu）
+        document: 'readonly',
+        window: 'readonly',
       },
     },
   },
