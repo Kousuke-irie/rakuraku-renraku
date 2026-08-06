@@ -10,6 +10,9 @@ import ChatView from "../views/ChatView.vue"
 import StudentHomeView from "../views/StudentHomeView.vue"
 import NotificationsView from "../views/NotificationsView.vue"
 import ProfileSettingsView from "../views/ProfileSettingsView.vue"
+import ScheduleSelectView from "../views/ScheduleSelectView.vue"
+import ScheduleConfirmView from "../views/ScheduleConfirmView.vue"
+import ScheduleCompleteView from "../views/ScheduleCompleteView.vue"
 
 /**
  * 画面一覧は frontend.md §1（S-01〜S-06）に対応する。
@@ -80,6 +83,24 @@ const routes = [
     meta: { requiresAuth: true, roles: [ROLE.STUDENT] },
   },
   {
+    path: "/schedules/:scheduleRequestId/select",
+    name: "schedule-select",
+    component: ScheduleSelectView,
+    meta: { requiresAuth: true, roles: [ROLE.STUDENT] },
+  },
+  {
+    path: "/schedules/:scheduleRequestId/confirm",
+    name: "schedule-confirm",
+    component: ScheduleConfirmView,
+    meta: { requiresAuth: true, roles: [ROLE.STUDENT] },
+  },
+  {
+    path: "/schedules/:scheduleRequestId/complete",
+    name: "schedule-complete",
+    component: ScheduleCompleteView,
+    meta: { requiresAuth: true, roles: [ROLE.STUDENT] },
+  },
+  {
     // 通知一覧（ナビレールのベルから開く）。受信箱に対する機能なので人事のみ。
     // ★雛形。要件IDが無い画面なので frontend.md §1 の S-xx は割り当てていない
     path: "/notifications",
@@ -92,6 +113,16 @@ const routes = [
     name: "profile-settings",
     component: ProfileSettingsView,
     meta: { requiresAuth: true },
+  },
+  {
+    // P4-4 監視ダッシュボード。**人事全員が見る**（相互監視のため）。
+    // 学生は roles 不一致で /mypage へ戻され、サーバ側（requireHr）でも弾かれる。
+    path: "/dashboard",
+    name: "dashboard",
+    // chart.js を初期バンドルに載せないため遅延読み込みにする。
+    // 開くのは上長だけなので、大多数のユーザーは読み込まなくて済む
+    component: () => import("../views/DashboardView.vue"),
+    meta: { requiresAuth: true, roles: [ROLE.HR, ROLE.ADMIN] },
   },
   {
     path: "/:pathMatch(.*)*",

@@ -11,6 +11,7 @@
 //   見せてよいかの判断はサーバが持つ。
 import { computed } from "vue"
 import { FLOW_STEP_STATE, FLOW_STEP_STATE_META } from "../constants/index.js"
+import InterviewSurveyCard from "./InterviewSurveyCard.vue"
 import StudentNoteEditor from "./StudentNoteEditor.vue"
 
 const props = defineProps({
@@ -18,13 +19,23 @@ const props = defineProps({
    *           points: string|null, state: string, feedback: object|null,
    *           note: object|null}|null} */
   step: { type: Object, default: null },
+  /** 選択中ステップのアンケートに回答済みか（面接アンケート・frontend.md §7-3） */
+  surveyAnswered: { type: Boolean, default: false },
 })
+
+const emit = defineEmits(["survey-answered"])
 
 // #region computed
 const stateLabel = computed(() => FLOW_STEP_STATE_META[props.step?.state]?.label ?? "")
 
 const isCurrent = computed(() => props.step?.state === FLOW_STEP_STATE.CURRENT)
 const isDone = computed(() => props.step?.state === FLOW_STEP_STATE.DONE)
+
+/** 面接アンケートの対象ステップか（一次〜五次面接。SELECTION_STATUS の interview_* と一致） */
+const isInterviewStep = computed(() => Boolean(props.step?.statusKey?.startsWith("interview_")))
+
+/** 完了済みの面接ステップにだけアンケートカードを出す（未回答／回答済みの切替はカード内部） */
+const showSurveyCard = computed(() => isDone.value && isInterviewStep.value)
 
 /** 改行を段落に割る。v-html は使わない（frontend.md §10-1） */
 const toParagraphs = (text) =>
@@ -150,6 +161,15 @@ const formatUpdatedAt = (isoString) =>
         >
           フィードバックが届くとここに表示されます。
         </p>
+
+        <!-- 面接アンケート（S-09・frontend.md §7-3）。フロントエンドのみのモック。
+             会社から受け取ったもの（FB）と自分が書くもの（メモ）の間に置く -->
+        <InterviewSurveyCard
+          v-if="showSurveyCard"
+          :status-key="step.statusKey"
+          :answered="surveyAnswered"
+          @answered="emit('survey-answered', $event)"
+        />
 
         <!-- 自分用のメモ（S-10）。人事には見えない -->
         <StudentNoteEditor

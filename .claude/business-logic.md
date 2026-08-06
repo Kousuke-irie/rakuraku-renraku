@@ -137,13 +137,25 @@ classify(body: string): TopicTag
 last_message.created_at DESC   -- 最終メッセージの新しい順
 ```
 
-- 切替可能なソート：緊急度順 / 経過時間順
-- 「緊急度順」は `1. urgency（high → normal → low）` → `2. last_student_message_at ASC（経過時間が長い順）`
+- 切替可能なソート：AI推奨度順 / 経過時間順
+- 「AI推奨度順」は `1. priority（high → normal → low）` → `2. last_student_message_at ASC（経過時間が長い順）`
+- `priority` はAI判定が完了していれば `ai_priority` を使い、未判定・失敗時はルールベースの `urgency` を使う。
 - フィルタ条件とソート条件は Pinia に保持し、ルーム切替で失われないこと
 
 ---
 
-## 7. AI 緊急度判定（P3-1・採用した場合のみ）
+## 7. 面接日程予約（P3-4改訂）
+
+実装：`server/services/calendarGateway.js` / `scheduleRequests.js` / `scheduleBookingService.js`
+
+1. 候補期間・日次時間帯・所要時間から擬似カレンダー枠を生成する
+2. `calendar_events` または既存 `calendar_bookings` と重なる枠、過去枠は受付終了にする
+3. 予約確定時は表示中の `available` を信用せず、対象面接官・期間・所要時間を再検証する
+4. `calendar_bookings.external_slot_id` の UNIQUE 制約を最後の防衛線にする
+5. 予約、依頼更新、学生プロフィール更新、確定メッセージ追加を同一トランザクションで行う
+6. 期限切れ判定は `expireWaitingScheduleRequests()` に集約し、取得時と60秒バッチから呼ぶ
+
+## 8. AI 緊急度判定（P3-1・採用した場合のみ）
 
 実装：`server/services/aiClassifier.js`
 
@@ -164,7 +176,7 @@ last_message.created_at DESC   -- 最終メッセージの新しい順
 
 ---
 
-## 7-2. ホームの AI 現況サマリー／TODO（P3-1a）
+## 8-2. ホームの AI 現況サマリー／TODO（P3-1a）
 
 実装：`server/services/aiSummary.js`（`aiClassifier.js` とは別ファイルにする。用途もプロンプトも違うため）
 

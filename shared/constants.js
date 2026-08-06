@@ -62,6 +62,44 @@ export const SELECTION_STATUS_META = Object.freeze({
 
 export const SELECTION_STATUS_VALUES = Object.values(SELECTION_STATUS);
 
+// ---------------------------------------------------------------------------
+// 選考ステータスの区分（P4-4 ダッシュボードの集計軸）
+// 「エントリー」は選考が始まる前、「内定」は選考が終わって確定した状態であり、
+// どちらも“選考中”ではない。辞退だけが離脱。
+// ---------------------------------------------------------------------------
+
+export const SELECTION_PHASE = Object.freeze({
+  /** 選考が始まる前 */
+  PRE: 'pre',
+  /** 選考の途中 */
+  IN_PROGRESS: 'in_progress',
+  /** 選考が終わって確定した */
+  SETTLED: 'settled',
+  /** 選考から離れた */
+  EXITED: 'exited',
+});
+
+export const SELECTION_PHASE_META = Object.freeze({
+  [SELECTION_PHASE.PRE]: { label: '選考前' },
+  [SELECTION_PHASE.IN_PROGRESS]: { label: '選考中' },
+  [SELECTION_PHASE.SETTLED]: { label: '確定' },
+  [SELECTION_PHASE.EXITED]: { label: '離脱' },
+});
+
+export const SELECTION_PHASE_VALUES = Object.values(SELECTION_PHASE);
+
+/** 選考ステータス → 区分。ここに無いものはすべて `in_progress`（書類〜五次面接） */
+export const SELECTION_PHASE_BY_STATUS = Object.freeze({
+  [SELECTION_STATUS.ENTRY]: SELECTION_PHASE.PRE,
+  [SELECTION_STATUS.OFFER]: SELECTION_PHASE.SETTLED,
+  [SELECTION_STATUS.DECLINED]: SELECTION_PHASE.EXITED,
+});
+
+/** @param {string} status @returns {string} SELECTION_PHASE のいずれか */
+export function selectionPhaseOf(status) {
+  return SELECTION_PHASE_BY_STATUS[status] ?? SELECTION_PHASE.IN_PROGRESS;
+}
+
 /**
  * 選考フロー（S-09 / P2-11）に丸として並べられるステップ。
  *
@@ -125,9 +163,12 @@ export const URGENCY_META = Object.freeze({
 export const URGENCY_VALUES = Object.values(URGENCY);
 
 // ---------------------------------------------------------------------------
-// AI対応推奨度（P3-1改訂）
-// ルール緊急度とは別の補助情報であり、既存の urgency を変更しない。
+// AI推奨度（P3-1改訂）
+// 人事画面の優先表示にはAI判定を使う。AIが未判定・失敗時だけ既存の urgency を
+// フォールバックとして使うため、欠席・遅刻などの即時検知は維持される。
 // ---------------------------------------------------------------------------
+
+export const AI_RECOMMENDED_PRIORITY_TITLE = 'AI推奨度';
 
 export const AI_RECOMMENDED_PRIORITY = Object.freeze({
   HIGH: 'high',
@@ -142,6 +183,12 @@ export const AI_RECOMMENDED_PRIORITY_META = Object.freeze({
 });
 
 export const AI_RECOMMENDED_PRIORITY_VALUES = Object.values(AI_RECOMMENDED_PRIORITY);
+
+export const AI_RECOMMENDED_PRIORITY_ORDER = Object.freeze({
+  [AI_RECOMMENDED_PRIORITY.HIGH]: 0,
+  [AI_RECOMMENDED_PRIORITY.NORMAL]: 1,
+  [AI_RECOMMENDED_PRIORITY.LOW]: 2,
+});
 
 export const AI_ANALYSIS_STATUS = Object.freeze({
   PENDING: 'pending',
@@ -169,6 +216,47 @@ export const SCHEDULE_STATE_META = Object.freeze({
 });
 
 export const SCHEDULE_STATE_VALUES = Object.values(SCHEDULE_STATE);
+
+// ---------------------------------------------------------------------------
+// 面接日程予約（P3-4 改訂）
+// schedule_requests.status が予約フローの正。students.schedule_state は互換表示用に同期する。
+// ---------------------------------------------------------------------------
+
+export const SCHEDULE_REQUEST_STATUS = Object.freeze({
+  DRAFT: 'draft',
+  WAITING_STUDENT: 'waiting_student',
+  BOOKED: 'booked',
+  EXPIRED: 'expired',
+  CANCELLED: 'cancelled',
+});
+
+export const SCHEDULE_REQUEST_STATUS_META = Object.freeze({
+  [SCHEDULE_REQUEST_STATUS.DRAFT]: { label: '作成中' },
+  [SCHEDULE_REQUEST_STATUS.WAITING_STUDENT]: { label: '学生日程選択待ち' },
+  [SCHEDULE_REQUEST_STATUS.BOOKED]: { label: '日程確定' },
+  [SCHEDULE_REQUEST_STATUS.EXPIRED]: { label: '回答期限切れ' },
+  [SCHEDULE_REQUEST_STATUS.CANCELLED]: { label: '取消' },
+});
+
+export const SCHEDULE_REQUEST_STATUS_VALUES = Object.values(SCHEDULE_REQUEST_STATUS);
+
+export const INTERVIEW_FORMAT = Object.freeze({
+  ONLINE: 'online',
+  ONSITE: 'onsite',
+});
+
+export const INTERVIEW_FORMAT_META = Object.freeze({
+  [INTERVIEW_FORMAT.ONLINE]: { label: 'オンライン' },
+  [INTERVIEW_FORMAT.ONSITE]: { label: '対面' },
+});
+
+export const INTERVIEW_FORMAT_VALUES = Object.values(INTERVIEW_FORMAT);
+
+export const INTERVIEW_DURATION_OPTIONS = Object.freeze([30, 60, 90]);
+export const DEFAULT_INTERVIEW_DURATION_MINUTES = 60;
+export const DEFAULT_DAILY_START_TIME = '10:00';
+export const DEFAULT_DAILY_END_TIME = '18:00';
+export const SCHEDULE_REFRESH_INTERVAL_MS = 30_000;
 
 export const MESSAGE_TYPE = Object.freeze({
   TEXT: 'text',
@@ -221,7 +309,7 @@ export const SORT_KEY = Object.freeze({
 });
 
 export const SORT_KEY_META = Object.freeze({
-  [SORT_KEY.DEFAULT]: { label: '緊急度順' },
+  [SORT_KEY.DEFAULT]: { label: 'AI推奨度順' },
   [SORT_KEY.LAST_MESSAGE]: { label: '最終メッセージ順' },
   [SORT_KEY.ELAPSED]: { label: '経過時間順' },
 });
@@ -267,13 +355,13 @@ export const SEND_STATUS_VALUES = Object.values(SEND_STATUS);
 export const BOARD_GROUP_BY = Object.freeze({
   HANDLING: 'handling',
   SELECTION: 'selection',
-  URGENCY: 'urgency',
+  AI_PRIORITY: 'ai_priority',
 });
 
 export const BOARD_GROUP_BY_META = Object.freeze({
   [BOARD_GROUP_BY.HANDLING]: { label: '対応' },
   [BOARD_GROUP_BY.SELECTION]: { label: '選考' },
-  [BOARD_GROUP_BY.URGENCY]: { label: '緊急度' },
+  [BOARD_GROUP_BY.AI_PRIORITY]: { label: AI_RECOMMENDED_PRIORITY_TITLE },
 });
 
 export const BOARD_GROUP_BY_VALUES = Object.values(BOARD_GROUP_BY);
@@ -322,6 +410,8 @@ export const DEFAULT_TOPIC_TAG = TOPIC_TAG.OTHER;
 export const DEFAULT_URGENCY = URGENCY.NORMAL;
 export const DEFAULT_AI_ANALYSIS_STATUS = AI_ANALYSIS_STATUS.SKIPPED;
 export const DEFAULT_SCHEDULE_STATE = SCHEDULE_STATE.NONE;
+export const DEFAULT_SCHEDULE_REQUEST_STATUS = SCHEDULE_REQUEST_STATUS.DRAFT;
+export const DEFAULT_INTERVIEW_FORMAT = INTERVIEW_FORMAT.ONLINE;
 export const DEFAULT_MEMO_SCOPE = MEMO_SCOPE.PRIVATE;
 export const DEFAULT_AI_SUMMARY_STATUS = AI_SUMMARY_STATUS.IDLE;
 
@@ -440,6 +530,128 @@ export const COMPLIANCE_CATEGORY_VALUES = Object.values(COMPLIANCE_CATEGORY);
  */
 export const COMPLIANCE_DISCLAIMER = '参考情報です。最終判断は担当者が行ってください。';
 
+/**
+ * コンプライアンス検知のルール（P4-2 / monitoring.md §4）。
+ *
+ * **辞書も AI も同じ語彙を使う。** AI 側だけ `ai_discrimination` のような
+ * 粗い分類にすると、ダッシュボードの内訳で粒度が混ざって比較できなくなる。
+ * AI がどれにも当てはめられなかったときだけ `other_*` に落とす。
+ *
+ * 「辞書が見つけたか AI が見つけたか」は `alerts.source` が持つ。
+ * ルールコードに混ぜないこと。
+ */
+export const COMPLIANCE_RULE = Object.freeze({
+  // 就職差別のおそれ（厚労省「公正な採用選考の基本」の禁止事項）
+  HONSEKI: 'honseki',
+  FAMILY_JOB: 'family_job',
+  FAMILY_EDU: 'family_edu',
+  HOUSING: 'housing',
+  ASSETS: 'assets',
+  RELIGION: 'religion',
+  POLITICS: 'politics',
+  THOUGHT: 'thought',
+  UNION: 'union',
+  NEWSPAPER: 'newspaper',
+  /** 上記のどれにも当てはまらない差別のおそれ（AI のみ） */
+  OTHER_DISCRIMINATION: 'other_discrimination',
+
+  // オワハラのおそれ
+  WITHDRAW_OTHERS: 'withdraw_others',
+  DECIDE_NOW: 'decide_now',
+  OFFER_CONDITION: 'offer_condition',
+  DEADLINE_TODAY: 'deadline_today',
+  PRESSURE_SOFT: 'pressure_soft',
+  /** 上記のどれにも当てはまらないオワハラのおそれ（AI のみ） */
+  OTHER_OWAHARA: 'other_owahara',
+});
+
+/**
+ * 画面に出す短い日本語名。**コードをそのまま見せない。**
+ * `description` は AI にルールを選ばせるときのプロンプトにも使う。
+ */
+export const COMPLIANCE_RULE_META = Object.freeze({
+  [COMPLIANCE_RULE.HONSEKI]: { label: '本籍・出生地', description: '本籍、出生地、国籍を尋ねている' },
+  [COMPLIANCE_RULE.FAMILY_JOB]: { label: '家族の職業', description: '家族の職業、勤務先、家族構成を尋ねている' },
+  [COMPLIANCE_RULE.FAMILY_EDU]: { label: '家族の学歴', description: '家族の学歴や出身校を尋ねている' },
+  [COMPLIANCE_RULE.HOUSING]: { label: '住宅状況', description: '持ち家か賃貸か、間取り、家賃を尋ねている' },
+  [COMPLIANCE_RULE.ASSETS]: { label: '家庭の経済状況', description: '世帯収入、資産、家庭の事情や生活水準を尋ねている' },
+  [COMPLIANCE_RULE.RELIGION]: { label: '宗教・信仰', description: '宗教、信仰、宗派を尋ねている' },
+  [COMPLIANCE_RULE.POLITICS]: { label: '支持政党', description: '支持政党や政治的な考えを尋ねている' },
+  [COMPLIANCE_RULE.THOUGHT]: { label: '思想・信条', description: '尊敬する人物、人生観、信条、座右の銘を尋ねている' },
+  [COMPLIANCE_RULE.UNION]: { label: '労働組合・学生運動', description: '労働組合、学生運動、社会運動への関与を尋ねている' },
+  [COMPLIANCE_RULE.NEWSPAPER]: { label: '購読紙・愛読書', description: '購読新聞や愛読書を尋ねている' },
+  [COMPLIANCE_RULE.OTHER_DISCRIMINATION]: { label: 'その他の差別的質問', description: '上記以外で、本人の適性・能力と関係のない事項を尋ねている' },
+
+  [COMPLIANCE_RULE.WITHDRAW_OTHERS]: { label: '他社辞退の要求', description: '他社の選考辞退や就職活動の終了を求めている' },
+  [COMPLIANCE_RULE.DECIDE_NOW]: { label: '即決の強要', description: 'その場での即答や即決を求めている' },
+  [COMPLIANCE_RULE.OFFER_CONDITION]: { label: '内定の交換条件', description: '内定を交換条件にしている' },
+  [COMPLIANCE_RULE.DEADLINE_TODAY]: { label: '極端に短い回答期限', description: '当日中など極端に短い期限で回答を迫っている' },
+  [COMPLIANCE_RULE.PRESSURE_SOFT]: { label: '判断の急かし', description: '判断を急がせる表現になっている' },
+  [COMPLIANCE_RULE.OTHER_OWAHARA]: { label: 'その他の就活妨害', description: '上記以外で、学生の就職活動の自由を制約している' },
+});
+
+export const COMPLIANCE_RULE_VALUES = Object.values(COMPLIANCE_RULE);
+
+/** ルールコード → カテゴリ。`other_*` も含めて全件そろえる */
+export const COMPLIANCE_RULE_CATEGORY = Object.freeze({
+  [COMPLIANCE_RULE.HONSEKI]: COMPLIANCE_CATEGORY.DISCRIMINATION,
+  [COMPLIANCE_RULE.FAMILY_JOB]: COMPLIANCE_CATEGORY.DISCRIMINATION,
+  [COMPLIANCE_RULE.FAMILY_EDU]: COMPLIANCE_CATEGORY.DISCRIMINATION,
+  [COMPLIANCE_RULE.HOUSING]: COMPLIANCE_CATEGORY.DISCRIMINATION,
+  [COMPLIANCE_RULE.ASSETS]: COMPLIANCE_CATEGORY.DISCRIMINATION,
+  [COMPLIANCE_RULE.RELIGION]: COMPLIANCE_CATEGORY.DISCRIMINATION,
+  [COMPLIANCE_RULE.POLITICS]: COMPLIANCE_CATEGORY.DISCRIMINATION,
+  [COMPLIANCE_RULE.THOUGHT]: COMPLIANCE_CATEGORY.DISCRIMINATION,
+  [COMPLIANCE_RULE.UNION]: COMPLIANCE_CATEGORY.DISCRIMINATION,
+  [COMPLIANCE_RULE.NEWSPAPER]: COMPLIANCE_CATEGORY.DISCRIMINATION,
+  [COMPLIANCE_RULE.OTHER_DISCRIMINATION]: COMPLIANCE_CATEGORY.DISCRIMINATION,
+  [COMPLIANCE_RULE.WITHDRAW_OTHERS]: COMPLIANCE_CATEGORY.OWAHARA,
+  [COMPLIANCE_RULE.DECIDE_NOW]: COMPLIANCE_CATEGORY.OWAHARA,
+  [COMPLIANCE_RULE.OFFER_CONDITION]: COMPLIANCE_CATEGORY.OWAHARA,
+  [COMPLIANCE_RULE.DEADLINE_TODAY]: COMPLIANCE_CATEGORY.OWAHARA,
+  [COMPLIANCE_RULE.PRESSURE_SOFT]: COMPLIANCE_CATEGORY.OWAHARA,
+  [COMPLIANCE_RULE.OTHER_OWAHARA]: COMPLIANCE_CATEGORY.OWAHARA,
+});
+
+/** 未知のコードでも画面が壊れないように、ラベルが無ければコードをそのまま返す */
+export function complianceRuleLabel(code) {
+  return COMPLIANCE_RULE_META[code]?.label ?? code;
+}
+
+/** 検知の出どころ（P4-2b）。ダイアログでどちらが拾ったか示す */
+export const COMPLIANCE_SOURCE = Object.freeze({
+  DICTIONARY: 'dictionary',
+  AI: 'ai',
+});
+
+export const COMPLIANCE_SOURCE_META = Object.freeze({
+  [COMPLIANCE_SOURCE.DICTIONARY]: { label: '辞書' },
+  [COMPLIANCE_SOURCE.AI]: { label: 'AI' },
+});
+
+export const COMPLIANCE_SOURCE_VALUES = Object.values(COMPLIANCE_SOURCE);
+
+/**
+ * LLM による検証の状態（P4-2b）。
+ * 辞書判定は常に動くので、これは「AI の上乗せ分が効いたか」だけを表す。
+ */
+export const COMPLIANCE_AI_STATUS = Object.freeze({
+  /** 検証済み */
+  OK: 'ok',
+  /** タイムアウト・APIエラー・レスポンス不正 */
+  ERROR: 'error',
+  /** GEMINI_API_KEY 未設定。AI 機能自体が使えない */
+  UNAVAILABLE: 'unavailable',
+});
+
+export const COMPLIANCE_AI_STATUS_META = Object.freeze({
+  [COMPLIANCE_AI_STATUS.OK]: { label: 'AIによる検証済み' },
+  [COMPLIANCE_AI_STATUS.ERROR]: { label: 'AIによる検証はできていません' },
+  [COMPLIANCE_AI_STATUS.UNAVAILABLE]: { label: 'AIによる検証はできていません' },
+});
+
+export const COMPLIANCE_AI_STATUS_VALUES = Object.values(COMPLIANCE_AI_STATUS);
+
 // ---------------------------------------------------------------------------
 // Socket.IO イベント名（api.md §3）
 // client / server の双方がここから import する。文字列を直書きしないこと。
@@ -452,6 +664,8 @@ export const SOCKET_EMIT = Object.freeze({
   MESSAGE_SEND: 'message:send',
   MESSAGE_READ: 'message:read',
   ROOM_STATUS_UPDATE: 'room:status_update',
+  SCHEDULE_WATCH: 'schedule:watch',
+  SCHEDULE_UNWATCH: 'schedule:unwatch',
 });
 
 // Server → Client
@@ -465,6 +679,9 @@ export const SOCKET_ON = Object.freeze({
   SUMMARY_UPDATED: 'summary:updated',
   /** P3-1a。生成を依頼した本人にのみ配信する */
   AI_SUMMARY_UPDATED: 'ai:summary_updated',
+  SCHEDULE_SLOT_UPDATED: 'schedule:slot_updated',
+  SCHEDULE_REQUEST_UPDATED: 'schedule:request_updated',
+  SCHEDULE_BOOKED: 'schedule:booked',
   /** P4-1。通知先（target_user_id）本人にのみ配信する */
   ALERT_NEW: 'alert:new',
   ERROR: 'error',

@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import {
+  alertsApi,
   companyApi,
   selectionFlowApi,
   snippetsApi,
@@ -7,6 +8,7 @@ import {
   toErrorMessage,
 } from '../api/index.js'
 import {
+  COMPLIANCE_AI_STATUS,
   DEFAULT_BOARD_GROUP_BY,
   MEMO_SCOPE,
   MEMO_SCOPE_VALUES,
@@ -28,6 +30,45 @@ const SNIPPET_ERROR = Object.freeze({
 const COMPANY_ERROR = Object.freeze({
   FETCH: '会社情報の取得に失敗しました',
   SAVE: '会社情報の保存に失敗しました',
+})
+
+/**
+ * ログイン → ホームの円形トランジション（CircleRevealOverlay / useCircleReveal）の進行段階。
+ * idle 以外のときだけ画面を覆う円が描画される。
+ */
+export const CIRCLE_REVEAL_PHASE = Object.freeze({
+  IDLE: 'idle',
+  /** ログイン画面のロゴの円から画面全体へ広がっている最中 */
+  EXPANDING: 'expanding',
+  /** 画面を覆いきった。この間に裏側をホームへ差し替え、中心をレールのロゴへ移す */
+  COVERED: 'covered',
+  /** ナビレールのロゴの円へ縮んでいる最中 */
+  COLLAPSING: 'collapsing',
+})
+
+/** 円形トランジションの初期状態（= 何も描画しない） */
+const emptyCircleReveal = () => ({
+  phase: CIRCLE_REVEAL_PHASE.IDLE,
+  /** 拡大・収束の中心（viewport 基準・px） */
+  x: 0,
+  y: 0,
+  /** CIRCLE_REVEAL_BASE_DIAMETER に対する倍率。transform: scale() にそのまま渡す */
+  scale: 0,
+  opacity: 1,
+  /**
+   * transition を効かせるか。
+   * 覆っている間に中心を差し替える一瞬だけ false にする（円が横滑りして見えるため）。
+   */
+  eased: false,
+  durationMs: 0,
+  /** cubic-bezier(...) の文字列 */
+  easing: 'linear',
+})
+
+/** 通知（P4-1）での失敗時の既定文言 */
+const ALERT_ERROR = Object.freeze({
+  FETCH: '通知の取得に失敗しました',
+  READ: '通知の既読化に失敗しました',
 })
 
 /** 選考フロー（P2-11 / S-09）での失敗時の既定文言 */
@@ -138,6 +179,36 @@ export const useUiStore = defineStore('ui', {
      */
     myFlow: null,
 
+    /**
+     * 送信前チェックの警告ダイアログ（P4-3）。
+     * @type {{code:string, category:string, severity:string, message:string, matched:string}[]}
+     * 空配列＝閉じている。開いている間は該当ルールの一覧を持つ。
+     */
+    complianceResults: [],
+    /** 警告ダイアログを表示中か。results と分けて持つと閉じるアニメ中に中身が消えない */
+    complianceDialogOpen: false,
+    /**
+     * @type {string} 直近のチェックで LLM 検証が効いたか（COMPLIANCE_AI_STATUS）。
+     * ok 以外なら「AIによる検証はできていません」と明示する（P4-2b）。
+     */
+    complianceAiStatus: COMPLIANCE_AI_STATUS.OK,
+
+    /**
+     * @type {object[]} 自分宛の通知（P4-1）。GET /api/alerts の結果。新しい順。
+     * 解消済み（返信して片付いたもの）は既定で含まれない。
+     * ★ストアは4つに固定する決まりなのでここに置く（frontend.md §3）
+     */
+    alerts: [],
+    /** ナビレールのベルバッジ用。サーバが数えた未読件数をそのまま持つ */
+    alertsUnreadCount: 0,
+    alertsLoaded: false,
+
+    /**
+     * ログイン → ホームの円形トランジションの状態（描画は CircleRevealOverlay）。
+     * 画面をまたいで続くアニメーションなので、どちらのビューにも属さないここで持つ。
+     */
+    circleReveal: emptyCircleReveal(),
+
     /** @type {'connected'|'connecting'|'disconnected'} socket の接続状態バナー用 */
     connectionState: 'connecting',
 
@@ -158,6 +229,9 @@ export const useUiStore = defineStore('ui', {
       return this.filteredSnippets[this.snippetHighlightIndex] ?? null
     },
     isOffline: (s) => s.connectionState !== 'connected',
+
+    /** 送信前チェックで検知したルールコード（P4-3。そのまま acknowledgedCodes になる） */
+    complianceCodes: (s) => s.complianceResults.map((result) => result.code),
   },
 
   actions: {
@@ -429,6 +503,103 @@ export const useUiStore = defineStore('ui', {
       this.snippetHighlightIndex = (this.snippetHighlightIndex + delta + count) % count
     },
 
+    /**
+     * 送信前チェックで検知したときにダイアログを開く（P4-3）。
+     * @param {object[]} results POST /api/messages/check の結果（1件以上）
+     * @param {string} aiStatus COMPLIANCE_AI_STATUS のいずれか
+     */
+    openComplianceDialog(results, aiStatus = COMPLIANCE_AI_STATUS.OK) {
+      if (!Array.isArray(results) || results.length === 0) return
+      this.complianceResults = results
+      this.complianceAiStatus = aiStatus
+      this.complianceDialogOpen = true
+    },
+
+    /** 「修正する」「このまま送信」のどちらでも閉じる */
+    closeComplianceDialog() {
+      this.complianceDialogOpen = false
+      this.complianceResults = []
+    },
+
+    /** @param {string} status 検知が無かったときも AI の状態だけは記録しておく */
+    setComplianceAiStatus(status) {
+      this.complianceAiStatus = status
+    },
+
+    /** GET /api/alerts（P4-1）。画面を開くたびに取り直す（件数が変わるため） */
+    async fetchAlerts() {
+      try {
+        const { data } = await alertsApi.list()
+        this.alerts = data.alerts
+        this.alertsUnreadCount = data.unreadCount
+        this.alertsLoaded = true
+      } catch (error) {
+        this.pushToast({ type: 'error', message: toErrorMessage(error, ALERT_ERROR.FETCH) })
+      }
+    },
+
+    /** バッジだけ欲しいとき（ナビレール）。一覧は取りに行かない */
+    async fetchAlertCount() {
+      try {
+        const { data } = await alertsApi.list({ unread: true, limit: 1 })
+        this.alertsUnreadCount = data.unreadCount
+      } catch {
+        // バッジが出ないだけなので黙って諦める。トーストを出すほどではない
+      }
+    },
+
+    /**
+     * socket `alert:new` で届いた通知を先頭に積む（P4-1）。
+     * 同じ id が既にあれば無視する（再接続時の重複配信対策）。
+     */
+    receiveAlert(alert) {
+      if (!alert?.id) return
+      if (this.alerts.some((existing) => existing.id === alert.id)) return
+
+      this.alerts = [alert, ...this.alerts]
+      if (!alert.readAt) this.alertsUnreadCount += 1
+    },
+
+    /** 行クリック時。既読化して一覧からは消さない（誤クリックで見失わないため） */
+    async markAlertRead(alertId) {
+      const target = this.alerts.find((alert) => alert.id === alertId)
+      if (!target || target.readAt) return
+
+      try {
+        const { data } = await alertsApi.markRead(alertId)
+        target.readAt = new Date().toISOString()
+        this.alertsUnreadCount = data.unreadCount
+      } catch (error) {
+        this.pushToast({ type: 'error', message: toErrorMessage(error, ALERT_ERROR.READ) })
+      }
+    },
+
+    async markAllAlertsRead() {
+      try {
+        const { data } = await alertsApi.markAllRead()
+        const now = new Date().toISOString()
+        for (const alert of this.alerts) {
+          if (!alert.readAt) alert.readAt = now
+        }
+        this.alertsUnreadCount = data.unreadCount
+      } catch (error) {
+        this.pushToast({ type: 'error', message: toErrorMessage(error, ALERT_ERROR.READ) })
+      }
+    },
+
+    /**
+     * 円形トランジションの状態を部分更新する（useCircleReveal だけが呼ぶ）。
+     * @param {object} patch circleReveal のキーの一部
+     */
+    patchCircleReveal(patch) {
+      this.circleReveal = { ...this.circleReveal, ...patch }
+    },
+
+    /** 円を消す（アニメーション完了時・中断時） */
+    resetCircleReveal() {
+      this.circleReveal = emptyCircleReveal()
+    },
+
     /** @param {'connected'|'connecting'|'disconnected'} state */
     setConnectionState(state) {
       this.connectionState = state
@@ -459,6 +630,13 @@ export const useUiStore = defineStore('ui', {
       this.selectionSteps = []
       this.selectionStepsLoaded = false
       this.myFlow = null
+      this.complianceResults = []
+      this.complianceDialogOpen = false
+      this.complianceAiStatus = COMPLIANCE_AI_STATUS.OK
+      this.alerts = []
+      this.alertsUnreadCount = 0
+      this.alertsLoaded = false
+      this.circleReveal = emptyCircleReveal()
       this.connectionState = 'connecting'
       this.toasts = []
     },

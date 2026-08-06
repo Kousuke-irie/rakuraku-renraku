@@ -23,6 +23,8 @@ users ──┬─< room_members >── rooms ──< messages ──< read_rec
 snippets（ルーム非依存・全社共有）
 tag_rules（キーワード辞書）
 company_info（ルーム非依存・全社共有・必ず1行）
+calendar_interviewers ──< calendar_events
+calendar_interviewers ──< schedule_requests ──1 calendar_bookings
 selection_steps（選考フローの設定：ルーム非依存・全社共有。P2-11）
 users ──< selection_feedbacks（学生×ステップで1件。P2-11）
 users ──< student_notes（学生本人だけが読み書きする選考メモ。S-10）
@@ -101,6 +103,18 @@ compliance_rules（就職差別・オワハラの辞書。P4-2）
 | `client_msg_id` | TEXT | UNIQUE | クライアント生成 UUID。重複排除用 |
 | `created_at` | TEXT | NOT NULL | |
 | `deleted_at` | TEXT | | NULL でなければ送信取消済み |
+| `schedule_request_id` | INTEGER | NULL, FK→schedule_requests.id | 日程予約カードとの関連 |
+
+### 面接日程予約（P3-4）
+
+- `calendar_interviewers`：擬似カレンダーの面接官。チャット利用者ではないため `users` と分離
+- `calendar_events`：面接官の既存予定。重なる生成枠を受付終了にする
+- `schedule_requests`：学生へ送る予約依頼。`status` が予約フローの正
+- `calendar_bookings`：確定予約の監査テーブル。`external_slot_id` と `schedule_request_id` は UNIQUE
+- `idx_schedule_one_waiting_per_room`：1ルームの有効な `waiting_student` を1件に制限
+
+予約確定は `calendar_bookings` INSERT、`schedule_requests` 更新、`students` 更新、確定メッセージ追加を
+同一SQLiteトランザクションで実行する。
 
 ### `read_receipts`
 
@@ -235,7 +249,8 @@ SLA 通知とコンプライアンス警告を集約する。設計意図は `mo
 | `target_user_id` | INTEGER | FK users | 通知先。compliance では NULL |
 | `actor_user_id` | INTEGER | FK users | 原因を作った人（送信者・担当者） |
 | `trigger_message_id` | INTEGER | FK messages | 起点メッセージ。**冪等キーの一部** |
-| `rule_code` | TEXT | | `compliance_rules.code`。SLA では NULL |
+| `rule_code` | TEXT | | `COMPLIANCE_RULE` のいずれか。SLA では NULL |
+| `source` | TEXT | | `dictionary` / `ai`。SLA では NULL。**`rule_code` に `ai_` 接頭辞を付けて代用しない** |
 | `detail` | TEXT | NOT NULL | 画面用の短文。**本文全体を入れない** |
 | `created_at` | TEXT | NOT NULL | ISO8601 UTC |
 | `read_at` | TEXT | | 既読時刻 |
@@ -253,15 +268,24 @@ SLA 通知とコンプライアンス警告を集約する。設計意図は `mo
 | カラム | 型 | 制約 | 説明 |
 | --- | --- | --- | --- |
 | `id` | INTEGER | PK AUTOINCREMENT | |
-| `code` | TEXT | NOT NULL UNIQUE | `alerts.rule_code` から参照される |
+| `code` | TEXT | NOT NULL | ルールのグループキー。`alerts.rule_code` から参照される。**UNIQUE にしない** |
 | `category` | TEXT | NOT NULL CHECK | `discrimination` / `owahara` |
-| `keyword` | TEXT | NOT NULL | 部分一致させるキーワード |
-| `exclude_keyword` | TEXT | | これを含むなら検知しない（誤検知対策） |
+| `keyword` | TEXT | NOT NULL | **正規表現**。1行＝1パターン |
+| `exclude_keyword` | TEXT | | これらのいずれかに一致したら検知しない（カンマ区切りの正規表現・誤検知対策） |
 | `severity` | TEXT | NOT NULL CHECK | `block` / `warn` / `info` |
 | `message` | TEXT | NOT NULL | 人事に見せる警告文 |
 | `priority` | INTEGER | NOT NULL | 小さいほど優先 |
 
 `tag_rules` と違い、**最初のマッチで確定しない**。1通に複数の問題が混ざりうるので全件返す。
+ただし同一 `code` は1件に畳む（同じ観点で2回警告しても判断材料が増えないため）。
+
+`keyword` / `exclude_keyword` は**正規表現**として解釈する。照合は正規化済み本文
+（NFKC・小文字化・空白除去）に対して行うので、**パターンに空白を書かないこと**。
+不正な正規表現はリテラルとして扱われる（辞書1行の typo で検査全体を落とさないため）。
+
+`code` に UNIQUE を張ると1ルール1キーワードしか持てなくなる。P4-0 の初版が誤って
+UNIQUE を付けていたため、`migrate.js` の `dropLegacyComplianceRuleUnique()` が旧定義を
+検出してテーブルを作り直す（辞書は seed で入れ直す前提なのでデータは移送しない）。
 
 ---
 

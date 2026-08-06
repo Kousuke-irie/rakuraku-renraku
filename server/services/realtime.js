@@ -53,6 +53,15 @@ export function emitMemoUpdated(io, memo) {
   io.to('hr').emit(SOCKET_ON.MEMO_UPDATED, { roomId: memo.roomId, memo });
 }
 
+/**
+ * SLA通知は宛先本人にだけ配信する（P4-1）。
+ * 担当者の通知が他の人事に見えると「誰が遅れているか」が漏れるため。
+ */
+export function emitAlertNew(io, targetUserId, alert) {
+  if (!io || !targetUserId || !alert) return;
+  io.to(`user:${targetUserId}`).emit(SOCKET_ON.ALERT_NEW, { alert });
+}
+
 /** AI要約は生成を依頼した本人にだけ配信する。 */
 export function emitAiSummaryUpdated(io, userId, summary) {
   if (!io) return;
@@ -62,4 +71,24 @@ export function emitAiSummaryUpdated(io, userId, summary) {
 export function emitReadUpdated(io, payload) {
   if (!io) return;
   io.to(`room:${payload.roomId}`).emit(SOCKET_ON.READ_UPDATED, payload);
+}
+
+export function emitScheduleRequestUpdated(io, request) {
+  if (!io || !request) return;
+  io.to(`room:${request.roomId}`).emit(SOCKET_ON.SCHEDULE_REQUEST_UPDATED, { request });
+}
+
+export function emitScheduleBooked(io, request) {
+  if (!io || !request) return;
+  io.to(`room:${request.roomId}`).emit(SOCKET_ON.SCHEDULE_BOOKED, { request });
+}
+
+export function emitScheduleSlotUpdated(io, { interviewerId, slotId, available }) {
+  if (!io) return;
+  io.to(`calendar:${interviewerId}`).emit(SOCKET_ON.SCHEDULE_SLOT_UPDATED, {
+    interviewerId,
+    slotId,
+    available,
+    updatedAt: new Date().toISOString(),
+  });
 }

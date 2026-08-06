@@ -10,14 +10,20 @@
 import bcrypt from 'bcrypt';
 import db from './index.js';
 import { classifyTopicTag, clearTagRuleCache } from '../services/tagClassifier.js';
+import { clearComplianceRuleCache } from '../services/complianceChecker.js';
 import { calculateUrgency } from '../services/urgencyCalculator.js';
 import {
+  ALERT_SEVERITY,
+  COMPLIANCE_CATEGORY,
   HANDLING_STATUS,
+  INTERVIEW_FORMAT,
   MESSAGE_TYPE,
   ROLE,
   ROOM_TYPE,
   SCHEDULE_STATE,
+  SCHEDULE_REQUEST_STATUS,
   SELECTION_STATUS,
+  URGENCY,
 } from '../../shared/constants.js';
 
 const BCRYPT_COST = 10;
@@ -45,6 +51,183 @@ const TAG_RULES = [
   { tag: 'aptitude_test', priority: 3, keywords: ['適性検査', 'SPI', 'テスト', '受検'] },
   { tag: 'result_waiting', priority: 4, keywords: ['合否', '結果', '通過', '選考状況', 'いつ頃'] },
   { tag: 'question', priority: 5, keywords: ['？', '?', 'でしょうか', '教えて', '伺い'] },
+];
+
+// monitoring.md §4 のコンプライアンス辞書（compliance_rules の投入元）。
+//
+// 出典は厚生労働省「公正な採用選考の基本」で**尋ねてはならない**とされる事項。
+// 根拠が公的基準にあることがこの機能の説得力の源なので、独自解釈で増やさないこと。
+//
+// ★keywords / exclude は**正規表現**（P4-2b）。照合は正規化済み本文に対して行う
+//   （NFKC・小文字化・空白除去）ので、パターン側に空白を書かないこと。
+//   「本 籍」のような空白挿入による回避は正規化側で潰れる。
+//
+// exclude は誤検知対策。「本籍地はお伺いしません」のような**正しい**文が
+// block になるとこの機能は信用を失う（monitoring.md §4）。
+//
+// 「尋ねている文」だけを拾うため、多くのルールで述語（何ですか・教えて 等）を
+// パターンに含めている。単語の存在だけで判定すると
+// 「弊社は労働組合と協議して…」のような説明文まで block になる。
+const ASK = '(です|でしょう|ます|ますでしょう)?(か|かね)|教え|お聞かせ|聞かせ|伺(い|え)|お答え|記入|ご記載|書いて|何|どちら|どこ|いくつ|いくら|どんな|どのよう';
+const FAMILY = '(ご|お)?(両親|父|母|父親|母親|お父様|お母様|ご尊父|ご母堂|家族|ご家族|保護者|兄弟|姉妹)';
+
+const COMPLIANCE_RULES = [
+  // --- 就職差別のおそれ（すべて block） ---
+  {
+    code: 'honseki', category: COMPLIANCE_CATEGORY.DISCRIMINATION, priority: 1,
+    severity: ALERT_SEVERITY.BLOCK,
+    keywords: [
+      '本籍',
+      '(ご|お)?出身(地|は|を|について|地は)',
+      '生まれ(はどこ|た場所|はどちら|はどの)',
+      '(どこ|どちら)の(生まれ|ご出身)',
+      '国籍',
+    ],
+    exclude: [
+      'お伺いしません', '伺いません', '質問しません', 'お尋ねしません', '尋ねません',
+      '不要です', '必要はありません', '記入不要', 'お答えいただく必要はありません',
+    ],
+    message: '本籍・出生地に関する質問は就職差別に当たるおそれがあります',
+  },
+  {
+    code: 'family_job', category: COMPLIANCE_CATEGORY.DISCRIMINATION, priority: 2,
+    severity: ALERT_SEVERITY.BLOCK,
+    keywords: [
+      `${FAMILY}.{0,12}(職業|お仕事|仕事|勤め|勤務先|会社|お勤め|職種)`,
+      '(職業|お仕事|勤め先|勤務先).{0,8}(ご両親|父|母|ご家族|保護者)',
+      `${FAMILY}(構成|は何人|の人数|は何名)`,
+      '何人家族',
+    ],
+    exclude: ['変更があれば', '変更の際は', '扶養', '手続き'],
+    message: '家族に関する質問は本人の適性・能力と関係がありません',
+  },
+  {
+    code: 'family_edu', category: COMPLIANCE_CATEGORY.DISCRIMINATION, priority: 3,
+    severity: ALERT_SEVERITY.BLOCK,
+    keywords: [`${FAMILY}.{0,12}(学歴|出身校|出身大学|卒業)`],
+    exclude: null,
+    message: '家族の学歴に関する質問は就職差別に当たるおそれがあります',
+  },
+  {
+    code: 'housing', category: COMPLIANCE_CATEGORY.DISCRIMINATION, priority: 4,
+    severity: ALERT_SEVERITY.BLOCK,
+    keywords: [
+      '(持ち家|持家|マイホーム)',
+      '間取り',
+      '(家賃|住宅).{0,8}(いくら|どのくらい|どれくらい|何万)',
+      '(お住まい|住まい|ご自宅).{0,10}(広さ|何平米|賃貸|持ち家|一戸建て)',
+    ],
+    exclude: null,
+    message: '住宅状況に関する質問は就職差別に当たるおそれがあります',
+  },
+  {
+    code: 'assets', category: COMPLIANCE_CATEGORY.DISCRIMINATION, priority: 5,
+    severity: ALERT_SEVERITY.BLOCK,
+    keywords: [
+      '(ご家庭|ご家族|世帯|ご両親).{0,10}(収入|年収|所得|資産|預貯金)',
+      '(世帯年収|世帯収入|家庭の事情|生活水準)',
+    ],
+    exclude: null,
+    message: '生活環境・家庭環境に関する質問は避けてください',
+  },
+  {
+    code: 'religion', category: COMPLIANCE_CATEGORY.DISCRIMINATION, priority: 6,
+    severity: ALERT_SEVERITY.BLOCK,
+    keywords: [`(宗教|信仰|宗派|信心).{0,10}(${ASK})`, '(宗教|信仰)は(何|どちら|お持ち)'],
+    exclude: ['宗教学', '宗教史', '宗教法人'],
+    message: '信条・宗教に関する質問は思想信条の自由を侵すおそれがあります',
+  },
+  {
+    code: 'politics', category: COMPLIANCE_CATEGORY.DISCRIMINATION, priority: 7,
+    severity: ALERT_SEVERITY.BLOCK,
+    keywords: [
+      '支持(政党|する政党)',
+      `(政党|政治).{0,10}(${ASK})`,
+      '(選挙|投票).{0,8}(どちら|どこ|誰|だれ)(に|へ)',
+    ],
+    exclude: ['政治学', '政治経済'],
+    message: '支持政党に関する質問は就職差別に当たるおそれがあります',
+  },
+  {
+    code: 'thought', category: COMPLIANCE_CATEGORY.DISCRIMINATION, priority: 8,
+    severity: ALERT_SEVERITY.BLOCK,
+    keywords: [
+      '尊敬する(人物|人|方)',
+      `(人生観|信条|座右の銘|思想).{0,10}(${ASK})`,
+    ],
+    exclude: ['弊社の信条', '当社の信条', '会社の信条'],
+    message: '思想信条に関する質問は避けてください',
+  },
+  {
+    code: 'union', category: COMPLIANCE_CATEGORY.DISCRIMINATION, priority: 9,
+    severity: ALERT_SEVERITY.BLOCK,
+    keywords: [
+      `(労働組合|労組|学生運動|社会運動|デモ).{0,12}(${ASK})`,
+      '(労働組合|学生運動|社会運動).{0,8}(参加|所属|加入)',
+    ],
+    exclude: ['弊社の労働組合', '当社の労働組合', '労働組合と協議', '労働組合との協議'],
+    message: '労働組合・学生運動に関する質問は就職差別に当たるおそれがあります',
+  },
+  {
+    code: 'newspaper', category: COMPLIANCE_CATEGORY.DISCRIMINATION, priority: 10,
+    severity: ALERT_SEVERITY.BLOCK,
+    keywords: ['購読(新聞|紙|されている新聞)', '愛読(書|している本)', `(新聞|雑誌).{0,10}(購読|とって(いま|おら))`],
+    exclude: null,
+    message: '購読紙・愛読書に関する質問は思想信条の把握につながります',
+  },
+
+  // --- オワハラのおそれ ---
+  {
+    code: 'withdraw_others', category: COMPLIANCE_CATEGORY.OWAHARA, priority: 20,
+    severity: ALERT_SEVERITY.BLOCK,
+    keywords: [
+      '(他社|よそ|同業他社|他の会社|ほかの会社).{0,14}(辞退|お断り|断って|止めて|やめて|中止)',
+      '(就活|就職活動).{0,10}(終わ|終了|やめ|止め|終え)',
+      '(弊社|当社|うち).{0,6}(一本|1本|だけ).{0,10}(絞|して)',
+      '(内定承諾|承諾書).{0,10}(今すぐ|即日|本日中)',
+    ],
+    exclude: null,
+    message: '他社選考の辞退を条件にすることはオワハラに当たります',
+  },
+  {
+    code: 'decide_now', category: COMPLIANCE_CATEGORY.OWAHARA, priority: 21,
+    severity: ALERT_SEVERITY.BLOCK,
+    keywords: [
+      '(今|いま)(この場|ここ|すぐ).{0,8}(決め|ご決断|ご返答|返事|回答)',
+      'この場で(返事|回答|決め|ご決断)',
+      '即答(いただ|して|を)',
+    ],
+    exclude: null,
+    message: 'その場での意思決定の強要はオワハラに当たります',
+  },
+  {
+    code: 'offer_condition', category: COMPLIANCE_CATEGORY.OWAHARA, priority: 22,
+    severity: ALERT_SEVERITY.BLOCK,
+    keywords: ['内定.{0,10}(代わりに|条件と|引き換え|ひきかえ)', '(条件|交換条件)として.{0,8}内定'],
+    exclude: null,
+    message: '内定を交換条件にすることは避けてください',
+  },
+  {
+    code: 'deadline_today', category: COMPLIANCE_CATEGORY.OWAHARA, priority: 23,
+    severity: ALERT_SEVERITY.WARN,
+    keywords: [
+      '(返事|ご返答|回答|ご連絡|お返事).{0,8}(は|を)?(本日|今日)中',
+      '(本日|今日)中.{0,10}(返事|ご返答|回答|決め|ご判断|お返事)',
+      '(明日|あす)(まで|中).{0,10}(決め|ご判断|ご返答)',
+    ],
+    exclude: null,
+    message: '極端に短い回答期限は圧力と受け取られます',
+  },
+  {
+    code: 'pressure_soft', category: COMPLIANCE_CATEGORY.OWAHARA, priority: 24,
+    severity: ALERT_SEVERITY.WARN,
+    keywords: [
+      '(早め|早急|至急|なるべく早く).{0,10}(返事|ご返答|ご判断|決め|ご決断|お返事)',
+      'すぐに(決め|ご判断|ご決断)',
+    ],
+    exclude: null,
+    message: '判断を急がせる表現になっていないか確認してください',
+  },
 ];
 
 const FILLER_LINES = {
@@ -97,6 +280,19 @@ const SHOWCASE_STUDENTS = [
     thread: [
       { sender: 'hr', hoursAgo: 48, body: '明日14時からの一次面接、忘れずにご参加ください。' },
       { sender: 'student', hoursAgo: 26, body: '申し訳ございません、明日の面接ですが体調不良のため欠席させてください。' },
+    ],
+  },
+  // ★P4-1 のデモ用。48時間を超えて上長エスカレーションが立つ唯一のルーム。
+  //   担当は hr1（admin1 にすると「上長が自分自身へ」の絵になり意図が伝わらない）。
+  //   閾値を短縮しないデモでも、シード直後からエスカレーション済みで見せられる。
+  {
+    loginId: 'student11', displayName: '長谷川 遥', avatarColor: '#BF8C7C',
+    university: '名古屋大学', faculty: '法学部', gradYear: 2027, selectionStatus: SELECTION_STATUS.INTERVIEW_3,
+    assignee: 'hr1', handlingStatus: HANDLING_STATUS.NEEDS_REPLY,
+    fillerCount: 6,
+    thread: [
+      { sender: 'hr', hoursAgo: 72, body: '三次面接の結果は追ってご連絡いたします。' },
+      { sender: 'student', hoursAgo: 50, body: '先日の面接の結果はいつ頃わかりますでしょうか。他社の選考もあり、ご連絡をお待ちしています。' },
     ],
   },
   {
@@ -587,7 +783,12 @@ const STUDENTS = [...SHOWCASE_STUDENTS, ...buildGeneratedStudents()];
 function clearExistingData() {
   // rooms.last_message_id が messages を参照する循環FKがあるため、先にNULL化してから削除する。
   db.prepare(`UPDATE rooms SET last_message_id = NULL, ai_analyzed_message_id = NULL`).run();
-  const tables = ['read_receipts', 'memos', 'room_members', 'messages', 'rooms', 'selection_feedbacks', 'students', 'users', 'tag_rules', 'snippets', 'company_info', 'selection_steps'];
+  const tables = [
+    'alerts', 'read_receipts', 'memos', 'room_members', 'calendar_bookings', 'calendar_events',
+    'messages', 'schedule_requests', 'selection_feedbacks', 'rooms', 'students',
+    'calendar_interviewers', 'users', 'tag_rules', 'compliance_rules', 'snippets',
+    'company_info', 'selection_steps',
+  ];
   for (const table of tables) {
     db.prepare(`DELETE FROM ${table}`).run();
   }
@@ -643,6 +844,21 @@ function insertTagRules() {
   }
   // 入れ直した辞書を tagClassifier に読み直させる（プロセス内キャッシュを持つため）
   clearTagRuleCache();
+}
+
+function insertComplianceRules() {
+  for (const rule of COMPLIANCE_RULES) {
+    // tag_rules と同じく1行＝1キーワード。除外語はルール単位なので全行に同じ値を複写する
+    // （カンマ区切り。checkCompliance が split して「いずれかを含めば検知しない」を判定する）。
+    const excludeKeyword = rule.exclude ? rule.exclude.join(',') : null;
+    for (const keyword of rule.keywords) {
+      db.prepare(
+        `INSERT INTO compliance_rules (code, category, keyword, exclude_keyword, severity, message, priority)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ).run(rule.code, rule.category, keyword, excludeKeyword, rule.severity, rule.message, rule.priority);
+    }
+  }
+  clearComplianceRuleCache();
 }
 
 function insertSnippets() {
@@ -738,8 +954,178 @@ function insertStudentRoom(student, { hrUserIds, allHrIds, passwordHash }) {
     `UPDATE rooms SET last_message_id = ?, last_message_at = ?, last_student_message_at = ?, urgency = ? WHERE id = ?`,
   ).run(lastMessageId, lastMessageAt, lastStudentMessageAt, urgency, roomId);
 
-  // 選考フィードバック（P2-11）の投入で参照する
-  return studentUserId;
+  return { roomId: Number(roomId), studentUserId: Number(studentUserId), assigneeUserId };
+}
+
+function localDateTimeIso(daysFromNow, hours, minutes = 0) {
+  const now = new Date();
+  return new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate() + daysFromNow,
+    hours,
+    minutes,
+    0,
+    0,
+  ).toISOString();
+}
+
+function seedInterviewScheduling({ hrUserIds, studentRefs }) {
+  const now = new Date().toISOString();
+  const interviewers = [
+    { externalId: 'mock-sato', displayName: '佐藤 健', department: '開発部' },
+    { externalId: 'mock-suzuki', displayName: '鈴木 彩', department: '事業企画部' },
+    { externalId: 'mock-takahashi', displayName: '高橋 翔', department: '人事部' },
+  ];
+  const interviewerIds = {};
+  for (const interviewer of interviewers) {
+    const result = db.prepare(
+      `INSERT INTO calendar_interviewers (
+         external_id, display_name, department, is_active, created_at, updated_at
+       ) VALUES (?, ?, ?, 1, ?, ?)`,
+    ).run(interviewer.externalId, interviewer.displayName, interviewer.department, now, now);
+    interviewerIds[interviewer.externalId] = Number(result.lastInsertRowid);
+  }
+
+  // 既存予定を混ぜ、初回表示から ○ と × の両方が見えるようにする。
+  for (const interviewerId of Object.values(interviewerIds)) {
+    for (const event of [
+      { day: 3, start: 11, end: 12 },
+      { day: 4, start: 14, end: 15 },
+      { day: 6, start: 10, end: 11 },
+    ]) {
+      db.prepare(
+        `INSERT INTO calendar_events (interviewer_id, starts_at, ends_at, created_at)
+         VALUES (?, ?, ?, ?)`,
+      ).run(
+        interviewerId,
+        localDateTimeIso(event.day, event.start),
+        localDateTimeIso(event.day, event.end),
+        now,
+      );
+    }
+  }
+
+  const createDemoRequest = ({
+    studentLoginId,
+    interviewerExternalId,
+    status,
+    deadline,
+    bookedStart = null,
+  }) => {
+    const student = studentRefs[studentLoginId];
+    const interviewerId = interviewerIds[interviewerExternalId];
+    const interviewerName = interviewers.find((item) => item.externalId === interviewerExternalId)?.displayName;
+    const bookedEnd = bookedStart ? new Date(new Date(bookedStart).getTime() + 60 * 60_000).toISOString() : null;
+    const bookedSlotId = bookedStart
+      ? `interviewer-${interviewerId}-${bookedStart.replace(/[-:]/g, '').slice(0, 13)}Z`
+      : null;
+    const result = db.prepare(
+      `INSERT INTO schedule_requests (
+         room_id, student_user_id, interviewer_id, created_by_user_id,
+         selection_stage, duration_minutes, available_from, available_until,
+         daily_start_time, daily_end_time, response_deadline,
+         interview_format, location_text, status,
+         booked_slot_id, booked_starts_at, booked_ends_at, booked_at,
+         created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      student.roomId,
+      student.studentUserId,
+      interviewerId,
+      hrUserIds.hr1,
+      '一次面接',
+      60,
+      localDateTimeIso(2, 10),
+      localDateTimeIso(8, 18),
+      '10:00',
+      '18:00',
+      deadline,
+      INTERVIEW_FORMAT.ONLINE,
+      'URLは確定後に案内します',
+      status,
+      bookedSlotId,
+      bookedStart,
+      bookedEnd,
+      bookedStart ? hoursAgoIso(1) : null,
+      hoursAgoIso(2),
+      now,
+    );
+    const requestId = Number(result.lastInsertRowid);
+    const messageResult = db.prepare(
+      `INSERT INTO messages (
+         room_id, sender_id, body, type, schedule_request_id, created_at
+       ) VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(
+      student.roomId,
+      hrUserIds.hr1,
+      '一次面接の日程を選択してください',
+      MESSAGE_TYPE.TEXT,
+      requestId,
+      hoursAgoIso(2),
+    );
+
+    if (status === SCHEDULE_REQUEST_STATUS.WAITING_STUDENT) {
+      db.prepare(`UPDATE students SET schedule_state = ?, updated_at = ? WHERE user_id = ?`).run(
+        SCHEDULE_STATE.PROPOSED,
+        now,
+        student.studentUserId,
+      );
+    }
+    if (status === SCHEDULE_REQUEST_STATUS.BOOKED) {
+      db.prepare(
+        `INSERT INTO calendar_bookings (
+           schedule_request_id, interviewer_id, external_slot_id,
+           starts_at, ends_at, status, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ).run(requestId, interviewerId, bookedSlotId, bookedStart, bookedEnd, status, now);
+      db.prepare(
+        `UPDATE students SET next_interview_at = ?, interviewer = ?, schedule_state = ?, updated_at = ?
+         WHERE user_id = ?`,
+      ).run(bookedStart, interviewerName, SCHEDULE_STATE.CONFIRMED, now, student.studentUserId);
+    }
+
+    // 待機中カードはチャット最下部へ置き、デモで見つけやすくする。
+    if (status === SCHEDULE_REQUEST_STATUS.WAITING_STUDENT) {
+      db.prepare(
+        `UPDATE rooms SET last_message_id = ?, last_message_at = ?, handling_status = ?, urgency = ? WHERE id = ?`,
+      ).run(
+        Number(messageResult.lastInsertRowid),
+        hoursAgoIso(2),
+        HANDLING_STATUS.WAITING_STUDENT,
+        URGENCY.LOW,
+        student.roomId,
+      );
+    }
+  };
+
+  const futureDeadline = localDateTimeIso(1, 18);
+  createDemoRequest({
+    studentLoginId: 'student2',
+    interviewerExternalId: 'mock-sato',
+    status: SCHEDULE_REQUEST_STATUS.WAITING_STUDENT,
+    deadline: futureDeadline,
+  });
+  // 同じ面接官を対象にして、student2 の予約で共通枠が ○→× になるデモ用。
+  createDemoRequest({
+    studentLoginId: 'student9',
+    interviewerExternalId: 'mock-sato',
+    status: SCHEDULE_REQUEST_STATUS.WAITING_STUDENT,
+    deadline: futureDeadline,
+  });
+  createDemoRequest({
+    studentLoginId: 'student5',
+    interviewerExternalId: 'mock-suzuki',
+    status: SCHEDULE_REQUEST_STATUS.BOOKED,
+    deadline: futureDeadline,
+    bookedStart: localDateTimeIso(3, 10),
+  });
+  createDemoRequest({
+    studentLoginId: 'student4',
+    interviewerExternalId: 'mock-takahashi',
+    status: SCHEDULE_REQUEST_STATUS.EXPIRED,
+    deadline: hoursAgoIso(24),
+  });
 }
 
 function seed() {
@@ -749,6 +1135,7 @@ function seed() {
     clearExistingData();
     // 用件タグ判定が tag_rules を読むので、学生より先に投入する
     insertTagRules();
+    insertComplianceRules();
     insertSnippets();
     insertCompanyInfo();
     insertSelectionSteps();
@@ -759,11 +1146,14 @@ function seed() {
     }
     const allHrIds = Object.values(hrUserIds);
 
-    const studentUserIds = {};
+    const studentRefs = {};
     for (const student of STUDENTS) {
-      studentUserIds[student.loginId] = insertStudentRoom(student, { hrUserIds, allHrIds, passwordHash });
+      studentRefs[student.loginId] = insertStudentRoom(student, { hrUserIds, allHrIds, passwordHash });
     }
-
+    seedInterviewScheduling({ hrUserIds, studentRefs });
+    const studentUserIds = Object.fromEntries(
+      Object.entries(studentRefs).map(([loginId, ref]) => [loginId, ref.studentUserId]),
+    );
     insertSelectionFeedbacks(studentUserIds, hrUserIds.hr1);
   });
 
@@ -774,7 +1164,9 @@ function seed() {
     rooms: db.prepare('SELECT COUNT(*) AS c FROM rooms').get().c,
     messages: db.prepare('SELECT COUNT(*) AS c FROM messages').get().c,
     tagRules: db.prepare('SELECT COUNT(*) AS c FROM tag_rules').get().c,
+    complianceRules: db.prepare('SELECT COUNT(*) AS c FROM compliance_rules').get().c,
     snippets: db.prepare('SELECT COUNT(*) AS c FROM snippets').get().c,
+    scheduleRequests: db.prepare('SELECT COUNT(*) AS c FROM schedule_requests').get().c,
   };
   const perAssignee = db
     .prepare(

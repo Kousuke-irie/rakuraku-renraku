@@ -9,20 +9,23 @@
 //   入力欄のキー操作をストアの action に取り次ぐだけ
 // - 変数展開（P2-2）のロジックは utils/snippetRenderer.js に集約する（business-logic.md §5）
 // - socket の購読は composables/useSocket.js に集約されている（CLAUDE.md §6-12）
-import { computed, watch } from "vue"
+import { computed, ref, watch } from "vue"
+import { messagesApi } from "../api/index.js"
 import { useComposerHeight } from "../composables/useComposerHeight.js"
-import { SELECTION_STATUS_META } from "../constants/index.js"
+import { COMPLIANCE_AI_STATUS, SELECTION_STATUS_META } from "../constants/index.js"
 import { useAuthStore } from "../stores/auth.js"
 import { useMessagesStore } from "../stores/messages.js"
 import { useRoomsStore } from "../stores/rooms.js"
 import { useUiStore } from "../stores/ui.js"
 import { hasUnsetVariable, renderSnippetBody } from "../utils/snippetRenderer.js"
 import AiConversationInsight from "./AiConversationInsight.vue"
+import ComplianceDialog from "./ComplianceDialog.vue"
 import ComposerResizeHandle from "./ComposerResizeHandle.vue"
 import MessageList from "./MessageList.vue"
 import SnippetPalette from "./SnippetPalette.vue"
 import StatusChip, { CHIP_KIND } from "./StatusChip.vue"
 import UserAvatar from "./UserAvatar.vue"
+import ScheduleRequestDialog from "./ScheduleRequestDialog.vue"
 
 const props = defineProps({
   /** rooms ストアの room（stores/rooms.js の JSDoc 参照） */
@@ -34,6 +37,7 @@ const auth = useAuthStore()
 const messages = useMessagesStore()
 const rooms = useRoomsStore()
 const ui = useUiStore()
+const scheduleDialogOpen = ref(false)
 // #endregion
 
 // #region computed
@@ -80,7 +84,10 @@ const draft = computed({
   set: (value) => messages.setDraft(roomId.value, value),
 })
 
-const canSend = computed(() => draft.value.trim().length > 0)
+/** 送信前チェック（P4-2b）の応答待ち。AI 判定を挟むので最大3秒かかる */
+const checking = ref(false)
+
+const canSend = computed(() => draft.value.trim().length > 0 && !checking.value)
 
 /** 展開した定型文に未設定の変数が残っているか（P2-2。送信前に気づけるよう赤字で警告する） */
 const hasUnsetSnippetVariable = computed(() => hasUnsetVariable(draft.value))
@@ -180,9 +187,49 @@ watch(
 // #endregion
 
 // #region browser event handler
+/**
+ * 送信前チェック（P4-3）。
+ *
+ * 検知したらダイアログを出して**送信しない**。人事が「このまま送信」を選んだときだけ
+ * onSendAnyway が呼ばれ、承知したコードを添えて送る。
+ *
+ * 検査 API が落ちていたら送信を通す。監視のために業務を止めない。
+ * その場合もサーバ側（insertMessage）が同じ検査をして記録するので、取りこぼしはない。
+ */
 const onSubmit = async () => {
   if (!canSend.value) return
-  await messages.sendMessage(roomId.value, draft.value)
+
+  const body = draft.value
+
+  // AI 判定を待つ間はボタンを「確認中…」にする。押しっぱなしに見えないように
+  checking.value = true
+  try {
+    const { data } = await messagesApi.check(roomId.value, body)
+    ui.setComplianceAiStatus(data.ai?.status ?? COMPLIANCE_AI_STATUS.ERROR)
+
+    if (data.results.length > 0) {
+      ui.openComplianceDialog(data.results, data.ai?.status)
+      return
+    }
+  } catch {
+    // 握りつぶす。ここで送信を止めるとチェックの障害が業務を止めてしまう
+    ui.setComplianceAiStatus(COMPLIANCE_AI_STATUS.ERROR)
+  } finally {
+    checking.value = false
+  }
+
+  await messages.sendMessage(roomId.value, body)
+}
+
+/** ダイアログの「このまま送信」。承知したコードは記録の注記に使われる */
+const onSendAnyway = async (acknowledgedCodes) => {
+  if (!canSend.value) return
+  await messages.sendMessage(roomId.value, draft.value, acknowledgedCodes)
+}
+
+const openSnippetFromButton = () => {
+  messages.setDraft(roomId.value, "/")
+  textareaRef.value?.focus()
 }
 // #endregion
 </script>
@@ -276,6 +323,22 @@ const onSubmit = async () => {
           未設定の項目が残っています。内容を確認してから送信してください。
         </p>
         <div class="composer__actions">
+          <div class="composer__tools">
+            <button
+              type="button"
+              class="button-normal"
+              @click="openSnippetFromButton"
+            >
+              定型文
+            </button>
+            <button
+              type="button"
+              class="button-normal"
+              @click="scheduleDialogOpen = true"
+            >
+              日程調整を作成
+            </button>
+          </div>
           <p class="composer__hint">
             ⌘ / Ctrl + Enter で送信
           </p>
@@ -284,11 +347,18 @@ const onSubmit = async () => {
             class="button-primary"
             :disabled="!canSend"
           >
-            送信
+            {{ checking ? "確認中…" : "送信" }}
           </button>
         </div>
       </div>
     </form>
+
+    <ScheduleRequestDialog
+      v-if="scheduleDialogOpen"
+      :room="room"
+      @close="scheduleDialogOpen = false"
+    />
+    <ComplianceDialog @send="onSendAnyway" />
   </div>
 </template>
 
@@ -401,6 +471,11 @@ const onSubmit = async () => {
   align-items: center;
   justify-content: space-between;
   padding: var(--space-sm) var(--space-md) var(--space-md) var(--space-lg);
+}
+
+.composer__tools {
+  display: flex;
+  gap: var(--space-sm);
 }
 
 .composer__hint {

@@ -42,7 +42,7 @@
 
 | メソッド | パス | 説明 |
 | --- | --- | --- |
-| GET | `/rooms` | ルーム一覧。query: `handlingStatus`, `selectionStatus`, `topicTag`, `urgency`, `assigneeId`, `sort`, `q` |
+| GET | `/rooms` | ルーム一覧。query: `handlingStatus`, `selectionStatus`, `topicTag`, `priority`, `assigneeId`, `sort`, `q` |
 | GET | `/rooms/:id` | ルーム詳細（学生プロフィール込み） |
 | PATCH | `/rooms/:id` | `{handlingStatus?, assigneeUserId?}` |
 | POST | `/rooms/:id/read` | `{lastReadMessageId}` |
@@ -62,7 +62,7 @@
         "avatarColor": "#7C9CBF"
       },
       "handlingStatus": "needs_reply",
-      "urgency": "high",
+      "priority": "high",
       "topicTag": "absence_late",
       "assignee": { "id": 3, "displayName": "田中" },
       "unreadCount": 2,
@@ -251,6 +251,24 @@
 - **人事のみ参照可**。`GET /summary` と同じくロールを検証する
 - 生成ロジック・フォールバックは `business-logic.md` §7-2
 
+### 面接日程予約（P3-4）
+
+| メソッド | パス | ロール・用途 |
+| --- | --- | --- |
+| GET | `/calendar/interviewers` | 人事：面接官一覧 |
+| GET | `/calendar/interviewers/:id/slots` | 人事：送信前の空き枠確認 |
+| POST | `/rooms/:roomId/schedule-requests` | 人事：学生へ予約依頼を送信 |
+| GET | `/rooms/:roomId/schedule-requests` | ルーム参加者：履歴 |
+| GET | `/schedule-requests/:id` | 対象学生本人またはルーム参加人事 |
+| GET | `/schedule-requests/:id/slots` | 同上：最新空き枠 |
+| POST | `/schedule-requests/:id/book` | 対象学生本人：原子的に予約確定 |
+| GET | `/mock-calendar/interviewers` | 擬似カレンダーAPI |
+| GET | `/mock-calendar/interviewers/:id/slots` | 擬似カレンダーAPI |
+| POST | `/mock-calendar/bookings` | 擬似カレンダーAPI |
+
+競合時は `409 { error: 'slot_already_booked', message }`。学生向けレスポンスやSocketには
+他学生の情報を含めない。
+
 ---
 
 ## 3. Socket.IO
@@ -276,6 +294,8 @@ io(BASE_URL, { withCredentials: true })
 | `message:send` | `{ roomId, body, clientMsgId }` | 送信。サーバでタグ判定・ステータス自動遷移・緊急度再計算を実行 |
 | `message:read` | `{ roomId, lastReadMessageId }` | 既読更新 |
 | `room:status_update` | `{ roomId, handlingStatus }` | 対応ステータス変更（低遅延用。REST と同等） |
+| `schedule:watch` | `{ requestId }` | 認可後、同じ面接官の枠更新ルームへ参加 |
+| `schedule:unwatch` | `{ requestId }` | 枠更新ルームから退出 |
 
 ### Server → Client
 
@@ -285,10 +305,13 @@ io(BASE_URL, { withCredentials: true })
 | `message:sent` | `{ clientMsgId, message }` | 送信者のみ（ack） |
 | `message:deleted` | `{ roomId, messageId }` | ルーム参加者 |
 | `read:updated` | `{ roomId, userId, lastReadMessageId }` | ルーム参加者 |
-| `room:updated` | `{ room }` | `hr` ルーム。ステータス・緊急度・担当者の変更時 |
+| `room:updated` | `{ room }` | `hr` ルーム。ステータス・AI推奨度・担当者の変更時 |
 | `memo:updated` | `{ roomId, memo }` | `hr` ルーム（共有メモのみ） |
 | `summary:updated` | `{ needsReply, urgent, overdue24h }` | `hr` ルーム |
 | `ai:summary_updated` | `{ status, situation, todos, generatedAt }` | 生成を依頼した本人のみ（P3-1a・未実装） |
+| `schedule:slot_updated` | `{ interviewerId, slotId, available, updatedAt }` | 同じ面接官の予約画面 |
+| `schedule:request_updated` | `{ request }` | 対象ルーム |
+| `schedule:booked` | `{ request }` | 対象ルーム |
 | `error` | `{ code, message }` | 発生元のみ |
 
 ---
