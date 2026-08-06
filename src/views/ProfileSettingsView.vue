@@ -4,10 +4,9 @@
 // 2カード構成。左が設定内のナビゲーション、右が選んだ項目の詳細。
 // 画面全体の固定レイヤは AppShell が持つので、ここはセルを height:100% で埋めるだけ。
 //
-// ★このビューは**雛形**である。各セクションの中身は下記のとおり未実装で、
-//   実装は元の要件IDに寄せる。セクションを増やすときは SECTIONS に足す。
+// ★このビューは**雛形**である。セクションを増やすときは SECTIONS に足す。
 //   - プロフィール … B-5。編集フォーム自体は ProfileDialog を使い回す（二重実装しない）
-//   - 定型文       … P2-1 / P2-2。GET /api/snippets（server/routes/snippets.js）が未実装
+//   - 定型文       … P2-1 拡張。追加・削除・編集は SnippetSettingsPanel に委譲
 //   - アカウント   … ログインIDの表示とログアウトのみ。パスワード変更は要件に無い
 //
 // セクションの切替はローカル state で持つ。URL に載せる必要が出たら
@@ -16,6 +15,7 @@ import { computed, ref } from "vue"
 import { useRouter } from "vue-router"
 import { useAuthStore } from "../stores/auth.js"
 import { useUiStore } from "../stores/ui.js"
+import SnippetSettingsPanel from "../components/SnippetSettingsPanel.vue"
 import UserAvatar from "../components/UserAvatar.vue"
 
 // #region constants
@@ -142,15 +142,9 @@ const onLogout = async () => {
           </button>
         </template>
 
-        <!-- 定型文（P2-1 / P2-2） -->
+        <!-- 定型文（P2-1 拡張：コマンドの追加・削除・編集） -->
         <template v-else-if="activeKey === 'snippets'">
-          <p class="placeholder">
-            定型文の一覧と編集はまだ実装されていません。<br>
-            <code>/合格</code> <code>/不合格</code> <code>/督促</code> などのコマンドと本文をここで管理します。
-          </p>
-          <p class="hint">
-            ※ GET /api/snippets が未実装です（P2-1：定型文コマンド／P2-2：変数の自動補完）
-          </p>
+          <SnippetSettingsPanel />
         </template>
 
         <!-- アカウント -->
@@ -330,24 +324,4 @@ const onLogout = async () => {
   font-size: 14px;
 }
 
-.placeholder {
-  margin: 0;
-  color: var(--color-ink-mute);
-  font-size: 13px;
-  line-height: 2;
-}
-
-.placeholder code {
-  padding: 2px 6px;
-  border-radius: var(--radius-sm);
-  background-color: var(--color-orange-soft);
-  color: var(--color-ink);
-  font-size: 12px;
-}
-
-.hint {
-  margin: var(--space-xxl) 0 0;
-  color: var(--color-ink-mute);
-  font-size: 12px;
-}
 </style>

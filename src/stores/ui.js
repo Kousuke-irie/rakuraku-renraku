@@ -1,9 +1,17 @@
 import { defineStore } from 'pinia'
-import { snippetsApi } from '../api/snippets.js'
+import { snippetsApi, toErrorMessage } from '../api/index.js'
 import { DEFAULT_BOARD_GROUP_BY, MEMO_SCOPE, MEMO_SCOPE_VALUES } from '../constants/index.js'
 
 /** トーストの連番。Date.now() だと同時 push で衝突する */
 let toastSeq = 0
+
+/** 定型文の設定画面（P2-1 拡張）での失敗時の既定文言 */
+const SNIPPET_ERROR = Object.freeze({
+  FETCH: '定型文の取得に失敗しました',
+  CREATE: '定型文の追加に失敗しました',
+  UPDATE: '定型文の更新に失敗しました',
+  DELETE: '定型文の削除に失敗しました',
+})
 
 /**
  * 受信箱3ペインの幅（px）。既定値とドラッグで動かせる範囲。
@@ -160,9 +168,66 @@ export const useUiStore = defineStore('ui', {
     /** GET /api/snippets（初回のみ。マスタデータなのでルーム切替のたびに取り直さない） */
     async fetchSnippets() {
       if (this.snippets.length > 0) return
+      await this.reloadSnippets()
+    },
 
-      const { data } = await snippetsApi.list()
-      this.snippets = data.snippets
+    /** 設定画面での追加・編集・削除のあとに使う、無条件の取り直し */
+    async reloadSnippets() {
+      try {
+        const { data } = await snippetsApi.list()
+        this.snippets = data.snippets
+      } catch (error) {
+        this.pushToast({ type: 'error', message: toErrorMessage(error, SNIPPET_ERROR.FETCH) })
+      }
+    },
+
+    /**
+     * POST /api/snippets（設定画面からの追加）
+     * @returns {Promise<object|null>} 作成した定型文。失敗時は null
+     */
+    async createSnippet({ command, title, body }) {
+      try {
+        const { data } = await snippetsApi.create({ command, title, body })
+        this.snippets.push(data.snippet)
+        return data.snippet
+      } catch (error) {
+        this.pushToast({ type: 'error', message: toErrorMessage(error, SNIPPET_ERROR.CREATE) })
+        return null
+      }
+    },
+
+    /**
+     * PATCH /api/snippets/:id（コマンド・タイトル・本文の編集）
+     * @param {number} id
+     * @param {{ command?: string, title?: string, body?: string }} patch
+     * @returns {Promise<object|null>} 更新後の定型文。失敗時は null
+     */
+    async updateSnippet(id, patch) {
+      try {
+        const { data } = await snippetsApi.update(id, patch)
+        const index = this.snippets.findIndex((snippet) => snippet.id === id)
+        if (index === -1) this.snippets.push(data.snippet)
+        else this.snippets = this.snippets.with(index, data.snippet)
+        return data.snippet
+      } catch (error) {
+        this.pushToast({ type: 'error', message: toErrorMessage(error, SNIPPET_ERROR.UPDATE) })
+        return null
+      }
+    },
+
+    /**
+     * DELETE /api/snippets/:id
+     * @returns {Promise<boolean>} 削除できたか
+     */
+    async deleteSnippet(id) {
+      try {
+        await snippetsApi.remove(id)
+        this.snippets = this.snippets.filter((snippet) => snippet.id !== id)
+        return true
+      } catch (error) {
+        this.pushToast({ type: 'error', message: toErrorMessage(error, SNIPPET_ERROR.DELETE) })
+        return false
+      }
     },
 
     /** "/" 入力でパレットを開く */

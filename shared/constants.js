@@ -310,3 +310,14 @@ export const DELETED_MESSAGE_TEXT = 'メッセージの送信を取り消しま�
 // 未設定変数のプレースホルダ（P2-2 / business-logic.md §5）例：【未設定：面接日時】
 export const UNSET_VARIABLE_PREFIX = '【未設定：';
 export const UNSET_VARIABLE_SUFFIX = '】';
+
+// 定型文の本文に埋め込める変数（P2-1設定画面／P2-2 / business-logic.md §5）。
+// 実データへの置換は P2-2 の責務。設定画面ではこの一覧を「挿入」候補として出す。
+export const SNIPPET_VARIABLES = Object.freeze([
+  { token: '{学生名}', label: '学生名' },
+  { token: '{面接日時}', label: '面接日時' },
+  { token: '{会議室}', label: '会議室' },
+  { token: '{面接官}', label: '面接官' },
+  { token: '{担当者名}', label: '担当者名' },
+  { token: '{選考段階}', label: '選考段階' },
+]);
