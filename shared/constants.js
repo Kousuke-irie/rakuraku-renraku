@@ -138,9 +138,9 @@ export const MEMO_SCOPE_VALUES = Object.values(MEMO_SCOPE);
 // ---------------------------------------------------------------------------
 
 export const SORT_KEY = Object.freeze({
-  // 既定：is_pinned DESC → urgency → last_student_message_at ASC
+  // urgency → last_student_message_at ASC
   DEFAULT: 'default',
-  // 最終メッセージ時刻の新しい順
+  // 最終メッセージ時刻の新しい順（既定）
   LAST_MESSAGE: 'last_message',
   // 経過時間の長い順
   ELAPSED: 'elapsed',
@@ -154,7 +154,8 @@ export const SORT_KEY_META = Object.freeze({
 
 export const SORT_KEY_VALUES = Object.values(SORT_KEY);
 
-export const DEFAULT_SORT_KEY = SORT_KEY.DEFAULT;
+/** 既定は最終メッセージ順（直近のやり取りから確認できるようにする） */
+export const DEFAULT_SORT_KEY = SORT_KEY.LAST_MESSAGE;
 
 // 緊急度のソート順（小さいほど上位）。比較のたびに配列を組み立てないためのマップ。
 export const URGENCY_ORDER = Object.freeze({
@@ -203,8 +204,8 @@ export const BOARD_GROUP_BY_META = Object.freeze({
 
 export const BOARD_GROUP_BY_VALUES = Object.values(BOARD_GROUP_BY);
 
-/** 既定は選考ステータス（選考パイプラインの俯瞰がホームの主目的） */
-export const DEFAULT_BOARD_GROUP_BY = BOARD_GROUP_BY.SELECTION;
+/** 既定は対応ステータス（ログイン直後に「返信すべき学生」から見えるようにする） */
+export const DEFAULT_BOARD_GROUP_BY = BOARD_GROUP_BY.HANDLING;
 
 // ---------------------------------------------------------------------------
 // AI 現況サマリーの状態（P3-1a / api.md「AI 現況サマリー」・business-logic.md §7-2）

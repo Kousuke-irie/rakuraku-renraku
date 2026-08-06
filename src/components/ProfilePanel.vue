@@ -1,15 +1,25 @@
 <script setup>
-// 学生プロフィールのインライン編集（P2-4 / P2-9・frontend.md §9）
+// 学生プロフィールと対応ステータスのインライン編集（P1-2 / P2-4 / P2-9・frontend.md §9）
 //
 // 課題 C-4「担当者不在だと引き継げない」への回答の片割れ。
 // 「担当外の人事がルームを開いても状況が1画面で把握できる」ことが受入条件なので、
 // 値は常に表示し、そのまま編集できる（編集ボタンを挟まない）コントロールとして置く。
 //
+// **対応ステータスの変更口はここに一本化する（P1-2）。** 一覧行は表示のみ。
+// 受信箱は3ペインが同一画面なので「一覧を離れず2クリック以内」は満たす
+// （select を開く＝1クリック／選ぶ＝2クリック目）。
+//
 // 保存は各項目の change（select は選択時、input は確定・フォーカスアウト時）で即座に行う。
+// 対応ステータスは rooms.updateHandlingStatus（socket 優先・楽観更新はストア側）、
 // 担当人事は rooms.assign（PATCH /rooms/:id）、それ以外は rooms.updateStudent（PATCH /students/:userId）。
 // 失敗時はストアがトーストを出し、ここでは表示値をサーバの値へ戻す。
 import { computed, reactive, watch } from "vue"
-import { SELECTION_STATUS_META, SELECTION_STATUS_VALUES } from "../constants/index.js"
+import {
+  HANDLING_STATUS_META,
+  HANDLING_STATUS_VALUES,
+  SELECTION_STATUS_META,
+  SELECTION_STATUS_VALUES,
+} from "../constants/index.js"
 import { useRoomsStore } from "../stores/rooms.js"
 
 // #region constants
@@ -32,6 +42,7 @@ const rooms = useRoomsStore()
  * 直接 room を v-model しないのは、保存に失敗した値を巻き戻せるようにするため。
  */
 const draft = reactive({
+  handlingStatus: "",
   assignee: UNASSIGNED_VALUE,
   selectionStatus: "",
   nextInterviewAt: "",
@@ -65,12 +76,19 @@ const toIsoUtc = (localValue) => (localValue ? new Date(localValue).toISOString(
 
 /** 表示値をサーバの値に合わせる。初期化と、保存失敗時の巻き戻しに使う */
 const syncFromRoom = () => {
+  draft.handlingStatus = props.room.handlingStatus ?? ""
   draft.assignee = props.room.assignee?.id ?? UNASSIGNED_VALUE
   draft.selectionStatus = student.value.selectionStatus ?? ""
   draft.nextInterviewAt = toDateTimeLocal(student.value.nextInterviewAt)
   draft.nextInterviewRoom = student.value.nextInterviewRoom ?? ""
   draft.interviewer = student.value.interviewer ?? ""
 }
+
+/**
+ * 対応ステータス（P1-2）。楽観更新・ロールバック・トーストはすべてストアが持つ。
+ * ロールバックされた場合は room の変化を watch が拾って draft も戻る。
+ */
+const saveHandlingStatus = () => rooms.updateHandlingStatus(props.room.id, draft.handlingStatus)
 
 const saveAssignee = async () => {
   const assigneeUserId = draft.assignee === UNASSIGNED_VALUE ? null : Number(draft.assignee)
@@ -124,6 +142,26 @@ watch(() => props.room, syncFromRoom, { immediate: true, deep: true })
 
 <template>
   <div class="profile">
+    <label
+      class="profile__label"
+      :for="fieldId('handling')"
+    >対応ステータス</label>
+    <select
+      :id="fieldId('handling')"
+      v-model="draft.handlingStatus"
+      class="profile__control profile__control--handling"
+      :style="{ color: HANDLING_STATUS_META[draft.handlingStatus]?.color }"
+      @change="saveHandlingStatus"
+    >
+      <option
+        v-for="status in HANDLING_STATUS_VALUES"
+        :key="status"
+        :value="status"
+      >
+        {{ HANDLING_STATUS_META[status].label }}
+      </option>
+    </select>
+
     <label
       class="profile__label"
       :for="fieldId('assignee')"
@@ -250,6 +288,12 @@ watch(() => props.room, syncFromRoom, { immediate: true, deep: true })
 .profile__control:focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: -1px;
+}
+
+/* 対応ステータスは一覧のチップと同じ色を文字色で持たせる（色は inline style で指定）。
+   一覧行から変更口が消えたぶん、右ペインで現在値が目に入るようにする（P1-2） */
+.profile__control--handling {
+  font-weight: 700;
 }
 
 /* 値が空のときの placeholder は「未設定」。色で薄く見せる */

@@ -1,7 +1,7 @@
 <script setup>
 // ホームのボードを縦割りにする軸の切替（S-07・frontend.md §5-2）
 //
-// 対応／選考／緊急度 の3択。既定は選考。状態は uiStore.boardGroupBy が持つ。
+// 対応／選考／緊急度 の3択。既定は対応。状態は uiStore.boardGroupBy が持つ。
 // ラジオボタン相当なので、role="radiogroup" にして矢印キーでなく Tab + Enter で選べる
 // 素朴なボタン群にしてある（選択肢が3つしかないため）。
 import { computed } from "vue"

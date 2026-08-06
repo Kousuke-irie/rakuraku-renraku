@@ -18,12 +18,13 @@ const rooms = useRoomsStore()
  * 通知の見出しに出す件数。
  * ★P1-8 で GET /api/summary が入ったら rooms.summary に差し替える。
  *   それまでは AppNavRail / InboxSidebar と同じ暫定集計で出す。
+ *   受信箱は担当制なので、数えるのは自分の担当ルームだけ（#28・roomsStore.myRooms）。
  */
 const counts = computed(() => ({
-  needsReply: rooms.rooms.filter(
+  needsReply: rooms.myRooms.filter(
     (room) => room.handlingStatus === HANDLING_STATUS.NEEDS_REPLY
   ).length,
-  urgent: rooms.rooms.filter((room) => room.urgency === URGENCY.HIGH).length,
+  urgent: rooms.myRooms.filter((room) => room.urgency === URGENCY.HIGH).length,
 }))
 
 const needsReplyLabel = computed(

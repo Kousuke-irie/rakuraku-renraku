@@ -1,71 +1,40 @@
 <script setup>
 // 受信箱の左ペイン（frontend.md §5 のレイアウト枠）
 //
-// ★このコンポーネントの責務はヘッダ（検索・サマリー・フィルタ）と行の反復のみ。
-//   1行の見た目とふるまいは RoomListItem が単独で持つので、行に項目を足すときは
-//   このファイルではなく RoomListItem を触ること。
-//
-//   検索・サマリークリック・フィルタは**まだ非活性**。
-//   P1-7（FilterBar）／P1-8（SummaryBar）でそれぞれのコンポーネントに置き換え、
-//   件数の算出も P1-8 で GET /api/summary（roomsStore.summary）へ寄せる。
+// ★このコンポーネントの責務は検索欄・各パーツの配置・行の反復のみ。
+//   1行 → RoomListItem、未対応サマリー → SummaryBar（P1-8）、
+//   絞り込みと並べ替え → FilterBar（P1-7）がそれぞれ単独で持つ。
+//   項目を足すときはこのファイルではなく、該当のコンポーネントを触ること。
+//   絞り込みの判定そのものは roomsStore（filteredRooms / sortedRooms）にある。
 import { computed } from "vue"
-import {
-  ELAPSED_BADGE_HIDDEN_STATUSES,
-  HANDLING_STATUS,
-  SLA_ALERT_HOURS,
-  SORT_KEY_META,
-  SORT_KEY_VALUES,
-  URGENCY,
-} from "../constants/index.js"
 import { useRoomsStore } from "../stores/rooms.js"
 import { useUiStore } from "../stores/ui.js"
+import FilterBar from "./FilterBar.vue"
 import PanelIcon from "./PanelIcon.vue"
 import RoomListItem from "./RoomListItem.vue"
-
-// #region constants
-/** 絞り込みの種別。P1-7 で FilterBar に置き換わるまでの見た目だけの並び */
-const FILTER_LABELS = ["対応", "選考", "タグ", "緊急度", "担当"]
-// #endregion
+import SummaryBar from "./SummaryBar.vue"
 
 // #region global state
 const rooms = useRoomsStore()
 const ui = useUiStore()
 // #endregion
 
-// #region local methods
-/** 24h超の集計対象か（返信済み・完了は SLA の対象外・constants.md §9） */
-const isOverdue = (room) =>
-  !ELAPSED_BADGE_HIDDEN_STATUSES.includes(room.handlingStatus) &&
-  (room.elapsedHours ?? 0) >= SLA_ALERT_HOURS
-// #endregion
-
 // #region computed
-/** フィルタ済みのルームを選択したソート条件で表示する。 */
+/** 絞り込みと並べ替えの結果（P1-7）。判定は roomsStore 側にある */
 const roomList = computed(() => rooms.sortedRooms)
 
-/** P1-8 で GET /api/summary に置き換える暫定集計 */
-const summaryItems = computed(() => [
-  {
-    key: "needsReply",
-    label: "要返信",
-    count: roomList.value.filter((room) => room.handlingStatus === HANDLING_STATUS.NEEDS_REPLY)
-      .length,
-  },
-  {
-    key: "urgent",
-    label: "緊急",
-    count: roomList.value.filter((room) => room.urgency === URGENCY.HIGH).length,
-  },
-  {
-    key: "overdue24h",
-    label: `${SLA_ALERT_HOURS}h超`,
-    count: roomList.value.filter(isOverdue).length,
-  },
-])
+/** 絞り込み中は「表示件数 / 全件数」を出して、隠れている行があることを分かるようにする */
+const countLabel = computed(() =>
+  rooms.hasActiveFilters
+    ? `${roomList.value.length} / ${rooms.myRooms.length}件`
+    : `${roomList.value.length}件`
+)
 
-const changeSort = (event) => {
-  rooms.setSortKey(event.target.value)
-}
+/** 検索欄。入力はそのまま filters.q に入れ、絞り込みは filteredRooms が行う */
+const searchQuery = computed({
+  get: () => rooms.filters.q,
+  set: (value) => rooms.applyFilters({ q: value }),
+})
 // #endregion
 </script>
 
@@ -76,7 +45,7 @@ const changeSort = (event) => {
         <h2 class="sidebar__title">
           受信箱
         </h2>
-        <span class="sidebar__count">{{ roomList.length }}件</span>
+        <span class="sidebar__count">{{ countLabel }}</span>
         <!-- 最小化。復帰用のボタンは畳んだ跡に残る細いカードに出る -->
         <button
           type="button"
@@ -93,56 +62,40 @@ const changeSort = (event) => {
       </div>
 
       <input
+        v-model="searchQuery"
         class="sidebar__search"
         type="search"
         placeholder="氏名・大学で検索"
-        disabled
+        aria-label="氏名・大学で検索"
       >
 
-      <!-- サマリーバー（P1-8）：件数は実データ、クリックでの絞り込みは未実装 -->
-      <ul class="summary">
-        <li
-          v-for="item in summaryItems"
-          :key="item.key"
-          class="summary__item"
-        >
-          <span class="summary__label">{{ item.label }}</span>
-          <span class="summary__count">{{ item.count }}</span>
-        </li>
-      </ul>
+      <!-- 未対応サマリー（P1-8）。押すとその条件で絞り込む -->
+      <div class="summary-row">
+        <SummaryBar />
+      </div>
 
-      <!-- フィルタは形のみ。ソートは P1-7 で実装済み。 -->
+      <!-- フィルタ＆ソート（P1-7） -->
       <div class="filters">
-        <button
-          v-for="label in FILTER_LABELS"
-          :key="label"
-          type="button"
-          class="filters__chip"
-          disabled
-        >
-          {{ label }} ▾
-        </button>
-        <label class="filters__sort">
-          <span class="visually-hidden">並び替え</span>
-          <select
-            :value="rooms.sortKey"
-            aria-label="並び替え"
-            @change="changeSort"
-          >
-            <option
-              v-for="sortKey in SORT_KEY_VALUES"
-              :key="sortKey"
-              :value="sortKey"
-            >
-              {{ SORT_KEY_META[sortKey]?.label }}
-            </option>
-          </select>
-        </label>
+        <FilterBar />
       </div>
     </div>
 
+    <!-- 空状態は「絞り込んだ結果ゼロ」と「そもそも0件」を区別する -->
     <p
-      v-if="roomList.length === 0"
+      v-if="roomList.length === 0 && rooms.hasActiveFilters"
+      class="sidebar__empty"
+    >
+      条件に一致する学生はいません。
+      <button
+        type="button"
+        class="sidebar__empty-action"
+        @click="rooms.clearFilters()"
+      >
+        条件をクリア
+      </button>
+    </p>
+    <p
+      v-else-if="roomList.length === 0"
       class="sidebar__empty"
     >
       対応が必要な学生はいません 🎉
@@ -206,65 +159,14 @@ const changeSort = (event) => {
   font-size: 13px;
 }
 
-.summary {
-  display: flex;
-  gap: var(--space-sm);
+/* 中身の見た目は SummaryBar が持つ。ここは配置だけ */
+.summary-row {
   margin-top: var(--space-md);
-  list-style: none;
 }
 
-.summary__item {
-  display: flex;
-  flex: 1 1 0;
-  gap: var(--space-xs);
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-sm) var(--space-xs);
-  border-radius: var(--radius-md);
-  background-color: var(--color-orange-soft);
-}
-
-.summary__label {
-  color: var(--color-ink-mute);
-  font-size: 11px;
-}
-
-.summary__count {
-  font-size: 14px;
-  font-weight: 700;
-}
-
+/* 中身の見た目は FilterBar が持つ。ここは配置だけ */
 .filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-xs);
-  align-items: center;
   margin-top: var(--space-md);
-}
-
-.filters__chip {
-  padding: 3px 10px;
-  border: 1px solid var(--color-hairline);
-  border-radius: var(--radius-pill);
-  background-color: var(--color-canvas);
-  color: var(--color-ink-mute);
-  font-size: 11px;
-}
-
-.filters__sort {
-  margin-left: auto;
-}
-
-.filters__sort select {
-  max-width: 116px;
-  padding: 3px 18px 3px 8px;
-  border: 1px solid var(--color-hairline);
-  border-radius: var(--radius-pill);
-  background-color: var(--color-canvas);
-  color: var(--color-ink-mute);
-  font: inherit;
-  font-size: 11px;
-  font-weight: 700;
 }
 
 .sidebar__empty {
@@ -272,6 +174,15 @@ const changeSort = (event) => {
   color: var(--color-ink-mute);
   font-size: 13px;
   text-align: center;
+}
+
+.sidebar__empty-action {
+  border: none;
+  background: none;
+  color: var(--color-primary);
+  font-size: 13px;
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 .rooms {

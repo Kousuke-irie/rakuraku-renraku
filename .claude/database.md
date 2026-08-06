@@ -6,7 +6,7 @@ SQLite（better-sqlite3、WAL モード）。スキーマは `server/db/schema.s
 
 ## 1. 設計方針
 
-- **対応ステータス・緊急度・担当者・ピン留めは `rooms` に持たせる。** これらは「学生との対話全体」の属性であり、メッセージ単位ではないため。
+- **対応ステータス・緊急度・担当者は `rooms` に持たせる。** これらは「学生との対話全体」の属性であり、メッセージ単位ではないため。
 - **用件タグは `messages` に持たせる。** ルームの緊急度は「最新の学生メッセージのタグ」から導出する。
 - 一覧表示の高速化のため、`rooms` に `last_message_id` / `last_message_at` / `last_student_message_at` を**非正規化して保持**する。メッセージ保存時に必ず同一トランザクションで更新すること。
 - 既読判定の正は `room_members.last_read_message_id`。`read_receipts` は既読人数の集計・監査用に併存させる。
@@ -68,7 +68,6 @@ tag_rules（キーワード辞書）
 | `handling_status` | TEXT | NOT NULL DEFAULT 'needs_reply' | 対応ステータス |
 | `assignee_user_id` | INTEGER | FK→users.id | 担当人事（NULL＝未アサイン） |
 | `urgency` | TEXT | NOT NULL DEFAULT 'normal' | 算出済み緊急度 |
-| `is_pinned` | INTEGER | NOT NULL DEFAULT 0 | 0/1 |
 | `last_message_id` | INTEGER | FK→messages.id | 非正規化 |
 | `last_message_at` | TEXT | | ソート用 |
 | `last_student_message_at` | TEXT | | **経過時間バッジの基準時刻** |
@@ -142,7 +141,7 @@ tag_rules（キーワード辞書）
 
 ```sql
 CREATE INDEX idx_messages_room       ON messages(room_id, id DESC);
-CREATE INDEX idx_rooms_sort          ON rooms(is_pinned DESC, urgency, last_student_message_at);
+CREATE INDEX idx_rooms_sort          ON rooms(urgency, last_student_message_at);
 CREATE INDEX idx_rooms_status        ON rooms(handling_status);
 CREATE INDEX idx_rooms_assignee      ON rooms(assignee_user_id);
 CREATE INDEX idx_room_members_user   ON room_members(user_id);

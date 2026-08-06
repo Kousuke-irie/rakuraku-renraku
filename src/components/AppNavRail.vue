@@ -24,6 +24,7 @@ import UserAvatar from "./UserAvatar.vue"
 /** ワードマークの表記は「楽楽連ラク」に統一する（CLAUDE.md §1） */
 const BRAND_NAME = "楽楽連ラク"
 const INBOX_PATH = "/inbox"
+const STUDENTS_PATH = "/students"
 const NOTIFICATIONS_PATH = "/notifications"
 const SETTINGS_PATH = "/settings/profile"
 // #endregion
@@ -41,7 +42,8 @@ const router = useRouter()
 // #region computed
 /**
  * ロールごとのナビ項目（frontend.md §1）。
- * 人事は「ホーム（S-07・俯瞰）」と「受信箱（S-03/S-04・返信）」の2枚を行き来する。
+ * 人事は「ホーム（S-07・自分の担当の俯瞰）」「受信箱（S-03/S-04・返信）」
+ * 「全学生（S-08・担当外と未配属の拾い上げ）」を行き来する。
  * 学生は自分のトーク1枚だけ。着地点は必ず auth.homePath から取り、パスを直書きしない。
  */
 const navItems = computed(() =>
@@ -50,6 +52,7 @@ const navItems = computed(() =>
     : [
         { to: auth.homePath, icon: "home", label: "ホーム" },
         { to: INBOX_PATH, icon: "inbox", label: "受信箱" },
+        { to: STUDENTS_PATH, icon: "students", label: "全学生" },
       ]
 )
 
@@ -57,9 +60,10 @@ const navItems = computed(() =>
  * 通知バッジの件数。
  * ★P1-8 で GET /api/summary が入ったら `rooms.summary.needsReply` に差し替える。
  *   それまでは InboxSidebar と同じ暫定集計（ルーム一覧からの数え上げ）で出す。
+ *   受信箱は担当制なので、数えるのは自分の担当ルームだけ（#28・roomsStore.myRooms）。
  */
 const alertCount = computed(
-  () => rooms.rooms.filter((room) => room.handlingStatus === HANDLING_STATUS.NEEDS_REPLY).length
+  () => rooms.myRooms.filter((room) => room.handlingStatus === HANDLING_STATUS.NEEDS_REPLY).length
 )
 
 /** 件数は色でなくテキストでも伝える（CLAUDE.md §6-13） */

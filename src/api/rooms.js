@@ -7,7 +7,7 @@ import { http } from "./client.js"
  * {
  *   id, student: { userId, displayName, university, selectionStatus, avatarColor,
  *                  nextInterviewAt, nextInterviewRoom, interviewer, scheduleState },
- *   handlingStatus, urgency, topicTag, isPinned,
+ *   handlingStatus, urgency, topicTag,
  *   assignee: { id, displayName } | null,   // null = 未割当
  *   unreadCount, lastMessage: { id, body, createdAt, senderId } | null,
  *   lastStudentMessageAt, elapsedHours
@@ -35,7 +35,7 @@ export const roomsApi = {
   /**
    * PATCH /api/rooms/:id → `{ room }`
    * @param {number} roomId
-   * @param {{ handlingStatus?: string, assigneeUserId?: number|null, isPinned?: boolean }} patch
+   * @param {{ handlingStatus?: string, assigneeUserId?: number|null }} patch
    */
   update: (roomId, patch) => http.patch(`/rooms/${roomId}`, patch),
 

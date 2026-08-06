@@ -4,7 +4,10 @@ import {
   AI_SUMMARY_STATUS,
   DEFAULT_AI_SUMMARY_STATUS,
   DEFAULT_SORT_KEY,
+  DEFAULT_TOPIC_TAG,
+  ELAPSED_BADGE_HIDDEN_STATUSES,
   ROLE,
+  SLA_ALERT_HOURS,
   SOCKET_EMIT,
   SORT_KEY,
   SORT_KEY_VALUES,
@@ -12,6 +15,7 @@ import {
 } from '../constants/index.js'
 import { memosApi, roomsApi, studentsApi, toErrorMessage, usersApi } from '../api/index.js'
 import { emitSocketAck } from '../composables/useSocket.js'
+import { useAuthStore } from './auth.js'
 import { useUiStore } from './ui.js'
 
 /** 対応ステータス変更が失敗したときの既定文言（P1-2） */
@@ -29,13 +33,10 @@ const timestampOf = (value) => {
 const byRoomId = (left, right) => Number(left.id) - Number(right.id)
 
 /**
- * 既定の優先順位。ピン留め → 緊急度 → 学生最終メッセージが古い順。
+ * 既定の優先順位。緊急度 → 学生最終メッセージが古い順。
  * 時刻がないルームは経過時間を算出できないため、同条件の末尾に置く。
  */
 const byDefaultPriority = (left, right) => {
-  const pin = Number(Boolean(right.isPinned)) - Number(Boolean(left.isPinned))
-  if (pin !== 0) return pin
-
   const urgency = (URGENCY_ORDER[left.urgency] ?? Infinity) - (URGENCY_ORDER[right.urgency] ?? Infinity)
   if (urgency !== 0) return urgency
 
@@ -43,9 +44,19 @@ const byDefaultPriority = (left, right) => {
   return elapsed !== 0 ? elapsed : byRoomId(left, right)
 }
 
-/** 最終メッセージの新しい順。時刻がないルームは末尾に置く。 */
+/**
+ * 最終メッセージの新しい順。時刻がないルームは末尾に置く。
+ * timestampOf は欠損を +Infinity で表すため、単純な引き算だと降順では
+ * 欠損が先頭に来てしまう。欠損かどうかを先に判定する。
+ */
 const byLastMessage = (left, right) => {
-  const recency = timestampOf(right.lastMessage?.createdAt) - timestampOf(left.lastMessage?.createdAt)
+  const leftAt = timestampOf(left.lastMessage?.createdAt)
+  const rightAt = timestampOf(right.lastMessage?.createdAt)
+
+  const missing = Number(leftAt === Infinity) - Number(rightAt === Infinity)
+  if (missing !== 0) return missing
+
+  const recency = rightAt - leftAt
   return recency !== 0 ? recency : byRoomId(left, right)
 }
 
@@ -55,13 +66,58 @@ const byElapsedTime = (left, right) => {
   return elapsed !== 0 ? elapsed : byRoomId(left, right)
 }
 
-/** フィルタ条件を満たすルームだけを残す。 */
+/**
+ * ソートキーに対応する比較関数（business-logic.md §6）。
+ * 受信箱（sortedRooms）と全学生（allSortedRooms）で同じ並びになるよう1箇所に集約する。
+ */
+const comparatorOf = (sortKey) => {
+  switch (sortKey) {
+    case SORT_KEY.LAST_MESSAGE:
+      return byLastMessage
+    case SORT_KEY.ELAPSED:
+      return byElapsedTime
+    case SORT_KEY.DEFAULT:
+    default:
+      return byDefaultPriority
+  }
+}
+
+/** フィルタ条件を満たすルームだけを残す（P1-7）。 */
 const filterRooms = (rooms, filters) => {
-  const { selectionStatus } = filters
+  const {
+    handlingStatus,
+    selectionStatus,
+    topicTag,
+    urgency,
+    overdueOnly,
+    q,
+  } = filters
+  const keyword = q.trim().toLowerCase()
+
   return rooms.filter((room) => {
+    if (handlingStatus.length && !handlingStatus.includes(room.handlingStatus)) return false
     if (selectionStatus.length && !selectionStatus.includes(room.student?.selectionStatus)) {
       return false
     }
+    // 用件タグはサーバが最新の学生メッセージから導出する。まだ発言が無いルームは null
+    if (topicTag.length && !topicTag.includes(room.topicTag ?? DEFAULT_TOPIC_TAG)) return false
+    if (urgency.length && !urgency.includes(room.urgency)) return false
+
+    // 24h超（P1-8 のサマリーからの絞り込み用）。返信済み・完了は SLA の対象外
+    if (
+      overdueOnly &&
+      (ELAPSED_BADGE_HIDDEN_STATUSES.includes(room.handlingStatus) ||
+        (room.elapsedHours ?? 0) < SLA_ALERT_HOURS)
+    ) {
+      return false
+    }
+
+    if (keyword) {
+      const haystack =
+        `${room.student?.displayName ?? ''} ${room.student?.university ?? ''}`.toLowerCase()
+      if (!haystack.includes(keyword)) return false
+    }
+
     return true
   })
 }
@@ -76,6 +132,27 @@ const MEMO_ERROR = Object.freeze({
 
 /** 更新の新しい順。引き継ぎ時に最新の申し送りが上に来るようにする */
 const byUpdatedAtDesc = (a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt))
+
+/**
+ * フィルタの初期値。state の初期化と clearFilters / hasActiveFilters が同じ定義を見るよう、
+ * 毎回新しいオブジェクトを返す関数にしておく（共有すると参照が漏れて相互に汚染される）。
+ */
+function initialFilters() {
+  return {
+    /** @type {string[]} HANDLING_STATUS の配列 */
+    handlingStatus: [],
+    /** @type {string[]} SELECTION_STATUS の配列 */
+    selectionStatus: [],
+    /** @type {string[]} TOPIC_TAG の配列 */
+    topicTag: [],
+    /** @type {string[]} URGENCY の配列 */
+    urgency: [],
+    /** 24h超のみ（サマリーバーからの絞り込み用） */
+    overdueOnly: false,
+    /** 氏名・大学の部分一致検索 */
+    q: '',
+  }
+}
 
 /**
  * 受信箱ストア（P1-1 / P1-7 / P1-8・frontend.md §3）
@@ -94,7 +171,6 @@ const byUpdatedAtDesc = (a, b) => String(b.updatedAt).localeCompare(String(a.upd
  *   handlingStatus: HANDLING_STATUS,
  *   urgency: URGENCY,
  *   topicTag: TOPIC_TAG,
- *   isPinned: boolean,
  *   assignee: { id: number, displayName: string } | null,   // null = 未割当
  *   unreadCount: number,
  *   lastMessage: { id, body, createdAt, senderId } | null,
@@ -112,25 +188,8 @@ export const useRoomsStore = defineStore('rooms', {
     /** @type {object[]} 全ルーム。順序は保持しない（並べ替えは sortedRooms が行う） */
     rooms: [],
 
-    /** フィルタ条件（P1-7）。null / 空配列 = 絞り込みなし */
-    filters: {
-      /** @type {string[]} HANDLING_STATUS の配列 */
-      handlingStatus: [],
-      /** @type {string[]} SELECTION_STATUS の配列 */
-      selectionStatus: [],
-      /** @type {string[]} TOPIC_TAG の配列 */
-      topicTag: [],
-      /** @type {string[]} URGENCY の配列 */
-      urgency: [],
-      /** @type {number|null} 担当者ユーザーID。'unassigned' で未割当のみ */
-      assigneeId: null,
-      /** 「自分の担当のみ」トグル */
-      onlyMine: false,
-      /** 24h超のみ（サマリーバーからの絞り込み用） */
-      overdueOnly: false,
-      /** 氏名・大学の部分一致検索 */
-      q: '',
-    },
+    /** フィルタ条件（P1-7）。null / 空配列 = 絞り込みなし。定義は initialFilters() を見ること */
+    filters: initialFilters(),
 
     /** @type {string} SORT_KEY のいずれか */
     sortKey: DEFAULT_SORT_KEY,
@@ -179,37 +238,62 @@ export const useRoomsStore = defineStore('rooms', {
     roomById: (s) => (roomId) => s.rooms.find((room) => room.id === Number(roomId)),
 
     /**
-     * filters を適用した結果（並べ替え前）。
-     * まず選考ステータスのみ実装（P1-7）。他条件は次のステップ以降で追加する。
+     * ログイン中の人事が担当するルーム（#28）。受信箱に出るのはこれだけ。
+     *
+     * 未アサインのルームはここで落ちるため、**どの人事の受信箱にも出ない**。
+     * 拾い上げは受信箱とは別の全学生管理画面が担う想定。
+     * @returns {object[]}
      */
-    filteredRooms: (s) => filterRooms(s.rooms, s.filters),
+    myRooms: (s) => {
+      const myUserId = useAuthStore().currentUserId
+      return s.rooms.filter((room) => room.assignee?.id === myUserId)
+    },
+
+    /**
+     * filters を適用した結果（並べ替え前）。
+     * 受信箱は担当制なので、**まず自分の担当ルームだけに絞る**（myRooms）。
+     * 絞り込みはサーバに投げ直さずここで行う。socket の room:updated が届いた瞬間に
+     * 絞り込み結果へ反映させるため（frontend.md §3）。
+     */
+    filteredRooms(s) {
+      return filterRooms(this.myRooms, s.filters)
+    },
 
     /**
      * 表示用の最終リスト。
-     * SORT_KEY.DEFAULT: is_pinned DESC → urgency（high→normal→low）→ lastStudentMessageAt ASC
+     * SORT_KEY.DEFAULT: urgency（high→normal→low）→ lastStudentMessageAt ASC
      * SORT_KEY.LAST_MESSAGE: lastMessage.createdAt DESC
      * SORT_KEY.ELAPSED: lastStudentMessageAt ASC（経過時間が長い順）
      * （business-logic.md §6）
      */
-    sortedRooms: (s) => {
-      const rooms = filterRooms(s.rooms, s.filters)
+    sortedRooms(s) {
+      // filteredRooms は毎回新しい配列を返すので、sort が s.rooms を壊すことはない
+      return [...this.filteredRooms].sort(comparatorOf(s.sortKey))
+    },
 
-      switch (s.sortKey) {
-        case SORT_KEY.LAST_MESSAGE:
-          return rooms.sort(byLastMessage)
-        case SORT_KEY.ELAPSED:
-          return rooms.sort(byElapsedTime)
-        case SORT_KEY.DEFAULT:
-        default:
-          return rooms.sort(byDefaultPriority)
-      }
+    /**
+     * 全学生（S-08）用の一覧。**担当外・未配属も含む全ルーム**に
+     * filters と sortKey を適用した結果。
+     *
+     * 受信箱・ホームは担当制で myRooms に絞るが、この画面だけは
+     * 「どの人事の受信箱にも出ていない学生」を拾い上げるために全件を見る。
+     * filterRooms は新しい配列を返すので、sort が s.rooms を壊すことはない。
+     */
+    allSortedRooms(s) {
+      return filterRooms(s.rooms, s.filters).sort(comparatorOf(s.sortKey))
     },
 
     /** フィルタが1つでも掛かっているか（「条件をクリア」ボタンの活性判定） */
-    hasActiveFilters: (s) => false,
+    hasActiveFilters: (s) =>
+      Object.entries(s.filters).some(([key, value]) => {
+        const initial = initialFilters()[key]
+        return Array.isArray(value) ? value.length > 0 : value !== initial
+      }),
 
-    /** 全ルームの未読合計 */
-    totalUnread: (s) => 0,
+    /** 自分の担当ルームの未読合計（受信箱に出るものだけを数える） */
+    totalUnread() {
+      return this.myRooms.reduce((total, room) => total + (room.unreadCount ?? 0), 0)
+    },
 
     /** @returns {(roomId: number) => object[]} 指定ルームのメモ（個人＋共有・更新の新しい順） */
     memosOf: (s) => (roomId) => [...(s.memosByRoomId[Number(roomId)] ?? [])].sort(byUpdatedAtDesc),
@@ -446,9 +530,6 @@ export const useRoomsStore = defineStore('rooms', {
       }
     },
 
-    /** PATCH /api/rooms/:id { isPinned }（P2-8） */
-    async togglePin(roomId) {},
-
     /**
      * PATCH /api/students/:userId（P2-4 プロフィールのインライン編集 / P3-4 日程調整）
      * @param {number} userId 学生のユーザーID（ルームIDではない）
@@ -486,19 +567,34 @@ export const useRoomsStore = defineStore('rooms', {
       this.filters = { ...this.filters, ...patch }
     },
 
-    /** フィルタを初期状態へ戻す（「条件をクリア」） */
-    clearFilters() {},
+    /**
+     * 配列フィルタの1項目をトグルする（チェックボックスからの入口）。
+     * @param {'handlingStatus'|'selectionStatus'|'topicTag'|'urgency'} key
+     * @param {string} value 対応する列挙値
+     */
+    toggleFilterValue(key, value) {
+      const current = this.filters[key]
+      this.applyFilters({
+        [key]: current.includes(value)
+          ? current.filter((item) => item !== value)
+          : [...current, value],
+      })
+    },
+
+    /** フィルタを初期状態へ戻す（「条件をクリア」）。ソート条件は保持する */
+    clearFilters() {
+      this.filters = initialFilters()
+    },
 
     /** @param {string} sortKey SORT_KEY のいずれか */
     setSortKey(sortKey) {
       if (SORT_KEY_VALUES.includes(sortKey)) this.sortKey = sortKey
     },
 
-    /** 「自分の担当のみ」トグル */
-    toggleOnlyMine() {},
-
     reset() {
       this.rooms = []
+      this.filters = initialFilters()
+      this.sortKey = DEFAULT_SORT_KEY
       this.summary = { needsReply: 0, urgent: 0, overdue24h: 0, unassigned: 0 }
       this.aiSummary = {
         status: DEFAULT_AI_SUMMARY_STATUS,

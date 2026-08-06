@@ -12,10 +12,10 @@ import {
 import { updateAssignee, updateHandlingStatus } from '../services/roomStatus.js';
 import { markRoomRead } from '../services/readReceipt.js';
 import {
+  DEFAULT_SORT_KEY,
   HANDLING_STATUS_VALUES,
   ROLE,
   SELECTION_STATUS_VALUES,
-  SORT_KEY,
   SORT_KEY_VALUES,
   TOPIC_TAG_VALUES,
   URGENCY_VALUES,
@@ -48,7 +48,7 @@ function parseRoomFilters(query, userId) {
   const selectionStatus = parseEnumList(query.selectionStatus, SELECTION_STATUS_VALUES);
   const topicTag = parseEnumList(query.topicTag, TOPIC_TAG_VALUES);
   const urgency = parseEnumList(query.urgency, URGENCY_VALUES);
-  const sort = query.sort ?? SORT_KEY.DEFAULT;
+  const sort = query.sort ?? DEFAULT_SORT_KEY;
 
   if (
     handlingStatus === null ||
@@ -113,7 +113,7 @@ router.get('/:id', requireAuth, (req, res) => {
   res.json({ room });
 });
 
-/** PATCH /rooms/:id で変更できる項目。P2-8（isPinned）は未実装 */
+/** PATCH /rooms/:id で変更できる項目 */
 const PATCHABLE_KEYS = Object.freeze(['handlingStatus', 'assigneeUserId']);
 
 /** 担当人事に指定できるのは hr / admin のユーザーのみ。null は「未割当」 */

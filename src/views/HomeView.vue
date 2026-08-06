@@ -4,7 +4,7 @@
 // 人事のログイン後の着地点。ステータスごとの列に学生カードを積んだボードで俯瞰する画面で、
 // **返信はここでは行わない**（カードクリックで /inbox/:roomId へ渡す）。
 //
-// 縦割りの軸は BoardGroupSwitch（対応／選考／緊急度）で切り替える。既定は選考。
+// 縦割りの軸は BoardGroupSwitch（対応／選考／緊急度）で切り替える。既定は対応ステータス。
 // 並び替え UI は持たない（列の中は常に緊急度の高い順で固定）。
 //
 // 右カラムは AI 現況サマリー（P3-1a）。右下の円形ボタンで開閉する。
@@ -16,7 +16,7 @@ import { useUiStore } from "../stores/ui.js"
 import AiLauncherButton from "../components/AiLauncherButton.vue"
 import AiSummaryCard from "../components/AiSummaryCard.vue"
 import BoardGroupSwitch from "../components/BoardGroupSwitch.vue"
-import HomeFilterBar from "../components/HomeFilterBar.vue"
+import FilterBar from "../components/FilterBar.vue"
 import StudentBoard from "../components/StudentBoard.vue"
 import SummaryBar from "../components/SummaryBar.vue"
 
@@ -25,7 +25,6 @@ const TITLE = "ホーム"
 /** コンセプトの一文（CLAUDE.md §1）。この画面が何であるかを毎回思い出させる */
 const SUBTITLE = "返信すべき学生が、上から順に並んでいます"
 /** 検索は Q-5（全文検索にするか氏名のみか）が未決のため、まだ活性にしない */
-const SEARCH_HINT = "検索は P1-7 で実装予定です"
 // #endregion
 
 // #region global state
@@ -34,7 +33,13 @@ const ui = useUiStore()
 // #endregion
 
 // #region computed
-const roomCount = computed(() => rooms.rooms.length)
+const roomCount = computed(() => rooms.sortedRooms.length)
+
+/** 検索欄。絞り込み条件は受信箱と共有する（roomsStore.filters・frontend.md §3） */
+const searchQuery = computed({
+  get: () => rooms.filters.q,
+  set: (value) => rooms.applyFilters({ q: value }),
+})
 // #endregion
 
 // #region lifecycle
@@ -69,17 +74,17 @@ onMounted(async () => {
           <SummaryBar />
 
           <input
+            v-model="searchQuery"
             class="head__search"
             type="search"
             placeholder="氏名・大学で検索"
-            :title="SEARCH_HINT"
-            disabled
+            aria-label="氏名・大学で検索"
           >
         </div>
 
         <div class="head__filter-row">
           <BoardGroupSwitch />
-          <HomeFilterBar />
+          <FilterBar />
           <span class="head__count">{{ roomCount }}件</span>
         </div>
       </header>

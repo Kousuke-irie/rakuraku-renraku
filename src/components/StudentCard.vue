@@ -29,8 +29,12 @@ const CHIPS = Object.freeze([
 const props = defineProps({
   /** roomsStore.rooms の要素 */
   room: { type: Object, required: true },
-  /** 縦割りに使っている軸（BOARD_GROUP_BY のいずれか）。この軸のチップは出さない */
-  groupBy: { type: String, required: true },
+  /**
+   * 縦割りに使っている軸（BOARD_GROUP_BY のいずれか）。この軸のチップは出さない。
+   * 空文字（既定）は「軸がステータスではない」場合。全学生（S-08）は担当人事で
+   * 縦割りするため、対応・選考・緊急度の3つとも出す。
+   */
+  groupBy: { type: String, default: "" },
 })
 
 // #region computed
@@ -64,14 +68,7 @@ const isLow = computed(() => props.room.urgency === URGENCY.LOW)
         :color="room.student?.avatarColor ?? ''"
         size="md"
       />
-      <span class="card__name">
-        <span
-          v-if="room.isPinned"
-          class="card__pin"
-          aria-label="ピン留め"
-        >📌</span>
-        {{ room.student?.displayName }}
-      </span>
+      <span class="card__name">{{ room.student?.displayName }}</span>
       <!-- 件数ではなく「新着があるか」だけを点で示す -->
       <UnreadBadge
         :count="room.unreadCount ?? 0"
@@ -142,10 +139,6 @@ const isLow = computed(() => props.room.urgency === URGENCY.LOW)
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.card__pin {
-  font-size: 10px;
 }
 
 .card__chips {

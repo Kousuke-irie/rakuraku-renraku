@@ -10,10 +10,12 @@
 // socket の購読は composables/useSocket.js に集約されている（CLAUDE.md §6-12）。
 // このコンポーネントは Pinia ストアを読み書きするだけで socket.on() を書かない。
 import { computed, onMounted, watch } from "vue"
+import { useComposerHeight } from "../composables/useComposerHeight.js"
 import { useAuthStore } from "../stores/auth.js"
 import { useRoomsStore } from "../stores/rooms.js"
 import { useMessagesStore } from "../stores/messages.js"
 import { useUiStore } from "../stores/ui.js"
+import ComposerResizeHandle from "../components/ComposerResizeHandle.vue"
 import MessageList from "../components/MessageList.vue"
 
 // #region constants
@@ -59,7 +61,21 @@ const draft = computed({
 })
 
 const canSend = computed(() => Boolean(roomId.value) && draft.value.trim().length > 0)
+// #endregion
 
+// #region composer height
+// 長文でも読めるように、入力欄の高さは本文に追従させる（つまみで固定もできる）
+const {
+  textareaRef,
+  manualHeight: composerHeight,
+  height: composerCurrentHeight,
+  heightStyle: composerStyle,
+  minHeight: composerMinHeight,
+  maxHeight: composerMaxHeight,
+} = useComposerHeight(draft)
+// #endregion
+
+// #region computed
 /** 既読を送る基準になる最新メッセージID（楽観描画中のものは id が無いので除く） */
 const lastMessageId = computed(() => {
   if (!roomId.value) return null
@@ -157,10 +173,19 @@ const onPublish = async () => {
         @submit.prevent="onPublish"
       >
         <div class="composer__box">
+          <!-- 高さ変更のつまみ。ドラッグで固定、ダブルクリックで本文追従に戻す -->
+          <ComposerResizeHandle
+            v-model="composerHeight"
+            :current-height="composerCurrentHeight"
+            :min="composerMinHeight"
+            :max="composerMaxHeight"
+          />
           <textarea
+            ref="textareaRef"
             v-model="draft"
             class="composer__input"
             rows="3"
+            :style="composerStyle"
             placeholder="メッセージを入力"
             :disabled="!roomId"
             @keydown.enter.meta.exact.prevent="onPublish"
@@ -266,15 +291,21 @@ const onPublish = async () => {
   box-shadow: var(--shadow-1);
 }
 
+/* 高さは useComposerHeight が :style で与える（本文追従／つまみで固定）。
+   scrollHeight と揃えるため box-sizing は border-box にしておく。
+   上端の余白はつまみ（ComposerResizeHandle）が持つので padding-top は詰める */
 .composer__input {
   display: block;
+  box-sizing: border-box;
   width: 100%;
-  padding: var(--space-md) var(--space-lg) 0;
+  padding: var(--space-xs) var(--space-lg) 0;
   border: 0;
   background: none;
   color: var(--color-ink);
   font-size: 15px;
   line-height: 1.6;
+  /* 上限に達したら入力欄の中でスクロールさせる */
+  overflow-y: auto;
   resize: none;
 }
 

@@ -9,13 +9,15 @@
 //   入力欄のキー操作をストアの action に取り次ぐだけ
 // - 変数展開（P2-2）のロジックは utils/snippetRenderer.js に集約する（business-logic.md §5）
 // - socket の購読は composables/useSocket.js に集約されている（CLAUDE.md §6-12）
-import { computed, ref, watch } from "vue"
+import { computed, watch } from "vue"
+import { useComposerHeight } from "../composables/useComposerHeight.js"
 import { SELECTION_STATUS_META } from "../constants/index.js"
 import { useAuthStore } from "../stores/auth.js"
 import { useMessagesStore } from "../stores/messages.js"
 import { useRoomsStore } from "../stores/rooms.js"
 import { useUiStore } from "../stores/ui.js"
 import { hasUnsetVariable, renderSnippetBody } from "../utils/snippetRenderer.js"
+import ComposerResizeHandle from "./ComposerResizeHandle.vue"
 import MessageList from "./MessageList.vue"
 import SnippetPalette from "./SnippetPalette.vue"
 import StatusChip, { CHIP_KIND } from "./StatusChip.vue"
@@ -98,9 +100,20 @@ const lastMessageId = computed(() => {
 })
 // #endregion
 
-// #region snippet palette（P2-1）
-const textareaRef = ref(null)
+// #region composer height
+// 定型文を展開すると本文が3行に収まらないことがあるため、入力欄の高さは
+// 本文に追従させる（つまみで固定もできる）。composables/useComposerHeight.js
+const {
+  textareaRef,
+  manualHeight: composerHeight,
+  height: composerCurrentHeight,
+  heightStyle: composerStyle,
+  minHeight: composerMinHeight,
+  maxHeight: composerMaxHeight,
+} = useComposerHeight(draft)
+// #endregion
 
+// #region snippet palette（P2-1）
 watch(snippetCommandQuery, (query) => {
   if (query === null) {
     if (ui.snippetPaletteOpen) ui.closeSnippetPalette()
@@ -235,11 +248,19 @@ const onSubmit = async () => {
           v-if="ui.snippetPaletteOpen"
           @select="expandSnippet"
         />
+        <!-- 高さ変更のつまみ。ドラッグで固定、ダブルクリックで本文追従に戻す -->
+        <ComposerResizeHandle
+          v-model="composerHeight"
+          :current-height="composerCurrentHeight"
+          :min="composerMinHeight"
+          :max="composerMaxHeight"
+        />
         <textarea
           ref="textareaRef"
           v-model="draft"
           class="composer__input"
           rows="3"
+          :style="composerStyle"
           placeholder="メッセージを入力（「/」で定型文を呼び出せます）"
           @keydown="onComposerKeydown"
         />
@@ -349,15 +370,21 @@ const onSubmit = async () => {
   box-shadow: var(--shadow-1);
 }
 
+/* 高さは useComposerHeight が :style で与える（本文追従／つまみで固定）。
+   scrollHeight と揃えるため box-sizing は border-box にしておく。
+   上端の余白はつまみ（ComposerResizeHandle）が持つので padding-top は詰める */
 .composer__input {
   display: block;
+  box-sizing: border-box;
   width: 100%;
-  padding: var(--space-md) var(--space-lg) 0;
+  padding: var(--space-xs) var(--space-lg) 0;
   border: 0;
   background: none;
   color: var(--color-ink);
   font-size: 15px;
   line-height: 1.6;
+  /* 上限に達したら入力欄の中でスクロールさせる。ネイティブのつまみは使わない */
+  overflow-y: auto;
   resize: none;
 }
 
