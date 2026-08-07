@@ -42,6 +42,26 @@ function addMissingMessageScheduleColumn(db) {
 }
 
 /**
+ * schedule_requests に面接ステップのキーを足す（S-11）。
+ * schema.sql は CREATE TABLE IF NOT EXISTS なので、既存DBには列が増えない。
+ */
+function addMissingScheduleStatusKeyColumn(db) {
+  const exists = db
+    .prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schedule_requests'`)
+    .get();
+  if (!exists) return;
+
+  const columns = new Set(
+    db.prepare(`PRAGMA table_info(schedule_requests)`).all().map((column) => column.name),
+  );
+  if (columns.has('selection_status_key')) return;
+
+  // CHECK 付きの ALTER は SQLite が受け付けないので制約なしで足す。
+  // 値の妥当性は shared/constants.js の INTERVIEW_SURVEY_STATUS_KEYS 側で担保する。
+  db.exec(`ALTER TABLE schedule_requests ADD COLUMN selection_status_key TEXT`);
+}
+
+/**
  * compliance_rules.code の UNIQUE を落とす（P4-2）。
  *
  * P4-0 で `code TEXT NOT NULL UNIQUE` として作ってしまったが、1つのルールが複数の
@@ -157,6 +177,8 @@ function migrate() {
 
   // schema.sql 内の idx_messages_schedule 作成より先に既存 messages を拡張する。
   addMissingMessageScheduleColumn(db);
+  // 同じ理由で idx_schedule_status_key より先に schedule_requests を拡張する。
+  addMissingScheduleStatusKeyColumn(db);
   // schema.sql は CREATE TABLE IF NOT EXISTS なので、旧定義の取り壊しは適用前に行う。
   dropLegacyComplianceRuleUnique(db);
   const stashed = stashLegacyAlerts(db);

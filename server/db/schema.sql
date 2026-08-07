@@ -153,7 +153,15 @@ CREATE TABLE IF NOT EXISTS schedule_requests (
   student_user_id INTEGER NOT NULL REFERENCES users(id),
   interviewer_id INTEGER NOT NULL REFERENCES calendar_interviewers(id),
   created_by_user_id INTEGER NOT NULL REFERENCES users(id),
+  -- 学生に見せる面接段階の表示名（自由入力。例「二次面接」）。人事が書き換えられる
   selection_stage TEXT NOT NULL,
+  -- ★上の表示名に対応する SELECTION_STATUS のキー（S-11）。
+  --   面接アンケートが「学生Xの第N次面接を誰が担当したか」を引くのに使う。
+  --   表示名は自由入力なので突き合わせに使えない（「2次」「二次面接（役員）」等）。
+  --   S-11 以前に作られた行は NULL。CHECK は付けない（既存DBへ ALTER で足すため。
+  --   SQLite は CHECK 付きの ADD COLUMN を受け付けない）。値の妥当性は
+  --   shared/constants.js の INTERVIEW_SURVEY_STATUS_KEYS 側で担保する
+  selection_status_key TEXT,
   duration_minutes INTEGER NOT NULL CHECK(duration_minutes > 0),
   available_from TEXT NOT NULL,
   available_until TEXT NOT NULL,
@@ -301,6 +309,33 @@ CREATE TABLE IF NOT EXISTS student_notes (
   UNIQUE(student_user_id, note_key)
 );
 
+-- 面接アンケートの回答（S-11）。学生が面接ステップごとに★5段階＋自由記述で答える。
+--
+-- ★人事に「誰が書いたか」を出さないこと。カードに「回答内容は選考の合否には一切
+--   影響しません」と書いて集めている。読み手が特定できると分かった時点で学生は
+--   忖度して書き、この機能の価値そのものが消える。student_notes と同じ思想。
+--   student_user_id を持つのは1学生1回答を UNIQUE で担保するためだけで、
+--   人事向けのレスポンスには**絶対に載せない**（services/interviewSurveys.js）。
+--
+-- 回答は1回きりで上書きしない（学生カードが「ご回答ありがとうございました」で
+-- 終端する既存UIに合わせる）。そのため updated_at を持たない。
+CREATE TABLE IF NOT EXISTS interview_surveys (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  student_user_id INTEGER NOT NULL REFERENCES users(id),
+  -- 面接ステップのみ。INTERVIEW_SURVEY_STATUS_KEYS と完全に一致させること
+  status_key TEXT NOT NULL CHECK(status_key IN (
+    'interview_1', 'interview_2', 'interview_3', 'interview_4', 'interview_5'
+  )),
+  -- ★回答時点の面接官のスナップショット。あとから日程や担当が変わっても
+  --   過去の評価を書き換えないため、参照ではなくコピーとして持つ。
+  --   予約実績から特定できなければ NULL（集計では「面接官不明」に寄せる）
+  interviewer_id INTEGER REFERENCES calendar_interviewers(id),
+  rating INTEGER NOT NULL CHECK(rating BETWEEN 1 AND 5),
+  comment TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE(student_user_id, status_key)
+);
+
 CREATE INDEX IF NOT EXISTS idx_messages_room       ON messages(room_id, id DESC);
 CREATE INDEX IF NOT EXISTS idx_rooms_sort          ON rooms(urgency, last_student_message_at);
 CREATE INDEX IF NOT EXISTS idx_rooms_status        ON rooms(handling_status);
@@ -316,6 +351,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_schedule_one_waiting_per_room
 CREATE INDEX IF NOT EXISTS idx_selection_steps_order ON selection_steps(is_enabled, sort_order);
 CREATE INDEX IF NOT EXISTS idx_selection_feedbacks  ON selection_feedbacks(student_user_id);
 CREATE INDEX IF NOT EXISTS idx_student_notes        ON student_notes(student_user_id);
+-- 面接官別の集計（S-11 ダッシュボード）。回答の新しい順に読む
+CREATE INDEX IF NOT EXISTS idx_interview_surveys    ON interview_surveys(interviewer_id, created_at DESC);
+-- 予約実績から「学生×面接ステップ→面接官」を引く（S-11 の面接官スナップショット解決）
+CREATE INDEX IF NOT EXISTS idx_schedule_status_key
+  ON schedule_requests(student_user_id, selection_status_key);
 -- ★多重通知を防ぐ唯一の仕組み。60秒タイマーはこれに依存している。
 -- SLA：1ルーム×1起点メッセージ×1宛先×1種別につき1件だけ。
 CREATE UNIQUE INDEX IF NOT EXISTS idx_alerts_sla_unique

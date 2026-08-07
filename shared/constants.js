@@ -401,6 +401,40 @@ export const AI_SUMMARY_STATUS_VALUES = Object.values(AI_SUMMARY_STATUS);
 export const AI_SUMMARY_TODO_LIMIT = 3;
 
 // ---------------------------------------------------------------------------
+// 面接アンケート（S-11）
+// 学生が面接ステップごとに★5段階＋自由記述で答え、人事は面接官別に読む。
+// ---------------------------------------------------------------------------
+
+/** アンケートの対象になる選考ステップ。schema.sql の CHECK と完全に一致させること */
+export const INTERVIEW_SURVEY_STATUS_KEYS = Object.freeze(
+  SELECTION_STATUS_VALUES.filter((status) => status.startsWith('interview_')),
+);
+
+/** ★の下限・上限。サーバの検証と学生カードのボタン数を必ず揃える */
+export const INTERVIEW_SURVEY_RATING_MIN = 1;
+export const INTERVIEW_SURVEY_RATING_MAX = 5;
+
+/** 自由記述の上限。サーバの検証と textarea の maxlength を必ず揃える */
+export const INTERVIEW_SURVEY_COMMENT_MAX_LENGTH = 1000;
+
+/**
+ * ★匿名性の下限。回答がこの件数に満たない面接官は、評価もコメントも人事に出さない。
+ *
+ * 1〜2件だと面接日程と突き合わせて誰の回答かが特定できてしまう。
+ * 「合否には影響しません」と約束して集めている以上、特定可能な状態で見せた時点で
+ * 約束違反であり、学生が忖度して書くようになってデータ自体が無価値になる。
+ * **この閾値を下げないこと。** 判定は必ずサーバで行う（クライアントで隠さない）。
+ */
+export const INTERVIEW_SURVEY_MIN_SAMPLE = 3;
+
+/** 面接官を特定できなかった回答をまとめる先。実在の面接官IDと衝突しない値にする */
+export const INTERVIEW_SURVEY_UNKNOWN_INTERVIEWER_ID = 'unknown';
+export const INTERVIEW_SURVEY_UNKNOWN_INTERVIEWER_LABEL = '面接官不明';
+
+/** 自由記述の要約スコープ。人事画面のドロップダウンの「全体」に対応する */
+export const INTERVIEW_SURVEY_SCOPE_ALL = 'all';
+
+// ---------------------------------------------------------------------------
 // 初期値
 // ---------------------------------------------------------------------------
 
