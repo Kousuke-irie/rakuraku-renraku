@@ -785,7 +785,7 @@ function clearExistingData() {
   db.prepare(`UPDATE rooms SET last_message_id = NULL, ai_analyzed_message_id = NULL`).run();
   const tables = [
     'alerts', 'read_receipts', 'memos', 'room_members', 'calendar_bookings', 'calendar_events',
-    'messages', 'schedule_requests', 'selection_feedbacks', 'rooms', 'students',
+    'messages', 'schedule_requests', 'selection_feedbacks', 'student_notes', 'rooms', 'students',
     'calendar_interviewers', 'users', 'tag_rules', 'compliance_rules', 'snippets',
     'company_info', 'selection_steps',
   ];
