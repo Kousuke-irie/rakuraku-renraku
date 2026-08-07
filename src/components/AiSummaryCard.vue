@@ -1,7 +1,8 @@
 <script setup>
-// ホーム右カラムの AI 現況サマリー／TODO（P3-1a・business-logic.md §7-2）
+// AI 現況サマリー／TODO のカード本体（P3-1a・business-logic.md §7-2）
 //
-// AI が落ちてもホームの一覧は動き続けること（business-logic.md §7-2）。
+// 置き場所は AiTodoPanel（らくす君の隣に開く浮遊パネル）。どの画面からでも開ける。
+// AI が落ちても画面の一覧は動き続けること（business-logic.md §7-2）。
 // このカードはエラーを表示するだけで、例外を外へ投げない。
 import { computed } from "vue"
 import { AI_SUMMARY_STATUS, AI_SUMMARY_STATUS_META } from "../constants/index.js"
@@ -96,7 +97,7 @@ const onGenerate = () => rooms.regenerateAiSummary()
         class="icon-button ai-card__close"
         title="AI サマリーを閉じる"
         aria-label="AI サマリーを閉じる"
-        @click="ui.toggleAiPanel()"
+        @click="ui.closeAiPanel()"
       >
         <span aria-hidden="true">×</span>
       </button>
@@ -132,9 +133,11 @@ const onGenerate = () => rooms.regenerateAiSummary()
             :key="todo.roomId"
             class="todo__item"
           >
+            <!-- 遷移したら用は済んでいる。開いたまま残すと遷移先の画面に重なる -->
             <RouterLink
               class="todo__link"
               :to="`/inbox/${todo.roomId}`"
+              @click="ui.closeAiPanel()"
             >
               <span
                 class="todo__index"

@@ -62,7 +62,7 @@
   --nav-rail-width: 64px;
   --nav-rail-width-open: 208px;
 
-  /* 右下に固定した AI 起動ボタン（AiLauncherButton）の占有高さ。
+  /* 画面右下に常駐するもの（らくす君／代替の AiLauncherButton）の占有高さ。
      ボタン 56px ＋ 画面端の余白。重なると押せなくなる要素はこのぶん下を空ける。 */
   --ai-fab-clearance: 80px;
 

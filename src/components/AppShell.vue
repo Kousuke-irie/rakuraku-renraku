@@ -10,6 +10,12 @@
 //
 // プロフィール編集ダイアログはレールの中ではなくここに置く。開閉状態は ui ストアが持つ。
 // トーストも同様に、どの画面からでも出せるようにここへ1つだけ置く。
+//
+// AI ToDo（AiTodoPanel）も同じ理由でここに1つだけ置く。ホーム専用ではなく
+// **どの画面からでも聞ける**ようにするため。入口はらくす君で、
+// らくす君を非表示にしている間だけ AiLauncherButton（円形ボタン）が代わりを務める。
+import AiLauncherButton from "./AiLauncherButton.vue"
+import AiTodoPanel from "./AiTodoPanel.vue"
 import AppNavRail from "./AppNavRail.vue"
 import ProfileDialog from "./ProfileDialog.vue"
 import RakusuKunPet from "./RakusuKunPet.vue"
@@ -31,7 +37,9 @@ const ui = useUiStore()
 
     <ProfileDialog />
     <ToastStack />
+    <AiTodoPanel />
     <RakusuKunPet v-if="ui.petVisible" />
+    <AiLauncherButton v-else />
   </div>
 </template>
 

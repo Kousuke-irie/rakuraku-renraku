@@ -1,9 +1,18 @@
 <script setup>
 // GitHub Pets のように画面へ常駐する通知ペット。
 // 通知イベントは uiStore が受け取り、ここでは表情・吹き出し・ドラッグ移動を担当する。
+//
+// ★ホーム右下にあった AI 起動ボタンはここへ統合した。
+//   らくす君をクリックすると出るのは**吹き出しまで**で、そこから
+//   「通知を確認する」「今日の ToDo を聞く」の2つへ分岐する。
+//   クリックだけで AI パネルが開くと、通知を見たいだけのときに邪魔になる。
+//   らくす君はどの画面にも常駐しているので、**どの画面からでも ToDo を聞ける**。
+//   学生にはサーバ側に ToDo が無いので（人事のみ）、通知への導線だけを出す。
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRouter } from "vue-router"
+import { useAiTodo } from "../composables/useAiTodo.js"
 import { useUiStore } from "../stores/ui.js"
+import { clampToViewport, defaultPetPosition, petBoxSize } from "../utils/petLayout.js"
 import defaultImage from "../images/rakusukun/default-cutout.png"
 import helloImage from "../images/rakusukun/hello-cutout.png"
 import surprisedImage from "../images/rakusukun/surprised-cutout.png"
@@ -20,9 +29,16 @@ const IMAGE_BY_EXPRESSION = Object.freeze({
   [EXPRESSION.SURPRISED]: surprisedImage,
 })
 const REACTION_MS = 4800
-const PET_SIZE = Object.freeze({ width: 132, height: 174, minimized: 52 })
-const VIEWPORT_MARGIN = 8
 const DRAG_THRESHOLD = 5
+/** 画面の寸法が取れるまで待つ上限（フレーム数）。約1秒 */
+const PLACE_RETRY_LIMIT = 60
+
+/** 通知が無いときに出す挨拶。ここが2つの導線の入口になる */
+const GREETING = Object.freeze({
+  TITLE: "やっほー！らくす君だよ",
+  WITH_TODO: "未読の通知と、今日の ToDo。どっちも下のボタンから見られるよ。",
+  NOTICE_ONLY: "通知が届いたら、ここからすぐに知らせるね。",
+})
 // #endregion
 
 // #region global state
@@ -31,15 +47,17 @@ const ui = useUiStore()
 
 // #region local variable
 const router = useRouter()
+const aiTodo = useAiTodo()
 let reactionTimer = null
 let dragState = null
 let suppressNextClick = false
+let placeRetryHandle = null
+let placeRetries = 0
 // #endregion
 
 // #region local state
 const expression = ref(EXPRESSION.DEFAULT)
 const bubbleOpen = ref(false)
-const minimized = ref(false)
 const greetingOpen = ref(false)
 const dragging = ref(false)
 const positioned = ref(false)
@@ -49,16 +67,13 @@ const position = ref({ x: 0, y: 0 })
 // #region computed
 const imageUrl = computed(() => IMAGE_BY_EXPRESSION[expression.value])
 const notice = computed(() => ui.mascotNotice)
-const bubbleTitle = computed(() =>
-  greetingOpen.value ? "やっほー！らくす君だよ" : notice.value?.title
-)
-const bubbleMessage = computed(() =>
-  greetingOpen.value ? "通知が届いたら、ここからすぐに知らせるね。" : notice.value?.message
-)
-const currentSize = computed(() => ({
-  width: minimized.value ? PET_SIZE.minimized : PET_SIZE.width,
-  height: minimized.value ? PET_SIZE.minimized : PET_SIZE.height,
-}))
+const minimized = computed(() => ui.petMinimized)
+const bubbleTitle = computed(() => (greetingOpen.value ? GREETING.TITLE : notice.value?.title))
+const bubbleMessage = computed(() => {
+  if (!greetingOpen.value) return notice.value?.message
+  return aiTodo.available.value ? GREETING.WITH_TODO : GREETING.NOTICE_ONLY
+})
+const currentSize = computed(() => petBoxSize(minimized.value))
 const petStyle = computed(() => ({
   left: `${position.value.x}px`,
   top: `${position.value.y}px`,
@@ -68,26 +83,50 @@ const bubbleClasses = computed(() => ({
   "pet__bubble--right": position.value.x < 300,
   "pet__bubble--below": position.value.y < 170,
 }))
+
+/** アイコンだけの当たり判定なので、何が起きるかは title と aria-label で必ず補う */
+const characterLabel = computed(() =>
+  aiTodo.available.value ? "らくす君に話しかける（通知・今日の ToDo）" : "らくす君にあいさつする"
+)
+
+const characterTitle = computed(() => `${characterLabel.value}（ドラッグで移動）`)
+
+/** 未読があるうちは件数まで見せる。開くかどうかの判断がここで済む */
+const noticeActionLabel = computed(() =>
+  ui.alertsUnreadCount > 0 ? `通知を確認する（${ui.alertsUnreadCount}件）` : "通知を確認する"
+)
+
+const todoActionLabel = computed(() => {
+  if (aiTodo.isLoading.value) return "ToDo をまとめています…"
+  return aiTodo.isOpen.value ? "今日の ToDo を閉じる" : "今日の ToDo を聞く"
+})
+
+/** ToDo の件数。開かなくても「何件あるか」だけは分かるようにする */
+const todoCount = computed(() => (aiTodo.isOpen.value ? 0 : aiTodo.todoCount.value))
 // #endregion
 
 // #region local methods
-const clampPosition = ({ x, y }) => ({
-  x: Math.min(
-    Math.max(VIEWPORT_MARGIN, x),
-    Math.max(VIEWPORT_MARGIN, window.innerWidth - currentSize.value.width - VIEWPORT_MARGIN)
-  ),
-  y: Math.min(
-    Math.max(VIEWPORT_MARGIN, y),
-    Math.max(VIEWPORT_MARGIN, window.innerHeight - currentSize.value.height - VIEWPORT_MARGIN)
-  ),
-})
+const viewportSize = () => ({ width: window.innerWidth, height: window.innerHeight })
 
+const clampPosition = (target) => clampToViewport(target, currentSize.value, viewportSize())
+
+/**
+ * 立ち位置を決める。画面の寸法が取れるまでは置かない（positioned のまま隠しておく）。
+ * レイアウト前は innerWidth/innerHeight が 0 になることがあり、そのまま既定位置を
+ * 計算すると画面の外へ出てしまう。
+ */
 const placePet = () => {
-  const initial = ui.petPosition ?? {
-    x: window.innerWidth - PET_SIZE.width - 92,
-    y: window.innerHeight - PET_SIZE.height - VIEWPORT_MARGIN,
+  const view = viewportSize()
+  if (!(view.width > 0) || !(view.height > 0)) {
+    // 取れないまま回し続けない。諦めたあとは resize が拾う
+    if (placeRetries < PLACE_RETRY_LIMIT) {
+      placeRetries += 1
+      placeRetryHandle = window.requestAnimationFrame(placePet)
+    }
+    return
   }
-  position.value = clampPosition(initial)
+  placeRetryHandle = null
+  position.value = clampToViewport(ui.petPosition ?? defaultPetPosition(view), currentSize.value, view)
   positioned.value = true
 }
 
@@ -106,7 +145,7 @@ const resetExpressionLater = () => {
 }
 
 const reactToNotice = () => {
-  minimized.value = false
+  ui.setPetMinimized(false)
   position.value = clampPosition(position.value)
   greetingOpen.value = false
   expression.value = EXPRESSION.SURPRISED
@@ -130,14 +169,13 @@ const closeBubble = () => {
 
 const minimize = () => {
   closeBubble()
-  minimized.value = true
+  ui.setPetMinimized(true)
   position.value = clampPosition(position.value)
 }
 
 const restore = () => {
-  minimized.value = false
+  ui.setPetMinimized(false)
   position.value = clampPosition(position.value)
-  greet()
 }
 
 const consumeDraggedClick = () => {
@@ -146,12 +184,25 @@ const consumeDraggedClick = () => {
   return true
 }
 
+/**
+ * 吹き出しの「今日の ToDo」から呼ぶ。サマリーが開くのは**ここを押したときだけ**。
+ * パネルと吹き出しが重なるので、開く前に吹き出しは畳む。
+ */
+const toggleTodo = () => {
+  closeBubble()
+  aiTodo.toggle()
+}
+
+/** クリックでは吹き出しを出すところまで。その先はユーザーに選ばせる */
 const onCharacterClick = () => {
-  if (!consumeDraggedClick()) greet()
+  if (consumeDraggedClick()) return
+  greet()
 }
 
 const onRestoreClick = () => {
-  if (!consumeDraggedClick()) restore()
+  if (consumeDraggedClick()) return
+  restore()
+  greet()
 }
 
 const onPointerMove = (event) => {
@@ -200,13 +251,16 @@ const startDrag = (event) => {
 }
 
 const onResize = () => {
-  position.value = clampPosition(position.value)
+  if (!positioned.value) placePet()
+  else position.value = clampPosition(position.value)
 }
 
 const openNotification = async () => {
-  const destination = notice.value?.destination ?? "/notifications"
+  // 届いた通知を見せている間だけその行き先へ飛ぶ。
+  // 挨拶から押したときは、直前の通知ではなく一覧を開く
+  const destination = greetingOpen.value ? "/notifications" : notice.value?.destination
   closeBubble()
-  await router.push(destination)
+  await router.push(destination ?? "/notifications")
 }
 // #endregion
 
@@ -225,6 +279,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   clearReactionTimer()
+  if (placeRetryHandle) window.cancelAnimationFrame(placeRetryHandle)
   window.removeEventListener("resize", onResize)
   window.removeEventListener("pointermove", onPointerMove)
   window.removeEventListener("pointerup", finishDrag)
@@ -281,21 +336,33 @@ onBeforeUnmount(() => {
         <p class="pet__bubble-message">
           {{ bubbleMessage }}
         </p>
-        <button
-          v-if="!greetingOpen && notice"
-          type="button"
-          class="pet__action"
-          @click="openNotification"
-        >
-          通知を確認する
-        </button>
+        <!-- 通知と ToDo の2本立て。どちらへ行くかはここで選ばせる -->
+        <div class="pet__actions">
+          <button
+            type="button"
+            class="pet__action"
+            @click="openNotification"
+          >
+            {{ noticeActionLabel }}
+          </button>
+          <button
+            v-if="aiTodo.available.value"
+            type="button"
+            class="pet__action pet__action--ghost"
+            :aria-expanded="aiTodo.isOpen.value"
+            @click="toggleTodo"
+          >
+            {{ todoActionLabel }}
+          </button>
+        </div>
       </section>
 
       <button
         type="button"
         class="pet__character"
-        title="クリックで挨拶・ドラッグで移動"
-        aria-label="らくす君にあいさつする"
+        :title="characterTitle"
+        :aria-label="characterLabel"
+        :aria-expanded="bubbleOpen"
         @pointerdown="startDrag"
         @click="onCharacterClick"
       >
@@ -306,6 +373,29 @@ onBeforeUnmount(() => {
           class="pet__image"
           draggable="false"
         >
+
+        <!-- 旧 AI 起動ボタン（右下の円形ボタン）の役割。生成中と ToDo 件数をここで示す。
+             状態を色だけで表現しない（CLAUDE.md §6-13）ため、必ず文字を添える -->
+        <span
+          v-if="aiTodo.available.value && (aiTodo.isLoading.value || todoCount > 0)"
+          class="pet__ai"
+          :class="{ 'pet__ai--loading': aiTodo.isLoading.value }"
+        >
+          <svg
+            class="pet__ai-icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path d="M12 3.5 l1.9 4.6 l4.6 1.9 l-4.6 1.9 l-1.9 4.6 l-1.9-4.6 l-4.6-1.9 l4.6-1.9 z" />
+          </svg>
+          <span class="pet__ai-text">{{ aiTodo.isLoading.value ? "生成中" : `ToDo ${todoCount}` }}</span>
+        </span>
       </button>
 
       <button
@@ -472,8 +562,14 @@ onBeforeUnmount(() => {
   color: var(--color-ink);
 }
 
-.pet__action {
+.pet__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
   margin-top: var(--space-sm);
+}
+
+.pet__action {
   padding: 5px 12px;
   border: 1px solid var(--color-primary);
   border-radius: var(--radius-pill);
@@ -481,6 +577,51 @@ onBeforeUnmount(() => {
   color: var(--color-on-primary);
   font-size: 11px;
   font-weight: 700;
+}
+
+/* 通知の確認が主。ToDo は添えるだけなので面を張らない */
+.pet__action--ghost {
+  background: var(--color-canvas);
+  color: var(--color-primary);
+}
+
+/* 旧 AI 起動ボタンの表示。らくす君の足元に小さく重ねる */
+.pet__ai {
+  position: absolute;
+  right: 2px;
+  bottom: 6px;
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+  padding: 3px 8px 3px 6px;
+  border: 1px solid var(--color-canvas);
+  border-radius: var(--radius-pill);
+  background-image: linear-gradient(135deg, var(--color-primary) 0%, #b64bff 100%);
+  color: var(--color-on-primary);
+  box-shadow: var(--shadow-3);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.pet__ai-icon {
+  width: 11px;
+  height: 11px;
+}
+
+.pet__ai--loading .pet__ai-icon {
+  animation: spin 1.6s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .pet__restore {
@@ -538,7 +679,8 @@ onBeforeUnmount(() => {
 
 @media (prefers-reduced-motion: reduce) {
   .pet__character,
-  .pet__image {
+  .pet__image,
+  .pet__ai-icon {
     animation: none;
     transition: none;
   }

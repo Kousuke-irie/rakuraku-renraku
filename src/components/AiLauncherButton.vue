@@ -1,52 +1,44 @@
 <script setup>
 // AI 起動ボタン（S-07 / P3-1a・frontend.md §5-2）
 //
-// 画面右下に固定した円形ボタン。チャットボットの起動ボタンと同じ体裁で、
-// 押すと右カラムの AI 現況サマリーを開き、未生成なら生成を要求する。
+// ★AI ToDo の入口は**らくす君（RakusuKunPet）に統合済み**。
+//   このボタンは「らくす君を表示する」を切った人のための代替で、
+//   らくす君が居ないときだけ AppShell が出す。押すと AiTodoPanel を開閉する。
 //
-// ★AppShell の外（HomeView 直下）ではなく position: fixed で画面に固定する。
-//   AppShell は overflow: hidden なので、通常フローに置くとペイン内に閉じ込められてしまう。
+// ★AppShell は overflow: hidden なので、通常フローではなく position: fixed で画面に固定する。
 import { computed } from "vue"
-import { AI_SUMMARY_STATUS } from "../constants/index.js"
-import { useRoomsStore } from "../stores/rooms.js"
-import { useUiStore } from "../stores/ui.js"
+import { useAiTodo } from "../composables/useAiTodo.js"
 
-// #region global state
-const rooms = useRoomsStore()
-const ui = useUiStore()
+// #region local state
+const aiTodo = useAiTodo()
 // #endregion
 
 // #region computed
-const isLoading = computed(() => rooms.aiSummary.status === AI_SUMMARY_STATUS.LOADING)
+const isLoading = computed(() => aiTodo.isLoading.value)
+
+const isOpen = computed(() => aiTodo.isOpen.value)
 
 /** アイコンだけのボタンなので、ラベルは title と aria-label で必ず補う */
 const label = computed(() => {
-  if (isLoading.value) return "AI が要約を生成しています"
-  return ui.aiPanelOpen ? "AI 現況サマリーを閉じる" : "AI 現況サマリーを開く"
+  if (isLoading.value) return "AI が今日の ToDo をまとめています"
+  return isOpen.value ? "今日の ToDo を閉じる" : "今日の ToDo を聞く"
 })
 // #endregion
 
 // #region browser event handler
-const onClick = () => {
-  const willOpen = !ui.aiPanelOpen
-  ui.toggleAiPanel()
-
-  // 開くタイミングで未生成なら生成を促す。生成済み・生成中は触らない
-  if (willOpen && rooms.aiSummary.status === AI_SUMMARY_STATUS.IDLE) {
-    rooms.regenerateAiSummary()
-  }
-}
+const onClick = () => aiTodo.toggle()
 // #endregion
 </script>
 
 <template>
   <button
+    v-if="aiTodo.available.value"
     type="button"
     class="ai-fab"
-    :class="{ 'ai-fab--loading': isLoading, 'ai-fab--active': ui.aiPanelOpen }"
+    :class="{ 'ai-fab--loading': isLoading, 'ai-fab--active': isOpen }"
     :title="label"
     :aria-label="label"
-    :aria-expanded="ui.aiPanelOpen"
+    :aria-expanded="isOpen"
     @click="onClick"
   >
     <svg

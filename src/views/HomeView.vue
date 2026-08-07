@@ -7,14 +7,12 @@
 // 縦割りの軸は BoardGroupSwitch（対応／選考／AI推奨度）で切り替える。既定は対応ステータス。
 // 並び替え UI は持たない（列の中は常にAI推奨度の高い順で固定）。
 //
-// 右カラムは AI 現況サマリー（P3-1a）。右下の円形ボタンで開閉する。
+// AI 現況サマリー（P3-1a）はこの画面の右カラムではなく、らくす君の隣に開く
+// 浮遊パネル（AppShell の AiTodoPanel）へ移した。どの画面からでも ToDo を聞けるようにするため。
 // ワードマーク・アカウント・ログアウトは全画面共通の AppNavRail（AppShell）が持つので、
 // このビューはセルを height:100% で埋めるだけ。
 import { computed, onMounted } from "vue"
 import { useRoomsStore } from "../stores/rooms.js"
-import { useUiStore } from "../stores/ui.js"
-import AiLauncherButton from "../components/AiLauncherButton.vue"
-import AiSummaryCard from "../components/AiSummaryCard.vue"
 import BoardGroupSwitch from "../components/BoardGroupSwitch.vue"
 import FilterBar from "../components/FilterBar.vue"
 import StudentBoard from "../components/StudentBoard.vue"
@@ -29,7 +27,6 @@ const SUBTITLE = "返信すべき学生が、上から順に並んでいます"
 
 // #region global state
 const rooms = useRoomsStore()
-const ui = useUiStore()
 // #endregion
 
 // #region computed
@@ -47,18 +44,15 @@ onMounted(async () => {
   // 受信箱から戻ってきたときは取得済みなので叩き直さない
   if (rooms.rooms.length === 0) await rooms.fetchRooms()
 
-  // AI 要約はログイン時にサーバ側で生成済みの想定。ここでは取りに行くだけで、
-  // 失敗しても一覧の表示は妨げない（business-logic.md §7-2）
+  // AI 要約はログイン時にサーバ側で生成済みの想定。パネルを開く前に温めておくと、
+  // らくす君を押した瞬間に ToDo が出る。失敗しても一覧の表示は妨げない（business-logic.md §7-2）
   await rooms.fetchAiSummary()
 })
 // #endregion
 </script>
 
 <template>
-  <div
-    class="home"
-    :class="{ 'home--no-ai': !ui.aiPanelOpen }"
-  >
+  <div class="home">
     <section class="pane pane--main">
       <header class="head">
         <div class="head__title-row">
@@ -91,15 +85,6 @@ onMounted(async () => {
 
       <StudentBoard />
     </section>
-
-    <aside
-      v-if="ui.aiPanelOpen"
-      class="pane pane--ai"
-    >
-      <AiSummaryCard />
-    </aside>
-
-    <AiLauncherButton />
   </div>
 </template>
 
@@ -108,16 +93,10 @@ onMounted(async () => {
 .home {
   display: grid;
   height: 100%;
-  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-columns: minmax(0, 1fr);
   /* 暗黙の行は auto だと中身（一覧の全行）より縮まないため、明示的に minmax(0,1fr) にする */
   grid-template-rows: minmax(0, 1fr);
-  gap: var(--space-md);
   min-height: 0;
-}
-
-/* AI パネルを閉じたぶんはテーブルが受け取る */
-.home--no-ai {
-  grid-template-columns: minmax(0, 1fr);
 }
 
 .pane {
@@ -196,12 +175,5 @@ onMounted(async () => {
   color: var(--color-ink-mute);
   font-size: 12px;
   white-space: nowrap;
-}
-
-/* AI カード自身が面と影を持つので、この列は入れ物に徹する。
-   下端は右下の AI ボタンぶん空ける（カードのフッタにある「要約を生成」が隠れるため） */
-.pane--ai {
-  min-width: 0;
-  padding-bottom: var(--ai-fab-clearance);
 }
 </style>

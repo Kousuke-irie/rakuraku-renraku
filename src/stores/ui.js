@@ -175,8 +175,13 @@ export const useUiStore = defineStore('ui', {
     /** プロフィールパネル内の申し送りメモ（P2-5） */
     memoPanelOpen: true,
 
-    /** ホーム右カラムの AI 現況サマリー（S-07 / P3-1a）。右下の円形ボタンで開閉する */
-    aiPanelOpen: true,
+    /**
+     * AI 現況サマリー／今日の ToDo（S-07 / P3-1a）。
+     * ホーム専用の右カラムではなく、**どの画面からでも開ける浮遊パネル**（AiTodoPanel）。
+     * 入口はらくす君（AiLauncherButton はらくす君を非表示にしている間の代替）。
+     * どの画面にも重なるので、既定は閉じておく。
+     */
+    aiPanelOpen: false,
 
     /** @type {string} ホームのボードを縦割りにする軸。BOARD_GROUP_BY のいずれか（S-07） */
     boardGroupBy: DEFAULT_BOARD_GROUP_BY,
@@ -263,6 +268,12 @@ export const useUiStore = defineStore('ui', {
     petVisible: readPetVisible(),
     /** @type {{x:number, y:number}|null} */
     petPosition: readPetPosition(),
+    /**
+     * らくす君を小さくしまっているか。
+     * AiTodoPanel がらくす君の横に自分を置くために当たり判定の大きさを知る必要があるので、
+     * コンポーネントの内部状態ではなくここに置く。
+     */
+    petMinimized: false,
 
     /**
      * ログイン → ホームの円形トランジションの状態（描画は CircleRevealOverlay）。
@@ -326,9 +337,17 @@ export const useUiStore = defineStore('ui', {
       this.memoPanelOpen = !this.memoPanelOpen
     },
 
-    /** ホームの AI パネル開閉（右下の円形ボタン／カードの閉じるボタン） */
+    /** AI ToDo パネルの開閉（らくす君／カードの閉じるボタン） */
     toggleAiPanel() {
       this.aiPanelOpen = !this.aiPanelOpen
+    },
+
+    openAiPanel() {
+      this.aiPanelOpen = true
+    },
+
+    closeAiPanel() {
+      this.aiPanelOpen = false
     },
 
     /** @param {string} groupBy BOARD_GROUP_BY のいずれか（ホームの縦割り軸を切り替える） */
@@ -784,6 +803,10 @@ export const useUiStore = defineStore('ui', {
       }
     },
 
+    setPetMinimized(minimized) {
+      this.petMinimized = Boolean(minimized)
+    },
+
     setPetPosition({ x, y }) {
       if (!Number.isFinite(x) || !Number.isFinite(y)) return
       this.petPosition = { x: Math.round(x), y: Math.round(y) }
@@ -872,7 +895,7 @@ export const useUiStore = defineStore('ui', {
       this.selectedRoomId = null
       this.roomListWidth = PANE_WIDTH.ROOM_LIST
       this.detailWidth = PANE_WIDTH.DETAIL
-      this.aiPanelOpen = true
+      this.aiPanelOpen = false
       this.boardGroupBy = DEFAULT_BOARD_GROUP_BY
       this.profileDialogOpen = false
       this.memoScope = MEMO_SCOPE.PRIVATE
@@ -894,6 +917,7 @@ export const useUiStore = defineStore('ui', {
       this.alertsIncludeResolved = false
       this.alertsSyncedOnce = false
       this.mascotNotice = null
+      this.petMinimized = false
       this.circleReveal = emptyCircleReveal()
       this.connectionState = 'connecting'
       this.toasts = []
