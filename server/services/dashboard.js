@@ -8,12 +8,12 @@ import {
   HANDLING_STATUS,
   COMPLIANCE_RULE_CATEGORY,
   ROLE,
-  SELECTION_STATUS_VALUES,
   complianceRuleLabel,
   selectionPhaseOf,
 } from '../../shared/constants.js';
 import { COMPLIANCE_SOURCE } from '../../shared/constants.js';
 import { ACK_NOTE } from './complianceAlerts.js';
+import { listDashboardSelectionSteps } from './selectionFlow.js';
 import { SLA_ESCALATE_HOURS, SLA_NOTIFY_HOURS } from './slaMonitor.js';
 
 /** KPI「今週のコンプラ警告」の対象期間 */
@@ -48,7 +48,10 @@ function buildKpi(db, now) {
 
 /**
  * 選考ステータス別の学生数。
- * **0人の段階も返す。** 欠けるとファネルの段が抜けて読めなくなる。
+ *
+ * **段階と並びは会社の選考フロー設定に従う**（P2-11）。使っていない段階
+ * （例：四次・五次面接）を出すとファネルに空の段が並んで読めなくなるため。
+ * 有効な段階は**0人でも返す。** 欠けるとファネルの段が抜けて読めなくなる。
  */
 function buildSelectionBreakdown(db) {
   const counts = new Map(
@@ -58,11 +61,17 @@ function buildSelectionBreakdown(db) {
       .map((row) => [row.status, row.count]),
   );
 
-  return SELECTION_STATUS_VALUES.map((status) => ({
-    status,
-    count: counts.get(status) ?? 0,
+  const countOf = (status) => counts.get(status) ?? 0;
+
+  return listDashboardSelectionSteps(db, countOf).map((step) => ({
+    status: step.statusKey,
+    // 人事が付けた表示名。設定していなければ既定ラベル
+    label: step.label,
+    count: countOf(step.statusKey),
     // 選考前（エントリー）／選考中／確定（内定）／離脱（辞退）の4区分
-    phase: selectionPhaseOf(status),
+    phase: selectionPhaseOf(step.statusKey),
+    /** false なら標準フロー外。設定変更後も学生が残っている段階 */
+    isEnabled: step.isEnabled,
   }));
 }
 

@@ -6,15 +6,32 @@
 // ★Legend は登録しない。単一系列のチャートに凡例は出さない方針で、
 //   複数系列（担当者別SLA）は各セグメントに直接ラベルを描くため。
 import {
+  ArcElement,
   BarController,
   BarElement,
   CategoryScale,
   Chart,
+  DoughnutController,
+  LineController,
+  LineElement,
   LinearScale,
+  PointElement,
   Tooltip,
 } from 'chart.js'
 
-Chart.register(BarController, BarElement, CategoryScale, LinearScale, Tooltip)
+Chart.register(
+  BarController,
+  BarElement,
+  // P4-8: 構成比のドーナツと、時間帯別の折れ線
+  DoughnutController,
+  ArcElement,
+  LineController,
+  LineElement,
+  PointElement,
+  CategoryScale,
+  LinearScale,
+  Tooltip,
+)
 
 /**
  * 配色（monitoring.md §6「色の検証結果」）。
@@ -45,6 +62,43 @@ export const CHART_COLOR = Object.freeze({
   SLA_WITHIN: '#2F8F5B',
   SLA_OVER_24H: '#C98500',
   SLA_OVER_48H: '#D03B3B',
+
+  /**
+   * 対応ステータス5分類のドーナツ（P4-8）。HANDLING_STATUS_VALUES と同じ並び。
+   *
+   * ★ドーナツは**最初と最後のセグメントも接する**ので、隣接判定は輪として見る。
+   *   この並び（赤→橙→青→緑→紫→赤）で隣接する全ペアが検証を通っている
+   *   （最悪 #C98500↔#D03B3B の CVD ΔE 10.2 / 通常視 16.9、巻き戻りの
+   *   #4a3aa7↔#D03B3B は CVD 21.5 / 通常視 30.8）。**並べ替えないこと。**
+   *
+   * ★ただし赤（要返信）と緑（完了）は接していないだけで、全ペアで見ると
+   *   CVD ΔE 5.2 と潰れる。**この2つは色だけでは区別できない前提で描く。**
+   *   凡例に必ず件数と割合を添えること（ChartPanel の legend の value）。
+   */
+  HANDLING_NEEDS_REPLY: '#D03B3B',
+  HANDLING_IN_PROGRESS: '#C98500',
+  HANDLING_WAITING_STUDENT: '#3B7FC4',
+  HANDLING_DONE: '#2F8F5B',
+  HANDLING_ON_HOLD: '#4a3aa7',
+
+  /**
+   * 重大度3段（P4-8）。AI推奨度と返信状況のドーナツで共通に使う。
+   * 「赤＝手を打つべき／橙＝様子見／青＝問題なし」を2つのグラフで揃える。
+   *
+   * ★SLA の3色（緑・橙・赤）は流用できない。3分類のドーナツは3ペアすべてが
+   *   隣接するため、緑と赤が必ず接して CVD ΔE 5.2 で潰れる（実測）。
+   *   緑を青に置き換えた組み合わせは全ペア PASS（最悪 CVD ΔE 10.2 / 通常視 16.9）。
+   */
+  SEVERITY_HIGH: '#D03B3B',
+  SEVERITY_MID: '#C98500',
+  SEVERITY_LOW: '#3B7FC4',
+
+  /**
+   * 時間帯別の2系列（P4-8）。全ペア PASS（CVD ΔE 24.0 / 通常視 28.2）。
+   * 色に加えて線種（実線／破線）と点の形（丸／三角）でも区別する。
+   */
+  ACTOR_HR: '#3B7FC4',
+  ACTOR_STUDENT: '#C98500',
 })
 
 const INK = '#1d1d1d'
@@ -136,4 +190,97 @@ export const STACKED_BAR_STYLE = Object.freeze({
   maxBarThickness: 22,
   borderColor: '#ffffff',
   borderWidth: 2,
+})
+
+// ---------------------------------------------------------------------------
+// P4-8 個人ダッシュボード
+// ---------------------------------------------------------------------------
+
+/**
+ * 構成比のドーナツ（対応ステータス・AI推奨度・返信状況）。
+ *
+ * ★円ではなくドーナツにする。中心を空けるぶん外周が細くなり、
+ *   面積ではなく**弧の長さ**で読ませられる（面積比較は人の目が苦手）。
+ * ★セグメント間の2px白ギャップは積み上げ棒と同じ二次エンコーディング。
+ *
+ * 件数と割合は canvas に描かず、凡例（HTML）に添える。
+ * canvas 内の引き出し線は5分類だと必ず衝突するうえ、読み上げもできない。
+ */
+export function doughnutOptions(extra = {}) {
+  return {
+    ...BASE_OPTIONS,
+    cutout: '58%',
+    plugins: {
+      ...BASE_OPTIONS.plugins,
+      tooltip: {
+        ...BASE_OPTIONS.plugins.tooltip,
+        callbacks: {
+          label: (context) => {
+            const total = context.dataset.data.reduce((sum, value) => sum + value, 0)
+            const percent = total === 0 ? 0 : Math.round((context.parsed / total) * 100)
+
+            return `${context.label}：${context.parsed}件（${percent}%）`
+          },
+        },
+      },
+    },
+    ...extra,
+  }
+}
+
+/** ドーナツの共通見た目。白ギャップでセグメントを分ける */
+export const DOUGHNUT_STYLE = Object.freeze({
+  borderColor: '#ffffff',
+  borderWidth: 2,
+  hoverOffset: 6,
+})
+
+/**
+ * 折れ線（時間帯別の返信タイミング）。
+ *
+ * ★y軸は**構成比（%）**を前提にする。人事と学生でメッセージ総数が違うため、
+ *   件数のまま重ねると「タイミングのずれ」ではなく「量の差」しか読めない。
+ * ★軸は1本だけ。2系列を別スケールにしない（比較が成立しなくなる）。
+ */
+export function lineOptions(extra = {}) {
+  return {
+    ...BASE_OPTIONS,
+    interaction: { mode: 'index', intersect: false },
+    scales: {
+      x: CATEGORY_AXIS,
+      y: {
+        ...AXIS,
+        beginAtZero: true,
+        ticks: { ...AXIS.ticks, callback: (value) => `${value}%` },
+      },
+    },
+    plugins: {
+      ...BASE_OPTIONS.plugins,
+      tooltip: {
+        ...BASE_OPTIONS.plugins.tooltip,
+        // 2系列を並べて出すので、どちらの線かが分かるよう色マーカーを出す
+        displayColors: true,
+        callbacks: {
+          label: (context) => `${context.dataset.label}：${context.parsed.y}%`,
+        },
+      },
+    },
+    ...extra,
+  }
+}
+
+/**
+ * 折れ線の共通見た目。
+ * **色以外に線種と点の形でも区別する**（CLAUDE.md §6-13）。
+ * 点は直径8px以上にして、線が重なる時間帯でも系列を追えるようにする。
+ */
+export const LINE_STYLE = Object.freeze({
+  borderWidth: 2,
+  // 時間帯は離散値なので補間で山を作らない（無い時刻の値をでっち上げないため）
+  tension: 0,
+  fill: false,
+  pointRadius: 4,
+  pointHoverRadius: 6,
+  pointBorderColor: '#ffffff',
+  pointBorderWidth: 2,
 })

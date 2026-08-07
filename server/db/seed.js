@@ -13,9 +13,15 @@ import { classifyTopicTag, clearTagRuleCache } from '../services/tagClassifier.j
 import { clearComplianceRuleCache } from '../services/complianceChecker.js';
 import { calculateUrgency } from '../services/urgencyCalculator.js';
 import { notifySelectionAdvanced, notifyVisibleFeedbacks } from '../services/studentNotifier.js';
+// 過去の監視イベント（P4-4 のダッシュボード用）を、本番と同じ文面・同じ宛先の決め方で作る
+import { buildDetail as buildSlaDetail, findManagerIds } from '../services/slaMonitor.js';
+import { ACK_NOTE } from '../services/complianceAlerts.js';
 import {
+  ALERT_KIND,
   ALERT_SEVERITY,
   COMPLIANCE_CATEGORY,
+  COMPLIANCE_SOURCE,
+  DASHBOARD_TREND_DAYS,
   HANDLING_STATUS,
   INTERVIEW_FORMAT,
   MESSAGE_TYPE,
@@ -248,15 +254,171 @@ const FILLER_LINES = {
   ],
 };
 
-function buildFillerMessages(count, earliestHoursAgo) {
+/**
+ * ルームの折り返しの速さ。学生1人（＝1ルーム）に1つ割り当てる。
+ *
+ * ★固定間隔（もとは一律3時間）にしないこと。
+ *   全ルームが同じ間隔だと「返信にかかった時間の分布」（P4-8）が1本の棒になり、
+ *   速い担当と遅い担当の差も、24時間を超えた案件も見えない。
+ */
+const REPLY_PACES = Object.freeze([
+  { key: 'fast', minHours: 0.4, maxHours: 3 },
+  { key: 'normal', minHours: 2, maxHours: 8 },
+  { key: 'slow', minHours: 5, maxHours: 18 },
+  { key: 'stalled', minHours: 16, maxHours: 40 },
+]);
+
+/**
+ * 本題の前にあるやり取り。人事と学生が交互に並ぶ。
+ * 間隔は pace のぶんだけばらつかせ、**新しいほうから古いほうへ**積む
+ * （間隔が変わっても最新メッセージの位置がずれないようにするため）。
+ */
+function buildFillerMessages(count, earliestHoursAgo, pace, random) {
   const messages = [];
-  for (let i = 0; i < count; i += 1) {
-    const hoursAgo = earliestHoursAgo + (count - i) * 3;
+  let hoursAgo = earliestHoursAgo;
+
+  for (let i = count - 1; i >= 0; i -= 1) {
+    hoursAgo += randomFloat(random, pace.minHours, pace.maxHours);
     const sender = i % 2 === 0 ? 'hr' : 'student';
     const lines = FILLER_LINES[sender];
     messages.push({ sender, hoursAgo, body: lines[i % lines.length] });
   }
+
   return messages;
+}
+
+// ---------------------------------------------------------------------------
+// 送信時刻のリズム
+//
+// ★hoursAgo をそのまま時刻にすると、シードを流した時刻しだいで人事が深夜3時に
+//   返信していることになる。ダッシュボードの「時間帯別の送信タイミング」（P4-8）が
+//   意味を持たなくなるうえ、単純に運用としておかしい。
+// ---------------------------------------------------------------------------
+
+/** 人事の営業時間（ローカル時刻）。9:00〜21:00。この範囲外の人事送信は作らない */
+const BUSINESS_HOURS = Object.freeze(
+  Array.from({ length: 12 }, (_, index) => 9 + index),
+);
+
+/** 人事は営業時間を必ず守る。何時間さかのぼってでも範囲内に収める */
+const HR_MAX_SHIFT_HOURS = 30;
+
+/**
+ * 学生の生活リズム。学生1人に1つ割り当て、その学生の送信をこの時間帯に寄せる。
+ *
+ * ★学生ごとに違う型を持たせるのが要点。全員を同じ時間帯にすると
+ *   グラフが1本の山になり、「人事と学生でタイミングがずれている」ことが見えない。
+ * ★深夜（2〜6時）はどの型にも入れない。夜型でも1時までに留める。
+ */
+const STUDENT_RHYTHMS = Object.freeze([
+  /** 通学前後にこまめに返す */
+  { key: 'commute', hours: [7, 8, 12, 13, 18, 19, 20, 21] },
+  /** 夜にまとめて返す */
+  { key: 'evening', hours: [17, 18, 19, 20, 21, 22, 23] },
+  /** 日中に返せる（授業が少ない・在宅） */
+  { key: 'daytime', hours: [9, 10, 11, 12, 13, 14, 15, 16, 17] },
+  /** 夜更かし型 */
+  { key: 'late', hours: [20, 21, 22, 23, 0, 1] },
+]);
+
+/**
+ * 学生のずらし幅の上限。これを超えるなら**元の時刻のまま残す**。
+ * リズムを厳密に強制すると、受信箱のデモで作り込んだ経過時間（緊急度・返信遅れの
+ * 閾値まわり）が動いてしまう。たまに時間外の送信が混ざるのは実態としても自然。
+ */
+const STUDENT_MAX_SHIFT_HOURS = 4;
+
+/**
+ * メッセージ間の最小間隔（分）。同じ時刻に2通並ばないようにする。
+ * ★固定値にしないこと。時間外から寄せたぶんがすべてこの間隔に張り付いて、
+ *   「返信にかかった時間」が最小値ちょうどの山になる。
+ */
+const MIN_GAP_MINUTES = [25, 90];
+
+/**
+ * 時間外から寄せるとき、許可時間帯の中でさらにさかのぼる最大時間。
+ * 大きくすると時間帯の頭に寄り、0 にすると終わりの1時間に固まる。
+ */
+const MAX_SPREAD_HOURS = 3;
+
+/**
+ * その時刻を、許可された「時」に収まるまで**過去方向に**戻す。
+ * `maxShiftHours` 以内に収まらなければ元の時刻を返す。
+ */
+function snapBackToHour(date, allowedHours, maxShiftHours, random) {
+  const allowed = new Set(allowedHours);
+  const result = new Date(date);
+
+  for (let shift = 0; shift <= maxShiftHours; shift += 1) {
+    if (allowed.has(result.getHours())) {
+      if (shift > 0) {
+        // ★時間帯の境界に固まらせない。
+        //   単純に「最初に見つかった許可時刻」へ寄せると、時間外に落ちたぶんが
+        //   すべて営業終了間際（20時台）に積み上がって、実態と違う山ができる。
+        //   見つかった位置からさらに、許可された時間帯の中だけを randomly さかのぼる。
+        for (let extra = randomInt(random, 0, MAX_SPREAD_HOURS); extra > 0; extra -= 1) {
+          const candidate = new Date(result);
+          candidate.setHours(candidate.getHours() - 1);
+          if (!allowed.has(candidate.getHours())) break;
+          result.setTime(candidate.getTime());
+        }
+
+        // 戻したぶんは分を散らす。毎時ちょうどに揃うと機械的に見える
+        result.setMinutes(randomInt(random, 5, 55), 0, 0);
+      }
+      return result;
+    }
+    result.setHours(result.getHours() - 1);
+  }
+
+  return new Date(date);
+}
+
+/** 営業時間に収めた「N時間前」。人事が送ったことにするメッセージで使う */
+function businessHoursIso(hoursAgo) {
+  return snapBackToHour(
+    new Date(NOW - hoursAgo * 3_600_000),
+    BUSINESS_HOURS,
+    HR_MAX_SHIFT_HOURS,
+    timeRandom,
+  ).toISOString();
+}
+
+/**
+ * メッセージ列（古い順）に実時刻を割り当てる。
+ *
+ * ★**新しいほうから後ろ向きに決める。** 調整は必ず過去方向へ動かすので、
+ *   1つ前のメッセージは必ずそれより古くなり、並び順が崩れない。
+ *   前から決めて未来方向に押すと、最新メッセージが「今」を追い越しうる。
+ *
+ * 学生の発言→人事の返信の間隔は、営業時間をまたぐと自然に伸びる。
+ * これがダッシュボードの「返信にかかった時間の分布」（P4-8）の山を作る。
+ */
+function buildMessageTimes(messages, rhythm, random) {
+  const times = new Array(messages.length);
+  let nextAt = null;
+
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+
+    let wanted = NOW - message.hoursAgo * 3_600_000;
+    if (nextAt !== null) {
+      wanted = Math.min(wanted, nextAt - randomInt(random, ...MIN_GAP_MINUTES) * 60_000);
+    }
+
+    const isHr = message.sender === 'hr';
+    const at = snapBackToHour(
+      new Date(wanted),
+      isHr ? BUSINESS_HOURS : rhythm.hours,
+      isHr ? HR_MAX_SHIFT_HOURS : STUDENT_MAX_SHIFT_HOURS,
+      random,
+    );
+
+    times[index] = at;
+    nextAt = at.getTime();
+  }
+
+  return times;
 }
 
 const HR_USERS = [
@@ -315,7 +477,7 @@ const SHOWCASE_STUDENTS = [
   },
   {
     loginId: 'student2', displayName: '佐藤 花子', avatarColor: '#BFB27C',
-    university: '早稲田大学', faculty: '商学部', gradYear: 2027, selectionStatus: SELECTION_STATUS.INTERVIEW_4,
+    university: '早稲田大学', faculty: '商学部', gradYear: 2027, selectionStatus: SELECTION_STATUS.INTERVIEW_2,
     assignee: 'hr2', handlingStatus: HANDLING_STATUS.NEEDS_REPLY,
     fillerCount: 8,
     thread: [
@@ -340,11 +502,11 @@ const SHOWCASE_STUDENTS = [
   },
   {
     loginId: 'student4', displayName: '高橋 美咲', avatarColor: '#BF7C9C',
-    university: '一橋大学', faculty: '社会学部', gradYear: 2027, selectionStatus: SELECTION_STATUS.INTERVIEW_5,
+    university: '一橋大学', faculty: '社会学部', gradYear: 2027, selectionStatus: SELECTION_STATUS.INTERVIEW_3,
     assignee: 'admin1', handlingStatus: HANDLING_STATUS.NEEDS_REPLY,
     fillerCount: 8,
     thread: [
-      { sender: 'hr', hoursAgo: 20, body: '五次面接の結果について確認中です。' },
+      { sender: 'hr', hoursAgo: 20, body: '最終面接の結果について確認中です。' },
       { sender: 'student', hoursAgo: 15, body: '選考状況について、合否はいつ頃分かりますでしょうか。' },
     ],
   },
@@ -491,7 +653,7 @@ const SCENARIOS = [
   },
   {
     handlingStatus: HANDLING_STATUS.NEEDS_REPLY,
-    selectionStatuses: [SELECTION_STATUS.INTERVIEW_3, SELECTION_STATUS.INTERVIEW_4],
+    selectionStatuses: [SELECTION_STATUS.INTERVIEW_2, SELECTION_STATUS.INTERVIEW_3],
     scheduleState: SCHEDULE_STATE.NONE,
     hasNextInterview: false,
     latestHoursAgo: [13, 36],
@@ -546,7 +708,7 @@ const SCENARIOS = [
   },
   {
     handlingStatus: HANDLING_STATUS.DONE,
-    selectionStatuses: [SELECTION_STATUS.INTERVIEW_4, SELECTION_STATUS.OFFER],
+    selectionStatuses: [SELECTION_STATUS.INTERVIEW_3, SELECTION_STATUS.OFFER],
     scheduleState: SCHEDULE_STATE.CONFIRMED,
     hasNextInterview: true,
     latestHoursAgo: [30, 120],
@@ -557,7 +719,7 @@ const SCENARIOS = [
   },
   {
     handlingStatus: HANDLING_STATUS.ON_HOLD,
-    selectionStatuses: [SELECTION_STATUS.INTERVIEW_3, SELECTION_STATUS.INTERVIEW_4],
+    selectionStatuses: [SELECTION_STATUS.INTERVIEW_2, SELECTION_STATUS.INTERVIEW_3],
     scheduleState: SCHEDULE_STATE.NONE,
     hasNextInterview: false,
     latestHoursAgo: [60, 190],
@@ -797,7 +959,19 @@ function buildGeneratedStudents() {
   });
 }
 
-const STUDENTS = [...SHOWCASE_STUDENTS, ...buildGeneratedStudents()];
+/**
+ * 生活リズムは並び順で配る。**乱数で配らない。**
+ * 4種類が均等に散り、学生を1人足しても他の学生のリズムが変わらない。
+ */
+const STUDENTS = [...SHOWCASE_STUDENTS, ...buildGeneratedStudents()].map((student, index) => ({
+  ...student,
+  rhythm: STUDENT_RHYTHMS[index % STUDENT_RHYTHMS.length],
+  // 生活リズムと同じ周期にすると「夜型は必ず遅い」のような偽の相関が出るので、ずらして配る
+  pace: REPLY_PACES[(index * 3 + 1) % REPLY_PACES.length],
+}));
+
+/** メッセージ時刻の分の散らしに使う。学生生成とは別系列にして、片方を変えても他方がずれないようにする */
+const timeRandom = createRandom(RANDOM_SEED + 1);
 
 // ---------------------------------------------------------------------------
 // 投入
@@ -878,6 +1052,180 @@ function insertStudentAlerts(studentUserIds, actorUserId) {
   }
 }
 
+/**
+ * 過去の監視イベント（P4-4 のダッシュボード用）。
+ *
+ * ★なぜ手で入れるのか。
+ *   `detectSlaBreaches()` は**いまこの瞬間**の滞留しか作れないので、
+ *   「返信遅れ通知の発生推移（直近14日）」は必ず今日1本の棒になる。
+ *   コンプライアンス検知も、人事が実際に不適切な文面を送るまで0件のままで、
+ *   内訳グラフが空のままデモに出ることになる。
+ *   **過去の履歴だけはシードで用意する。**「いま」のぶんは本番と同じ監視サービスが作る。
+ *
+ * ★解消済み（resolved_at あり）を多めにする。
+ *   全部が未解決だと「1件も返信していない会社」になってしまう。
+ *   ダッシュボードの KPI は未解決だけを数えるので、履歴を足しても数字は荒れない。
+ */
+function insertHistoricalAlerts({ hrUserIds }) {
+  const managerIds = findManagerIds(db);
+  const random = createRandom(RANDOM_SEED + 2);
+
+  // 履歴を載せる相手。返信済み（waiting_student / done）のルームを使う。
+  // ★未返信のルームに過去の遅延履歴を足さない。いま監視サービスが立てる通知と
+  //   trigger_message_id が衝突して INSERT OR IGNORE に落ちるうえ、
+  //   「解消済みの遅延」と「未解決の遅延」が同じ起点メッセージに二重に付く。
+  //
+  // 起点メッセージは**1件につき1通ずつ使い切る**。
+  // ★冪等キー（kind, room_id, trigger_message_id, target_user_id）が重複すると
+  //   黙って捨てられるので、使い回さないこと。7件しか入らない、という形で効いてくる。
+  // 起点メッセージの時刻と発生日時は揃えない。ここで作りたいのは
+  // 「いつ何件あったか」という履歴で、推移グラフが読むのは created_at だけ。
+  const pool = db
+    .prepare(
+      `SELECT m.id AS messageId, r.id AS roomId, r.assignee_user_id AS assigneeId,
+              su.display_name AS studentName
+         FROM messages m
+         JOIN rooms r ON r.id = m.room_id
+         JOIN users su ON su.id = r.student_user_id
+        WHERE m.sender_id = r.student_user_id
+          AND r.assignee_user_id IS NOT NULL
+          AND r.handling_status IN (?, ?)
+        ORDER BY r.id, m.id`,
+    )
+    .all(HANDLING_STATUS.WAITING_STUDENT, HANDLING_STATUS.DONE);
+
+  if (pool.length === 0) return { sla: 0, compliance: 0 };
+
+  let poolCursor = 0;
+  const takeTrigger = () => pool[poolCursor++ % pool.length];
+
+  const insert = db.prepare(
+    `INSERT OR IGNORE INTO alerts
+       (kind, severity, room_id, target_user_id, actor_user_id, trigger_message_id,
+        rule_code, source, detail, created_at, read_at, resolved_at)
+     VALUES
+       (@kind, @severity, @roomId, @targetUserId, @actorUserId, @triggerMessageId,
+        @ruleCode, @source, @detail, @createdAt, @readAt, @resolvedAt)`,
+  );
+
+  // --- 返信遅れの履歴（直近14日・日別にばらす） ---
+  //
+  // 1日あたり0〜3件。曜日で偏らせず、件数の山と谷が出る程度に散らす。
+  let slaCount = 0;
+
+  for (let daysAgo = DASHBOARD_TREND_DAYS - 1; daysAgo >= 1; daysAgo -= 1) {
+    const perDay = randomInt(random, 0, 3);
+
+    for (let i = 0; i < perDay; i += 1) {
+      const target = takeTrigger();
+
+      // その日の営業時間内に気づいて、数時間後に返信して解消した、という履歴
+      const createdAt = new Date(NOW - daysAgo * 86_400_000);
+      createdAt.setHours(pick(random, BUSINESS_HOURS), randomInt(random, 0, 59), 0, 0);
+
+      const elapsedHours = randomFloat(random, 24, 40);
+      const resolvedAt = new Date(createdAt.getTime() + randomFloat(random, 1, 8) * 3_600_000);
+
+      slaCount += insert.run({
+        kind: ALERT_KIND.SLA_NOTIFY,
+        severity: ALERT_SEVERITY.WARN,
+        roomId: target.roomId,
+        targetUserId: target.assigneeId,
+        actorUserId: target.assigneeId,
+        triggerMessageId: target.messageId,
+        ruleCode: null,
+        source: null,
+        detail: buildSlaDetail({
+          kind: ALERT_KIND.SLA_NOTIFY,
+          studentName: target.studentName,
+          elapsedHours,
+        }),
+        createdAt: createdAt.toISOString(),
+        readAt: createdAt.toISOString(),
+        resolvedAt: resolvedAt.toISOString(),
+      }).changes;
+    }
+  }
+
+  // 上長へのエスカレーションも履歴を1〜2件。**解消済み**にする。
+  // 未解決のエスカレーションは student11 のぶんを監視サービスが立てるので、
+  // ここで足すと「上長対応中」が水増しされる。
+  for (const [offset, managerId] of managerIds.entries()) {
+    const target = takeTrigger();
+    const createdAt = new Date(NOW - (4 + offset * 3) * 86_400_000);
+    createdAt.setHours(pick(random, BUSINESS_HOURS), randomInt(random, 0, 59), 0, 0);
+
+    insert.run({
+      kind: ALERT_KIND.SLA_ESCALATE,
+      severity: ALERT_SEVERITY.WARN,
+      roomId: target.roomId,
+      targetUserId: managerId,
+      actorUserId: target.assigneeId,
+      triggerMessageId: target.messageId,
+      ruleCode: null,
+      source: null,
+      detail: buildSlaDetail({
+        kind: ALERT_KIND.SLA_ESCALATE,
+        studentName: target.studentName,
+        elapsedHours: randomFloat(random, 48, 72),
+      }),
+      createdAt: createdAt.toISOString(),
+      readAt: createdAt.toISOString(),
+      resolvedAt: new Date(createdAt.getTime() + 6 * 3_600_000).toISOString(),
+    });
+  }
+
+  // --- コンプライアンス検知の履歴 ---
+  //
+  // ★これは「起きた事実の記録」なので resolved_at は常に NULL（monitoring.md §4）。
+  // ★内訳グラフが1本にならないよう、複数のルールに散らす。
+  // ★`source: 'ai'` を混ぜる。辞書では拾えなかったぶんを AI が拾った、という絵。
+  // ★`ackNote` に ACKNOWLEDGED を混ぜる。「警告を無視して送信」の件数は
+  //   この機能の価値そのもの（monitoring.md §6）なので、0件だと何も伝わらない。
+  const complianceHistory = [
+    { code: 'honseki', matched: 'ご出身はどちら', daysAgo: 1, acknowledged: true },
+    { code: 'family_job', matched: 'お父様のお仕事', daysAgo: 2, acknowledged: false },
+    { code: 'deadline_today', matched: 'お返事は本日中', daysAgo: 3, acknowledged: true },
+    { code: 'pressure_soft', matched: 'なるべく早くご返答', daysAgo: 5, acknowledged: false },
+    { code: 'withdraw_others', matched: '他社は辞退', daysAgo: 6, source: COMPLIANCE_SOURCE.AI },
+    { code: 'honseki', matched: '国籍', daysAgo: 9, acknowledged: false },
+    { code: 'decide_now', matched: 'この場でご返答', daysAgo: 11, source: COMPLIANCE_SOURCE.AI },
+    { code: 'union', matched: '学生運動に参加', daysAgo: 12, acknowledged: false },
+  ];
+
+  const ruleByCode = new Map(COMPLIANCE_RULES.map((rule) => [rule.code, rule]));
+  let complianceCount = 0;
+
+  for (const item of complianceHistory) {
+    const rule = ruleByCode.get(item.code);
+    const target = takeTrigger();
+
+    const createdAt = new Date(NOW - item.daysAgo * 86_400_000);
+    createdAt.setHours(pick(random, BUSINESS_HOURS), randomInt(random, 0, 59), 0, 0);
+
+    const ackNote = item.acknowledged ? ACK_NOTE.ACKNOWLEDGED : ACK_NOTE.MISMATCHED;
+
+    complianceCount += insert.run({
+      kind: ALERT_KIND.COMPLIANCE,
+      severity: rule.severity,
+      roomId: target.roomId,
+      // コンプライアンスは本人へ即時ダイアログで伝えるので通知先は持たない
+      targetUserId: null,
+      actorUserId: target.assigneeId ?? hrUserIds.hr1,
+      triggerMessageId: target.messageId,
+      ruleCode: item.code,
+      source: item.source ?? COMPLIANCE_SOURCE.DICTIONARY,
+      // 本文全体は入れない。該当箇所だけ（CLAUDE.md §6-8）
+      detail: `${rule.message}｜該当：${item.matched}｜${ackNote}`,
+      createdAt: createdAt.toISOString(),
+      readAt: null,
+      resolvedAt: null,
+    }).changes;
+  }
+
+  return { sla: slaCount, compliance: complianceCount };
+}
+
 function insertUser({ loginId, displayName, role, avatarColor }, passwordHash) {
   const now = new Date().toISOString();
   const { lastInsertRowid } = db
@@ -950,7 +1298,16 @@ function insertStudentRoom(student, { hrUserIds, allHrIds, passwordHash }) {
   );
 
   const assigneeUserId = student.assignee ? hrUserIds[student.assignee] : null;
-  const roomCreatedAt = hoursAgoIso(Math.max(...student.thread.map((m) => m.hoursAgo)) + student.fillerCount * 3 + 3);
+
+  // ★時刻はルームを作る前に確定させる。営業時間・生活リズムへの寄せで
+  //   最古のメッセージが元の想定より過去へ動くため、ルームの作成日時をそこから決める
+  //   （ルームより古いメッセージがある状態を作らない）。
+  const earliestThreadHoursAgo = Math.max(...student.thread.map((m) => m.hoursAgo));
+  const filler = buildFillerMessages(student.fillerCount, earliestThreadHoursAgo, student.pace, timeRandom);
+  const allMessages = [...filler, ...student.thread].sort((a, b) => b.hoursAgo - a.hoursAgo);
+  const messageTimes = buildMessageTimes(allMessages, student.rhythm, timeRandom);
+
+  const roomCreatedAt = new Date(messageTimes[0].getTime() - 3_600_000).toISOString();
 
   const { lastInsertRowid: roomId } = db
     .prepare(
@@ -967,18 +1324,14 @@ function insertStudentRoom(student, { hrUserIds, allHrIds, passwordHash }) {
     ).run(roomId, memberId, roomCreatedAt);
   }
 
-  const earliestThreadHoursAgo = Math.max(...student.thread.map((m) => m.hoursAgo));
-  const filler = buildFillerMessages(student.fillerCount, earliestThreadHoursAgo);
-  const allMessages = [...filler, ...student.thread].sort((a, b) => b.hoursAgo - a.hoursAgo);
-
   let lastMessageId = null;
   let lastMessageAt = null;
   let lastStudentMessageAt = null;
   let lastStudentTopicTag = null;
 
-  for (const msg of allMessages) {
+  for (const [index, msg] of allMessages.entries()) {
     const senderId = msg.sender === 'student' ? studentUserId : assigneeUserId || allHrIds[0];
-    const createdAt = hoursAgoIso(msg.hoursAgo);
+    const createdAt = messageTimes[index].toISOString();
     const topicTag = msg.sender === 'student' ? classifyTopicTag(db, msg.body) : null;
 
     const { lastInsertRowid: messageId } = db
@@ -1115,7 +1468,8 @@ function seedInterviewScheduling({ hrUserIds, studentRefs }) {
       '一次面接の日程を選択してください',
       MESSAGE_TYPE.TEXT,
       requestId,
-      hoursAgoIso(2),
+      // 人事の送信なので営業時間に収める（ここだけ深夜に残ると時間帯グラフに嘘が出る）
+      businessHoursIso(2),
     );
 
     if (status === SCHEDULE_REQUEST_STATUS.WAITING_STUDENT) {
@@ -1209,6 +1563,8 @@ function seed() {
     );
     insertSelectionFeedbacks(studentUserIds, hrUserIds.hr1);
     insertStudentAlerts(studentUserIds, hrUserIds.hr1);
+    // 学生のお知らせより後。ルームとメッセージが揃っていないと起点が引けない
+    insertHistoricalAlerts({ hrUserIds });
   });
 
   run();
@@ -1221,6 +1577,7 @@ function seed() {
     complianceRules: db.prepare('SELECT COUNT(*) AS c FROM compliance_rules').get().c,
     snippets: db.prepare('SELECT COUNT(*) AS c FROM snippets').get().c,
     scheduleRequests: db.prepare('SELECT COUNT(*) AS c FROM schedule_requests').get().c,
+    alerts: db.prepare('SELECT COUNT(*) AS c FROM alerts').get().c,
   };
   const perAssignee = db
     .prepare(

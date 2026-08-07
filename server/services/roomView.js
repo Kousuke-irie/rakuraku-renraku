@@ -6,17 +6,14 @@ import {
   SORT_KEY,
   URGENCY,
 } from '../../shared/constants.js';
+import { EFFECTIVE_PRIORITY_SQL } from './effectivePriority.js';
 
 const ROOM_SELECT_SQL = `
   SELECT
     r.id,
     r.handling_status          AS handlingStatus,
     r.urgency,
-    CASE
-      WHEN r.ai_analysis_status = '${AI_ANALYSIS_STATUS.COMPLETED}' AND r.ai_priority IS NOT NULL
-        THEN r.ai_priority
-      ELSE r.urgency
-    END                        AS priority,
+    ${EFFECTIVE_PRIORITY_SQL}  AS priority,
     r.last_student_message_at  AS lastStudentMessageAt,
     r.ai_priority              AS aiPriority,
     r.ai_priority_reason       AS aiPriorityReason,
@@ -111,13 +108,7 @@ const ROOM_LIST_SQL = `${ROOM_SELECT_SQL}
     )
     AND (
       @priorities IS NULL
-      OR (
-        CASE
-          WHEN r.ai_analysis_status = '${AI_ANALYSIS_STATUS.COMPLETED}' AND r.ai_priority IS NOT NULL
-            THEN r.ai_priority
-          ELSE r.urgency
-        END
-      ) IN (SELECT value FROM json_each(@priorities))
+      OR (${EFFECTIVE_PRIORITY_SQL}) IN (SELECT value FROM json_each(@priorities))
     )
     AND (
       @assigneeMode IS NULL

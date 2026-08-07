@@ -19,8 +19,13 @@ defineProps({
   emptyText: { type: String, default: "データがありません" },
   /**
    * 凡例。**色が2種類以上あるチャートには必ず渡すこと。**
-   * `[{ label, color }]`。Chart.js の Legend は使わず HTML で描く
+   * `[{ label, color, value?, dash? }]`。Chart.js の Legend は使わず HTML で描く
    * （canvas 内だと読み上げできないため。ChartPanel の趣旨と同じ）。
+   *
+   * `value` … 件数や割合。**ドーナツには必ず添える。**
+   *   弧の長さを目分量で比べさせないため、また色だけでは判別できない組み合わせ
+   *   （赤と緑など）を数字で救うため（charts.js の CHART_COLOR のコメント参照）。
+   * `dash` … true なら見本を破線にする。折れ線の系列で線種が違うとき用。
    */
   legend: { type: Array, default: () => [] },
   /** チャートの高さ（px）。行数で変わるので呼び出し側が決める */
@@ -109,10 +114,15 @@ const showTable = ref(false)
         >
           <span
             class="legend__swatch"
+            :class="{ 'legend__swatch--dash': item.dash }"
             :style="{ backgroundColor: item.color }"
             aria-hidden="true"
           />
           {{ item.label }}
+          <span
+            v-if="item.value"
+            class="legend__value"
+          >{{ item.value }}</span>
         </li>
       </ul>
 
@@ -188,6 +198,21 @@ const showTable = ref(false)
   width: 10px;
   height: 10px;
   border-radius: var(--radius-xs);
+}
+
+/* 折れ線の破線系列。凡例の見本でも線種が分かるようにする。
+   色は inline の background-color で来るので、mask で破線に抜く */
+.legend__swatch--dash {
+  width: 16px;
+  height: 3px;
+  border-radius: 0;
+  mask-image: repeating-linear-gradient(to right, #000 0 5px, transparent 5px 9px);
+}
+
+/* 色だけでは判別できない組み合わせを数字で救う。凡例と同じ行に置く */
+.legend__value {
+  color: var(--color-ink);
+  font-variant-numeric: tabular-nums;
 }
 
 .panel__empty {

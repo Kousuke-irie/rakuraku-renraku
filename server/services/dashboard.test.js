@@ -6,9 +6,9 @@ import {
   DASHBOARD_TREND_DAYS,
   HANDLING_STATUS,
   ROLE,
+  SELECTION_FLOW_STEP_VALUES,
   SELECTION_PHASE,
   SELECTION_STATUS,
-  SELECTION_STATUS_VALUES,
 } from '../../shared/constants.js';
 import { ACK_NOTE } from './complianceAlerts.js';
 import { getDashboard } from './dashboard.js';
@@ -33,6 +33,15 @@ function createDb() {
       handling_status TEXT NOT NULL,
       assignee_user_id INTEGER,
       last_student_message_at TEXT
+    );
+    CREATE TABLE selection_steps (
+      status_key TEXT PRIMARY KEY,
+      is_enabled INTEGER NOT NULL DEFAULT 1,
+      sort_order INTEGER NOT NULL,
+      label TEXT,
+      description TEXT,
+      points TEXT,
+      updated_at TEXT NOT NULL
     );
     CREATE TABLE alerts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -72,6 +81,30 @@ function addRoom(db, { hoursAgo = 1, assigneeId = null, handlingStatus = HANDLIN
       .run(studentId, handlingStatus, assigneeId, new Date(NOW - hoursAgo * 3_600_000).toISOString())
       .lastInsertRowid,
   );
+}
+
+/**
+ * 選考フロー設定を書き込む。
+ * ★1件でも行があると既定値へのフォールバックが止まる（selectionFlow.js）ので、
+ *   全ステップを書いたうえで overrides を当てる。
+ */
+function saveSteps(db, overrides = []) {
+  const byKey = new Map(overrides.map((item) => [item.statusKey, item]));
+
+  SELECTION_FLOW_STEP_VALUES.forEach((statusKey, index) => {
+    const override = byKey.get(statusKey) ?? {};
+
+    db.prepare(
+      `INSERT INTO selection_steps (status_key, is_enabled, sort_order, label, updated_at)
+       VALUES (?, ?, ?, ?, ?)`,
+    ).run(
+      statusKey,
+      override.isEnabled ?? 1,
+      override.sortOrder ?? index,
+      override.label ?? null,
+      new Date(NOW).toISOString(),
+    );
+  });
 }
 
 function addAlert(db, { kind, roomId, ruleCode = null, detail = 'x', daysAgo = 0, resolved = false }) {
@@ -119,7 +152,7 @@ test('今週のコンプラ警告は8日前を含めない', () => {
   db.close();
 });
 
-test('★選考ステータスは0人の段階も返す（ファネルの段が抜けない）', () => {
+test('★選考ステータスは有効な段階を0人でも返す（ファネルの段が抜けない）', () => {
   const db = createDb();
   addRoom(db, { selectionStatus: SELECTION_STATUS.INTERVIEW_1 });
   addRoom(db, { selectionStatus: SELECTION_STATUS.INTERVIEW_1 });
@@ -127,22 +160,82 @@ test('★選考ステータスは0人の段階も返す（ファネルの段が�
 
   const { selectionBreakdown } = getDashboard(db, NOW);
 
-  assert.equal(selectionBreakdown.length, SELECTION_STATUS_VALUES.length);
+  // 設定が無いときの既定は四次・五次面接が無効（selectionFlow.js の DEFAULT_DISABLED_STEPS）
   assert.deepEqual(
     selectionBreakdown.map((row) => row.status),
-    SELECTION_STATUS_VALUES,
-    '定義順＝選考の進行順を保つ',
+    [
+      SELECTION_STATUS.ENTRY,
+      SELECTION_STATUS.DOCUMENT,
+      SELECTION_STATUS.APTITUDE,
+      SELECTION_STATUS.INTERVIEW_1,
+      SELECTION_STATUS.INTERVIEW_2,
+      SELECTION_STATUS.INTERVIEW_3,
+      SELECTION_STATUS.OFFER,
+      SELECTION_STATUS.DECLINED,
+    ],
+    '選考フローの並び順を保ち、使っていない段階は出さない',
   );
   assert.equal(selectionBreakdown.find((r) => r.status === SELECTION_STATUS.INTERVIEW_1).count, 2);
   assert.equal(selectionBreakdown.find((r) => r.status === SELECTION_STATUS.ENTRY).count, 0);
+  assert.ok(selectionBreakdown.every((row) => row.label), '表示名を必ず添える');
 
   // 区分は4種類。エントリーは「選考前」、内定は「確定」で、どちらも選考中ではない
   const phaseOf = (status) => selectionBreakdown.find((r) => r.status === status).phase;
   assert.equal(phaseOf(SELECTION_STATUS.ENTRY), SELECTION_PHASE.PRE);
   assert.equal(phaseOf(SELECTION_STATUS.DOCUMENT), SELECTION_PHASE.IN_PROGRESS);
-  assert.equal(phaseOf(SELECTION_STATUS.INTERVIEW_5), SELECTION_PHASE.IN_PROGRESS);
+  assert.equal(phaseOf(SELECTION_STATUS.INTERVIEW_3), SELECTION_PHASE.IN_PROGRESS);
   assert.equal(phaseOf(SELECTION_STATUS.OFFER), SELECTION_PHASE.SETTLED);
   assert.equal(phaseOf(SELECTION_STATUS.DECLINED), SELECTION_PHASE.EXITED);
+
+  db.close();
+});
+
+test('★無効な段階でも学生が残っていれば出す（設定変更で学生が消えない）', () => {
+  const db = createDb();
+  saveSteps(db, [
+    { statusKey: SELECTION_STATUS.INTERVIEW_4, isEnabled: 0 },
+    { statusKey: SELECTION_STATUS.INTERVIEW_5, isEnabled: 0 },
+  ]);
+
+  addRoom(db, { selectionStatus: SELECTION_STATUS.INTERVIEW_1 });
+  // 無効な段階に取り残された学生
+  addRoom(db, { selectionStatus: SELECTION_STATUS.INTERVIEW_4 });
+
+  const { selectionBreakdown } = getDashboard(db, NOW);
+  const stranded = selectionBreakdown.find((r) => r.status === SELECTION_STATUS.INTERVIEW_4);
+
+  assert.ok(stranded, '在籍者がいる段階は無効でも出す');
+  assert.equal(stranded.count, 1);
+  assert.equal(stranded.isEnabled, false, '標準フロー外だと分かる印を付ける');
+  assert.equal(
+    selectionBreakdown.find((r) => r.status === SELECTION_STATUS.INTERVIEW_5),
+    undefined,
+    '在籍者がいない無効な段階は出さない',
+  );
+
+  // 合計が学生数と一致する。ここがずれるとグラフの数字が信用されなくなる
+  const total = selectionBreakdown.reduce((sum, row) => sum + row.count, 0);
+  assert.equal(total, 2);
+
+  db.close();
+});
+
+test('人事が付けた表示名をグラフのラベルに使う', () => {
+  const db = createDb();
+  saveSteps(db, [{ statusKey: SELECTION_STATUS.INTERVIEW_3, label: '最終面接' }]);
+  addRoom(db, { selectionStatus: SELECTION_STATUS.INTERVIEW_3 });
+
+  const { selectionBreakdown } = getDashboard(db, NOW);
+
+  assert.equal(
+    selectionBreakdown.find((r) => r.status === SELECTION_STATUS.INTERVIEW_3).label,
+    '最終面接',
+  );
+  assert.equal(
+    selectionBreakdown.find((r) => r.status === SELECTION_STATUS.ENTRY).label,
+    'エントリー',
+    '上書きが無ければ既定ラベル',
+  );
 
   db.close();
 });
@@ -268,7 +361,8 @@ test('データが空でも形が崩れない', () => {
   const result = getDashboard(db, NOW);
 
   assert.deepEqual(result.kpi, { needsReply: 0, overdue24h: 0, escalated: 0, complianceThisWeek: 0 });
-  assert.equal(result.selectionBreakdown.length, SELECTION_STATUS_VALUES.length);
+  // 既定で有効な7段階 + 辞退。学生が0人でもファネルの段は消さない
+  assert.equal(result.selectionBreakdown.length, 8);
   assert.deepEqual(result.slaByAssignee, []);
   assert.equal(result.slaTrend.length, DASHBOARD_TREND_DAYS);
   assert.deepEqual(result.complianceBreakdown, []);
