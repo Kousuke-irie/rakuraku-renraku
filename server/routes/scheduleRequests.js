@@ -2,6 +2,7 @@ import { Router } from 'express';
 import {
   INTERVIEW_DURATION_OPTIONS,
   INTERVIEW_FORMAT_VALUES,
+  INTERVIEW_SURVEY_STATUS_KEYS,
   ROLE,
   SCHEDULE_REQUEST_STATUS,
 } from '../../shared/constants.js';
@@ -69,6 +70,11 @@ function parseCreateBody(body) {
   return {
     interviewerId,
     selectionStage,
+    // 面接アンケート（S-11）用のステップキー。表示名（selectionStage）は人事が
+    // 自由に書き換えるので、キーを別に受け取る。旧クライアントからは来ないため必須にしない
+    selectionStatusKey: INTERVIEW_SURVEY_STATUS_KEYS.includes(source.selectionStatusKey)
+      ? source.selectionStatusKey
+      : null,
     durationMinutes,
     availableFrom,
     availableUntil,

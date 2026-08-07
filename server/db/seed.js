@@ -16,6 +16,9 @@ import { notifySelectionAdvanced, notifyVisibleFeedbacks } from '../services/stu
 // 過去の監視イベント（P4-4 のダッシュボード用）を、本番と同じ文面・同じ宛先の決め方で作る
 import { buildDetail as buildSlaDetail, findManagerIds } from '../services/slaMonitor.js';
 import { ACK_NOTE } from '../services/complianceAlerts.js';
+// 面接アンケート（S-11）。回答できるステップの判定を本実装と共有する
+import { listAnswerableStatusKeys } from '../services/interviewSurveys.js';
+import { listSelectionSteps } from '../services/selectionFlow.js';
 import {
   ALERT_KIND,
   ALERT_SEVERITY,
@@ -982,7 +985,8 @@ function clearExistingData() {
   db.prepare(`UPDATE rooms SET last_message_id = NULL, ai_analyzed_message_id = NULL`).run();
   const tables = [
     'alerts', 'read_receipts', 'memos', 'room_members', 'calendar_bookings', 'calendar_events',
-    'messages', 'schedule_requests', 'selection_feedbacks', 'student_notes', 'rooms', 'students',
+    'messages', 'schedule_requests', 'selection_feedbacks', 'student_notes',
+    'interview_surveys', 'rooms', 'students',
     'calendar_interviewers', 'users', 'tag_rules', 'compliance_rules', 'snippets',
     'company_info', 'selection_steps',
   ];
@@ -1378,10 +1382,14 @@ function localDateTimeIso(daysFromNow, hours, minutes = 0) {
 
 function seedInterviewScheduling({ hrUserIds, studentRefs }) {
   const now = new Date().toISOString();
+  // 面接アンケート（S-11）のグラフが「面接官どうしの差」を示せるよう5名置く。
+  // 3名だと1人が伏せられただけで棒が2本になり、比較として成立しない
   const interviewers = [
     { externalId: 'mock-sato', displayName: '佐藤 健', department: '開発部' },
     { externalId: 'mock-suzuki', displayName: '鈴木 彩', department: '事業企画部' },
     { externalId: 'mock-takahashi', displayName: '高橋 翔', department: '人事部' },
+    { externalId: 'mock-ito', displayName: '伊藤 直樹', department: '開発部' },
+    { externalId: 'mock-watanabe', displayName: '渡辺 千夏', department: '営業部' },
   ];
   const interviewerIds = {};
   for (const interviewer of interviewers) {
@@ -1533,6 +1541,135 @@ function seedInterviewScheduling({ hrUserIds, studentRefs }) {
     status: SCHEDULE_REQUEST_STATUS.EXPIRED,
     deadline: hoursAgoIso(24),
   });
+
+  return interviewerIds;
+}
+
+/**
+ * 面接アンケートの回答（S-11）。
+ *
+ * ★面接官ごとに評価の傾向を変える。全員が同じ分布だと棒の長さが揃い、
+ *   「面接官別に見る」という画面の意味が伝わらない。
+ * ★渡辺だけ回答が2件で止まるようにしてある（weight を小さくしている）。
+ *   匿名性の下限（INTERVIEW_SURVEY_MIN_SAMPLE）で伏せられる様子をデモで見せるため。
+ *
+ * interviewer_id は回答時点のスナップショットなので、予約実績（schedule_requests）
+ * を捏造しなくてよい。過去の面接ぶんの予約行を作ると、受信箱のカードに
+ * 「[日程確定] 過去の日付」が並んでメイン画面の見た目が変わってしまう。
+ */
+const SURVEY_PROFILES = [
+  {
+    externalId: 'mock-sato',
+    // [★1, ★2, ★3, ★4, ★5] の重み
+    ratingWeights: [0, 0, 1, 4, 6],
+    weight: 3,
+    comments: [
+      '技術的な質問の意図を丁寧に説明してくださり、考えを整理しながら話せました。',
+      '逆質問の時間を十分に取っていただき、入社後のイメージが具体的になりました。',
+      '緊張していることを察して雰囲気を和らげてくださったのが有り難かったです。',
+      'コードレビューの進め方まで踏み込んで聞けたので、働き方が想像できました。',
+    ],
+  },
+  {
+    externalId: 'mock-suzuki',
+    ratingWeights: [0, 1, 3, 5, 3],
+    weight: 3,
+    comments: [
+      '質問の内容は的確でしたが、時間が押していて逆質問がほとんどできませんでした。',
+      '事業の話が具体的で参考になりました。もう少し時間があると嬉しかったです。',
+      '志望動機を深掘りしていただけた一方、こちらから聞ける時間は短めでした。',
+      '開始が10分ほど遅れたので、終盤が駆け足になってしまった印象です。',
+    ],
+  },
+  {
+    externalId: 'mock-takahashi',
+    ratingWeights: [0, 0, 2, 5, 4],
+    weight: 3,
+    comments: [
+      '選考の流れや今後のスケジュールを明確に案内してくださり安心できました。',
+      '会社の課題も率直に話してくださったので、かえって信頼できると感じました。',
+      '面接というより対話に近く、素の自分で話すことができました。',
+    ],
+  },
+  {
+    externalId: 'mock-ito',
+    ratingWeights: [1, 3, 4, 2, 1],
+    weight: 4,
+    comments: [
+      '回答の途中で何度か遮られてしまい、最後まで説明できませんでした。',
+      '圧迫的に感じる場面があり、正直なところ答えづらかったです。',
+      '準備してきたポートフォリオに触れる時間がなく、消化不良でした。',
+      '質問が抽象的で、何を答えれば良いのか分からないまま終わりました。',
+      '他社の選考状況を繰り返し確認され、少し不安になりました。',
+    ],
+  },
+  {
+    // ★匿名性の下限で伏せられる側。回答が集まらない面接官の見え方を確認する用
+    externalId: 'mock-watanabe',
+    ratingWeights: [0, 0, 1, 1, 1],
+    weight: 1.6,
+    comments: ['落ち着いて話を聞いてくださいました。'],
+  },
+];
+
+/** 重み付きの抽選。重みの合計に対する一様乱数で選ぶ */
+function pickWeighted(random, items, weightOf) {
+  const total = items.reduce((sum, item) => sum + weightOf(item), 0);
+  let threshold = random() * total;
+
+  for (const item of items) {
+    threshold -= weightOf(item);
+    if (threshold <= 0) return item;
+  }
+  return items[items.length - 1];
+}
+
+function insertInterviewSurveys(studentUserIds, interviewerIds) {
+  // 学生生成・メッセージ時刻とは別系列。片方を変えてもアンケートの内容がずれない
+  const random = createRandom(RANDOM_SEED + 3);
+  const insert = db.prepare(
+    `INSERT INTO interview_surveys
+       (student_user_id, status_key, interviewer_id, rating, comment, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  );
+
+  // ★「回答できるステップ」の判定は本実装をそのまま使う。
+  //   シード専用に数え直すと、ダッシュボードの回答率の分母と食い違って100%を超える
+  const allSteps = listSelectionSteps(db);
+
+  let inserted = 0;
+  for (const student of STUDENTS) {
+    const studentUserId = studentUserIds[student.loginId];
+    if (!studentUserId) continue;
+
+    for (const statusKey of listAnswerableStatusKeys(allSteps, student.selectionStatus)) {
+      // 実際の回答率に寄せる。全ステップに回答が揃うと分母が意味を持たなくなる
+      if (random() > 0.82) continue;
+
+      const profile = pickWeighted(random, SURVEY_PROFILES, (item) => item.weight);
+      const rating =
+        pickWeighted(
+          random,
+          profile.ratingWeights.map((weight, index) => ({ weight, value: index + 1 })),
+          (item) => item.weight,
+        ).value;
+
+      // 全員が自由記述まで書くわけではない。★だけの回答も混ぜる
+      const comment = random() > 0.18 ? pick(random, profile.comments) : null;
+
+      insert.run(
+        studentUserId,
+        statusKey,
+        interviewerIds[profile.externalId],
+        rating,
+        comment,
+        hoursAgoIso(randomInt(random, 24, 24 * 30)),
+      );
+      inserted += 1;
+    }
+  }
+
+  return inserted;
 }
 
 function seed() {
@@ -1557,10 +1694,11 @@ function seed() {
     for (const student of STUDENTS) {
       studentRefs[student.loginId] = insertStudentRoom(student, { hrUserIds, allHrIds, passwordHash });
     }
-    seedInterviewScheduling({ hrUserIds, studentRefs });
+    const interviewerIds = seedInterviewScheduling({ hrUserIds, studentRefs });
     const studentUserIds = Object.fromEntries(
       Object.entries(studentRefs).map(([loginId, ref]) => [loginId, ref.studentUserId]),
     );
+    insertInterviewSurveys(studentUserIds, interviewerIds);
     insertSelectionFeedbacks(studentUserIds, hrUserIds.hr1);
     insertStudentAlerts(studentUserIds, hrUserIds.hr1);
     // 学生のお知らせより後。ルームとメッセージが揃っていないと起点が引けない
@@ -1577,6 +1715,7 @@ function seed() {
     complianceRules: db.prepare('SELECT COUNT(*) AS c FROM compliance_rules').get().c,
     snippets: db.prepare('SELECT COUNT(*) AS c FROM snippets').get().c,
     scheduleRequests: db.prepare('SELECT COUNT(*) AS c FROM schedule_requests').get().c,
+    interviewSurveys: db.prepare('SELECT COUNT(*) AS c FROM interview_surveys').get().c,
     alerts: db.prepare('SELECT COUNT(*) AS c FROM alerts').get().c,
   };
   const perAssignee = db

@@ -8,6 +8,7 @@ import {
   INTERVIEW_DURATION_OPTIONS,
   INTERVIEW_FORMAT_META,
   INTERVIEW_FORMAT_VALUES,
+  INTERVIEW_SURVEY_STATUS_KEYS,
   SELECTION_STATUS_META,
 } from '../constants/index.js'
 import { useSchedulesStore } from '../stores/schedules.js'
@@ -41,9 +42,23 @@ const form = reactive({
   locationText: 'URLは確定後に案内します',
 })
 
+/**
+ * 面接アンケート（S-11）が「この面接を担当した面接官」を引くためのステップキー。
+ *
+ * 学生の**現在の**選考ステータスから決める。上の表示名（selectionStage）は人事が
+ * 言い回しを変えられるフィールドなので、キーの根拠にはできない
+ * （「最終面接」と書き換えても指しているステップは変わらない）。
+ * 面接以外の段階（書類など）で作られた依頼はアンケートの対象外なので null。
+ */
+const selectionStatusKey = computed(() => {
+  const status = props.room.student?.selectionStatus
+  return INTERVIEW_SURVEY_STATUS_KEYS.includes(status) ? status : null
+})
+
 const payload = computed(() => ({
   interviewerId: Number(form.interviewerId),
   selectionStage: form.selectionStage.trim(),
+  selectionStatusKey: selectionStatusKey.value,
   durationMinutes: Number(form.durationMinutes),
   availableFrom: toIso(`${form.availableFromDate}T${form.dailyStartTime}:00`),
   availableUntil: toIso(`${form.availableUntilDate}T${form.dailyEndTime}:00`),

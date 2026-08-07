@@ -109,10 +109,11 @@ export function createScheduleRequest(db, input) {
       .prepare(
         `INSERT INTO schedule_requests (
            room_id, student_user_id, interviewer_id, created_by_user_id,
-           selection_stage, duration_minutes, available_from, available_until,
+           selection_stage, selection_status_key,
+           duration_minutes, available_from, available_until,
            daily_start_time, daily_end_time, response_deadline,
            interview_format, location_text, status, created_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         input.roomId,
@@ -120,6 +121,9 @@ export function createScheduleRequest(db, input) {
         input.interviewerId,
         input.createdByUserId,
         input.selectionStage,
+        // 面接アンケート（S-11）が「この面接を担当した面接官」を引くためのキー。
+        // selection_stage は人事が自由に書ける表示名なので突き合わせに使えない
+        input.selectionStatusKey ?? null,
         input.durationMinutes,
         input.availableFrom,
         input.availableUntil,

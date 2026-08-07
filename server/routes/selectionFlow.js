@@ -6,6 +6,7 @@ import {
   listSelectionSteps,
   saveSelectionSteps,
 } from '../services/selectionFlow.js';
+import { findAnsweredStatusKeys, saveSurvey } from '../services/interviewSurveys.js';
 import {
   ROLE,
   SELECTION_FLOW_STEP_VALUES,
@@ -16,9 +17,14 @@ import {
 /**
  * 選考フロー（P2-11 / S-09・api.md §2「選考フロー」）
  *
- * - GET  /selection-flow      … ステップ設定（全ロール）
- * - PUT  /selection-flow      … 一括更新（人事のみ）
- * - GET  /selection-flow/me   … 学生本人の進捗＋見せてよいFB（学生のみ）
+ * - GET  /selection-flow            … ステップ設定（全ロール）
+ * - PUT  /selection-flow            … 一括更新（人事のみ）
+ * - GET  /selection-flow/me         … 学生本人の進捗＋見せてよいFB（学生のみ）
+ * - POST /selection-flow/me/surveys … 面接アンケートの回答（S-11・学生のみ）
+ *
+ * アンケートの回答をここに置くのは、回答してよいステップかの判定が
+ * 「本人の進捗が done か」そのものだから。人事向けの参照は
+ * routes/interviewSurveys.js に分ける（読者が違い、匿名化の責務も別）。
  *
  * 学生ごとのフィードバックは routes/students.js に置く。
  * あちらは「人事ロール」＋「その学生のルームの room_members」の二段構えの認可を
@@ -129,9 +135,45 @@ router.get('/me', requireAuth, (req, res, next) => {
       return res.status(403).json({ error: 'forbidden', message: '学生のみ参照できます' });
     }
 
-    res.json(buildStudentFlow(db, req.user.id));
+    const flow = buildStudentFlow(db, req.user.id);
+    // 面接アンケート（S-11）の回答済みフラグも同じレスポンスに載せる。
+    // 別に取りに行かせると、リロード直後に一瞬「未回答」のカードが出る
+    const answered = findAnsweredStatusKeys(db, req.user.id);
+
+    return res.json({
+      ...flow,
+      steps: flow.steps.map((step) => ({
+        ...step,
+        surveyAnswered: answered.has(step.statusKey),
+      })),
+    });
   } catch (error) {
-    next(error);
+    return next(error);
+  }
+});
+
+/**
+ * 面接アンケートの回答（S-11）。
+ * 対象は req.user から引き、クライアントの userId は受け取らない。
+ * 回答してよいステップかの判定はサービス側（完了済みの面接ステップのみ）。
+ */
+router.post('/me/surveys', requireAuth, (req, res, next) => {
+  try {
+    if (req.user.role !== ROLE.STUDENT) {
+      return res.status(403).json({ error: 'forbidden', message: '学生のみ回答できます' });
+    }
+
+    const result = saveSurvey(db, {
+      studentUserId: req.user.id,
+      statusKey: req.body?.statusKey,
+      rating: Number(req.body?.rating),
+      comment: req.body?.comment,
+    });
+    if (result.error) return invalidRequest(res, result.error);
+
+    return res.status(201).json(result);
+  } catch (error) {
+    return next(error);
   }
 });
 
