@@ -227,6 +227,40 @@ compliance_rules（就職差別・オワハラの辞書。P4-2）
 本人しか見ないと分かっているから率直に書ける、というのがこの機能の価値そのもの。
 人事の申し送りメモ（`memos`）とは別テーブルで、相互に参照しない。
 
+### `hr_surveys`（人事FBアンケート・S-12）
+
+選考が終わった学生（内定・辞退）が、**担当人事の対応**を3軸★5段階＋自由記述で答える。
+人事は監視ダッシュボード（`/dashboard`）の全社・個人タブで読む。
+
+| カラム | 型 | 制約 | 説明 |
+| --- | --- | --- | --- |
+| `id` | INTEGER | PK AUTOINCREMENT | |
+| `student_user_id` | INTEGER | NOT NULL **UNIQUE** FK users | 常に認証済み本人。1学生1回 |
+| `assignee_user_id` | INTEGER | FK users | **回答時点の担当人事のスナップショット。** NULL＝未割当 |
+| `outcome_status` | TEXT | NOT NULL CHECK(`offer`/`declined`) | 回答時点の選考結果 |
+| `rating_speed` | INTEGER | NOT NULL CHECK(1〜5) | 連絡の速さ |
+| `rating_clarity` | INTEGER | NOT NULL CHECK(1〜5) | 説明の分かりやすさ |
+| `rating_courtesy` | INTEGER | NOT NULL CHECK(1〜5) | 対応の丁寧さ |
+| `comment` | TEXT | | 自由記述（1000文字以内・任意） |
+| `created_at` | TEXT | NOT NULL | |
+
+3軸は `shared/constants.js` の `HR_SURVEY_AXIS` と1対1。軸を増やすなら列も足す。
+
+**`assignee_user_id` は参照ではなくコピー。** あとで担当を付け替えても過去の評価は動かさない。
+`outcome_status` も同じ理由でコピーする（内定者と辞退者では傾向がまるで違うので、
+選考ステータスを付け替えられて集計軸が動くと前回との比較ができなくなる）。
+
+回答は1回きりで上書きしない（学生カードが「ご回答ありがとうございました」で終端する
+既存UIに合わせる）。そのため `updated_at` を持たない。二重送信は
+`ON CONFLICT(student_user_id) DO NOTHING` で先勝ちにする。
+
+**★人事に「誰が回答したか」を出さない。** `student_user_id` を持つのは1学生1回答を
+UNIQUE で担保するためだけで、人事向けのレスポンスには**絶対に載せない**
+（`server/services/hrSurveys.js`）。回答日時も返さない（選考の終了日と突き合わせると
+回答者が割れる）。回答が `HR_SURVEY_MIN_SAMPLE` 件に満たない担当者は、評価も自由記述も
+個別に出さない。**この判定は必ずサーバで行う**（クライアントで隠さない）。
+`interview_surveys`（S-11）と同じ思想だが、担当学生が固定なぶんこちらのほうが危うい。
+
 ### `tag_rules`（用件タグのキーワード辞書）
 
 | カラム | 型 | 制約 | 説明 |

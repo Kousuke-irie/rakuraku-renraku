@@ -206,7 +206,8 @@ CREATE TABLE IF NOT EXISTS alerts (
   --   読み出し側（services/alertView.js）が users.role と突き合わせて混ざらないようにする。
   kind TEXT NOT NULL CHECK(kind IN (
     'sla_notify', 'sla_escalate', 'compliance', 'interview_room_missing',
-    'student_selection_advanced', 'student_feedback_published'
+    'student_selection_advanced', 'student_feedback_published',
+    'student_hr_survey_requested'
   )),
   severity TEXT NOT NULL CHECK(severity IN ('block', 'warn', 'info')),
   room_id INTEGER NOT NULL REFERENCES rooms(id),
@@ -336,6 +337,34 @@ CREATE TABLE IF NOT EXISTS interview_surveys (
   UNIQUE(student_user_id, status_key)
 );
 
+-- 人事FBアンケートの回答（S-12）。選考が終わった学生が、担当人事の**対応**を
+-- 3軸★5段階＋自由記述で答える。人事は /dashboard で担当者別に読む。
+--
+-- ★匿名化の要求は interview_surveys と同じ（むしろ強い）。
+--   担当学生は固定なので、1〜2件だと担当者本人が回答者をまず特定できる。
+--   人事向けのレスポンスに student_user_id を載せないこと（services/hrSurveys.js）。
+--   student_user_id を持つのは1学生1回答を UNIQUE で担保するためだけ。
+--
+-- ★1学生1回。選考は1人につき1度しか終わらないので status_key に相当する軸を持たない。
+--   回答は上書きしないため updated_at も持たない（interview_surveys と同じ）。
+CREATE TABLE IF NOT EXISTS hr_surveys (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  student_user_id INTEGER NOT NULL UNIQUE REFERENCES users(id),
+  -- ★回答時点の担当人事のスナップショット。あとで担当が変わっても過去の評価を
+  --   付け替えないため、参照ではなくコピーとして持つ。未割当なら NULL
+  --   （集計では HR_SURVEY_UNKNOWN_ASSIGNEE_ID に寄せる）
+  assignee_user_id INTEGER REFERENCES users(id),
+  -- ★回答時点の選考結果のスナップショット。内定者と辞退者では評価の傾向が
+  --   まったく違うので、後から選考ステータスを付け替えられても集計軸が動かないようにする
+  outcome_status TEXT NOT NULL CHECK(outcome_status IN ('offer', 'declined')),
+  -- HR_SURVEY_AXIS の3軸と1対1。軸を増やすときはここも足す
+  rating_speed INTEGER NOT NULL CHECK(rating_speed BETWEEN 1 AND 5),
+  rating_clarity INTEGER NOT NULL CHECK(rating_clarity BETWEEN 1 AND 5),
+  rating_courtesy INTEGER NOT NULL CHECK(rating_courtesy BETWEEN 1 AND 5),
+  comment TEXT,
+  created_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_messages_room       ON messages(room_id, id DESC);
 CREATE INDEX IF NOT EXISTS idx_rooms_sort          ON rooms(urgency, last_student_message_at);
 CREATE INDEX IF NOT EXISTS idx_rooms_status        ON rooms(handling_status);
@@ -353,6 +382,8 @@ CREATE INDEX IF NOT EXISTS idx_selection_feedbacks  ON selection_feedbacks(stude
 CREATE INDEX IF NOT EXISTS idx_student_notes        ON student_notes(student_user_id);
 -- 面接官別の集計（S-11 ダッシュボード）。回答の新しい順に読む
 CREATE INDEX IF NOT EXISTS idx_interview_surveys    ON interview_surveys(interviewer_id, created_at DESC);
+-- 担当者別の集計（S-12 ダッシュボード）。回答の新しい順に読む
+CREATE INDEX IF NOT EXISTS idx_hr_surveys           ON hr_surveys(assignee_user_id, created_at DESC);
 -- 予約実績から「学生×面接ステップ→面接官」を引く（S-11 の面接官スナップショット解決）
 CREATE INDEX IF NOT EXISTS idx_schedule_status_key
   ON schedule_requests(student_user_id, selection_status_key);
@@ -375,9 +406,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_alerts_interview_room_unique
 -- 学生向け（P4-7）：1学生×1ステップ×1種別につき1件だけ。
 -- rule_code に選考ステップ（status_key）が入る。
 -- 「二次面接に進んだ」「一次面接のFBが公開された」は同じ学生でも別の行になる。
+-- 人事FBアンケートの依頼（S-12）は rule_code に選考結果（offer / declined）が入る。
+-- 内定を出したあとに辞退へ変わったら改めて1件立つ（＝正しく再依頼される）。
 CREATE UNIQUE INDEX IF NOT EXISTS idx_alerts_student_unique
   ON alerts(kind, room_id, target_user_id, rule_code)
-  WHERE kind IN ('student_selection_advanced', 'student_feedback_published');
+  WHERE kind IN (
+    'student_selection_advanced', 'student_feedback_published', 'student_hr_survey_requested'
+  );
 
 -- 通知一覧（自分宛・未読優先・新しい順）
 CREATE INDEX IF NOT EXISTS idx_alerts_target       ON alerts(target_user_id, read_at, created_at DESC);

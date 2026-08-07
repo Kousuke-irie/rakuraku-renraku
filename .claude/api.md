@@ -147,6 +147,8 @@
 | GET | `/selection-flow` | 全ロール。無効なステップも含む全件 |
 | PUT | `/selection-flow` | **人事のみ**。全ステップの一括置換 |
 | GET | `/selection-flow/me` | **学生のみ**。自分の進捗＋見せてよいFB |
+| POST | `/selection-flow/me/surveys` | **学生のみ**。面接アンケートの回答（S-11） |
+| POST | `/selection-flow/me/hr-survey` | **学生のみ**。人事FBアンケートの回答（S-12） |
 | GET | `/students/:userId/feedbacks` | **人事のみ**。本文は全件＋`isVisibleToStudent` |
 | PUT | `/students/:userId/feedbacks/:statusKey` | **人事のみ**。本文が空なら削除 |
 
@@ -177,7 +179,13 @@
       "interviewFormat": "online",
       "locationText": null
     }
-  ]
+  ],
+  "hrSurvey": {
+    "answerable": false,
+    "answered": false,
+    "outcome": null,
+    "outcomeLabel": null
+  }
 }
 ```
 
@@ -195,6 +203,61 @@
   - 候補期間・回答期限・面接官の外部IDは載せない（確定後の学生に必要なのは
     いつ・誰と・どこで だけ）。詳細な調整の経緯はチャットの日程調整カードが持つ
   - `locationText` は `null` がありうる（会議室・URLは人事があとから決める：P4-5）
+- `hrSurvey` は人事FBアンケート（S-12）の状態。`answerable` は**選考が終わっているか**
+  （内定・辞退）で、`outcome` は `'offer'` / `'declined'` / `null`
+  - **辞退した学生にも返す。** マイページはフロー図を出さないが、アンケートカードは出す
+  - **`answerable` の判定はサーバが持つ。** クライアントで `selectionStatus` から
+    組み立て直さないこと（判定が2箇所に散り、カードが出ていないのに POST できる状態になる）
+
+### 人事FBアンケート（S-12）
+
+選考が終わった学生が、担当人事の対応を3軸★＋自由記述で答える。人事は集計だけを読む。
+
+| メソッド | パス | 権限 |
+| --- | --- | --- |
+| POST | `/selection-flow/me/hr-survey` | **学生のみ**。`{ ratings, comment }` |
+| GET | `/hr-surveys` | **人事のみ**。担当者別の★集計 |
+| GET | `/hr-surveys/comments?assigneeId=` | **人事のみ**。匿名化した自由記述 |
+| GET | `/hr-surveys/ai-summary?assigneeId=` | **人事のみ**。自由記述のAI要約 |
+
+```json
+// POST /selection-flow/me/hr-survey
+{ "ratings": { "speed": 4, "clarity": 5, "courtesy": 5 }, "comment": "ご対応ありがとうございました" }
+// → 201 { "answeredAt": "2026-08-07T02:00:00Z" }
+```
+
+- **3軸すべて必須。** 1つでも欠けると 400（部分回答は集計の軸が欠けて比較できない）
+- 対象は `req.user` から引く。`userId` をクライアントから受け取らない
+- 選考が終わっていない学生は 400。判定は `isHrSurveyAnswerable()`（＝ `selectionPhaseOf`）
+- 1人1回。2回目は**エラーにせず**先に入った1件をそのまま返す（学生に見せる必要がない）
+- 担当人事は回答時点の `rooms.assignee_user_id` をコピーする（`database.md` の `hr_surveys`）
+
+```json
+// GET /hr-surveys
+{
+  "assignees": [
+    { "id": "3", "displayName": "大西 陽子", "isUnknown": false,
+      "count": 5, "avgOverall": 3.5,
+      "axisAverages": { "speed": 3, "clarity": 3.4, "courtesy": 4.2 } }
+  ],
+  "overall": { "count": 12, "avgOverall": 3.1, "axisAverages": { "…": 0 } },
+  "outcomes": [{ "outcomeStatus": "offer", "label": "内定", "count": 8, "avgOverall": 3.6, "axisAverages": {} }],
+  "suppressed": { "assigneeCount": 1, "responseCount": 1 },
+  "minSampleSize": 3,
+  "answerableCount": 16
+}
+```
+
+- **回答者は返さない。** 学生ID・氏名・ルームID・回答日時のいずれも載せないこと
+- 回答が `minSampleSize` 未満の担当者は `assignees` に入れず、件数だけ `suppressed` に集約する。
+  **伏せたぶんも `overall` には含める**（合計が合わないと集計そのものが信用されない）
+- `?assigneeId=` は `'all'`（既定）／担当者ID／`'unknown'`（担当未割当）。
+  **絞り込みは必ずサーバで行う。** 全件を返して画面で絞ると、通信内容の時点で匿名性が破れる
+- この集計は `GET /dashboard` の `hrSurvey` にも同梱される（監視ダッシュボードは1往復で描く）。
+  `GET /hr-surveys` は単体で確認したいとき用
+- 個人ダッシュボード（`GET /dashboard/personal`）の `hrSurvey` は担当者1人ぶん。
+  **下限未満なら数字を返さない。本人が自分のぶんを見る場合も同じ**
+  （「自分ならよい」にすると、担当者は誰が答えたか分かる状態で読むことになる）
 
 ```json
 // GET /students/:userId/feedbacks（人事のプロフィールパネル用）

@@ -58,6 +58,19 @@ function createDb() {
       read_at TEXT,
       resolved_at TEXT
     );
+    -- S-12。集計そのものは hrSurveys.test.js が見るので、ここは
+    -- 「回答0件でも全社の集計が形を保つ」ことだけ確かめられればよい
+    CREATE TABLE hr_surveys (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      student_user_id INTEGER NOT NULL UNIQUE,
+      assignee_user_id INTEGER,
+      outcome_status TEXT NOT NULL,
+      rating_speed INTEGER NOT NULL,
+      rating_clarity INTEGER NOT NULL,
+      rating_courtesy INTEGER NOT NULL,
+      comment TEXT,
+      created_at TEXT NOT NULL
+    );
   `);
   return db;
 }

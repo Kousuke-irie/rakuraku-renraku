@@ -22,6 +22,8 @@ export const selectionFlowApi = {
    * 学生のマイページ（S-09）用。ステップ・自分の現在位置・見せてよいFB を1回で受け取る。
    * ★FB は**完了済みステップのぶんだけ**サーバが返す。クライアントで隠す作りにしない。
    * 各ステップの `surveyAnswered` に面接アンケート（S-11）の回答済みフラグが入る。
+   * `hrSurvey`（S-12）に人事FBアンケートの状態
+   * `{ answerable, answered, outcome, outcomeLabel }` が入る。
    */
   me: () => http.get("/selection-flow/me"),
 
@@ -33,6 +35,16 @@ export const selectionFlowApi = {
    */
   submitSurvey: (statusKey, rating, comment) =>
     http.post("/selection-flow/me/surveys", { statusKey, rating, comment }),
+
+  /**
+   * POST /api/selection-flow/me/hr-survey → `{ answeredAt }`（学生のみ）
+   *
+   * 人事FBアンケートの回答（S-12）。回答できるのは選考が終わった学生（内定・辞退）
+   * だけで、判定はサーバが持つ。1人につき1回で、あとから上書きはできない。
+   * @param {object} ratings HR_SURVEY_AXIS をキーにした★（3軸すべて必須）
+   */
+  submitHrSurvey: (ratings, comment) =>
+    http.post("/selection-flow/me/hr-survey", { ratings, comment }),
 
   /**
    * GET /api/students/:userId/feedbacks

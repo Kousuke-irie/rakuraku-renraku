@@ -20,6 +20,7 @@ import {
   selectionPhaseOf,
 } from '../../shared/constants.js';
 import { AI_RESOLVED_SQL, EFFECTIVE_PRIORITY_SQL } from './effectivePriority.js';
+import { buildAssigneeHrSurvey } from './hrSurveys.js';
 import { listDashboardSelectionSteps } from './selectionFlow.js';
 import { SLA_ESCALATE_HOURS, SLA_NOTIFY_HOURS } from './slaMonitor.js';
 
@@ -329,6 +330,10 @@ export function getPersonalDashboard(db, assigneeId, now = Date.now()) {
     selectionBreakdown: buildSelectionBreakdown(db, assigneeId),
     hourlyActivity: buildHourlyActivity(db, assigneeId),
     replyLatency,
+    // S-12：この担当者が受け取った、選考を終えた学生からの評価。
+    // ★下限未満なら数字を返さない。**本人が自分のぶんを見る場合も同じ**
+    //   （services/hrSurveys.js の buildAssigneeHrSurvey のコメント参照）
+    hrSurvey: buildAssigneeHrSurvey(db, assigneeId),
     thresholds: { notifyHours: SLA_NOTIFY_HOURS, escalateHours: SLA_ESCALATE_HOURS },
   };
 }

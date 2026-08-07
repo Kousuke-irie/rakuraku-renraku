@@ -115,7 +115,7 @@ const STUDENT_NOTE_ERROR = Object.freeze({
   SAVE: 'メモの保存に失敗しました',
 })
 
-/** 面接アンケート（S-11）の送信結果の文言 */
+/** 面接アンケート（S-11）・人事FBアンケート（S-12）の送信結果の文言 */
 const INTERVIEW_SURVEY_MESSAGE = Object.freeze({
   SAVED: 'アンケートを送信しました。ご協力ありがとうございました。',
   ERROR: 'アンケートの送信に失敗しました',
@@ -542,6 +542,39 @@ export const useUiStore = defineStore('ui', {
             steps: this.myFlow.steps.map((step) =>
               step.statusKey === statusKey ? { ...step, surveyAnswered: true } : step
             ),
+          }
+        }
+
+        this.pushToast({ type: 'success', message: INTERVIEW_SURVEY_MESSAGE.SAVED })
+        return true
+      } catch (error) {
+        this.pushToast({
+          type: 'error',
+          message: toErrorMessage(error, INTERVIEW_SURVEY_MESSAGE.ERROR),
+        })
+        return false
+      }
+    },
+
+    /**
+     * POST /api/selection-flow/me/hr-survey（人事FBアンケート・S-12）。
+     *
+     * 面接アンケート（submitInterviewSurvey）と同じく、回答済みの状態は myFlow に
+     * 持たせる。**コンポーネントのローカル状態にしないこと。** リロードで
+     * 「未回答」に戻り、同じ学生に何度も答えさせてしまう
+     * （サーバは1回しか受け付けないので、2回目以降は静かに捨てられる）。
+     *
+     * @param {object} ratings HR_SURVEY_AXIS をキーにした★（3軸すべて必須）
+     * @returns {boolean} 保存できたか
+     */
+    async submitHrSurvey(ratings, comment) {
+      try {
+        await selectionFlowApi.submitHrSurvey(ratings, comment)
+
+        if (this.myFlow) {
+          this.myFlow = {
+            ...this.myFlow,
+            hrSurvey: { ...this.myFlow.hrSurvey, answered: true },
           }
         }
 

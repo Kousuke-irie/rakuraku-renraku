@@ -19,6 +19,9 @@ import {
   HANDLING_STATUS,
   HANDLING_STATUS_META,
   HOURS_IN_DAY,
+  HR_SURVEY_AXIS_META,
+  HR_SURVEY_AXIS_VALUES,
+  HR_SURVEY_RATING_MAX,
   REPLY_LATENCY_BUCKET,
   REPLY_STATE,
   ROLE,
@@ -34,6 +37,7 @@ import {
   doughnutOptions,
   horizontalBarOptions,
   lineOptions,
+  ratingBarOptions,
   verticalBarOptions,
 } from "../plugins/charts.js"
 import { useAuthStore } from "../stores/auth.js"
@@ -381,6 +385,59 @@ const latencyNote = computed(() => {
 
   return `返信済み${latency.value.sampleSize}件。中央値 ${latency.value.medianHours}時間（平均 ${average}時間）。学生が続けて送った場合は最初の1通からの時間で数えます`
 })
+
+// --- 学生からの評価（S-12） ---
+const hrSurvey = computed(
+  () =>
+    data.value?.hrSurvey ?? {
+      isSuppressed: true,
+      minSampleSize: 3,
+      count: 0,
+      axisAverages: null,
+      avgOverall: null,
+      answerableCount: 0,
+    }
+)
+
+/** 伏せている場合は rows を空にして、ChartPanel の empty-text に説明を出させる */
+const hrSurveyRows = computed(() => {
+  if (hrSurvey.value.isSuppressed) return []
+
+  return HR_SURVEY_AXIS_VALUES.map((axis) => [
+    HR_SURVEY_AXIS_META[axis].label,
+    hrSurvey.value.axisAverages[axis] ?? "—",
+  ])
+})
+
+const hrSurveyChart = computed(() => ({
+  labels: HR_SURVEY_AXIS_VALUES.map((axis) => HR_SURVEY_AXIS_META[axis].label),
+  datasets: [
+    {
+      data: HR_SURVEY_AXIS_VALUES.map((axis) => hrSurvey.value.axisAverages?.[axis] ?? 0),
+      backgroundColor: CHART_COLOR.PRIMARY,
+      ...BAR_STYLE,
+    },
+  ],
+}))
+
+const hrSurveyNote = computed(() => {
+  const { count, answerableCount, avgOverall, isSuppressed } = hrSurvey.value
+  const base = `内定・辞退が決まった担当学生 ${answerableCount}名中 ${count}件の回答`
+
+  if (isSuppressed) return base
+  return `${base}。総合 ${avgOverall} / ${HR_SURVEY_RATING_MAX}（3軸の平均）`
+})
+
+/** 伏せている理由は必ず書く。黙って空にすると「回答が0件」と読み違える */
+const hrSurveyEmptyText = computed(() => {
+  const { count, minSampleSize } = hrSurvey.value
+  if (count === 0) return "回答はまだありません"
+
+  return (
+    `回答が${count}件で、${minSampleSize}件に満たないため表示していません。` +
+    "回答者が特定できてしまうため、ご自身の担当ぶんでも同じ扱いです。"
+  )
+})
 // #endregion
 
 // #region local methods
@@ -579,6 +636,25 @@ watch(selectedAssigneeId, (next, previous) => {
       <Line
         :data="hourlyChart"
         :options="lineOptions()"
+      />
+    </ChartPanel>
+
+    <!--
+      人事FBアンケート（S-12）。**下限未満なら数字を出さない。**
+      本人が自分のぶんを見る場合も同じ。「自分ならよい」にすると、担当者は
+      誰が答えたか分かる状態で読むことになり、学生への約束が崩れる。
+    -->
+    <ChartPanel
+      title="学生からの評価（選考終了後アンケート）"
+      :note="hrSurveyNote"
+      :columns="['評価軸', '平均']"
+      :rows="hrSurveyRows"
+      :empty-text="hrSurveyEmptyText"
+      :height="180"
+    >
+      <Bar
+        :data="hrSurveyChart"
+        :options="ratingBarOptions(HR_SURVEY_RATING_MAX)"
       />
     </ChartPanel>
   </div>

@@ -17,6 +17,7 @@ import mockCalendarRouter from './mockCalendar.js';
 import alertsRouter from './alerts.js';
 import dashboardRouter from './dashboard.js';
 import interviewSurveysRouter from './interviewSurveys.js';
+import hrSurveysRouter from './hrSurveys.js';
 
 const router = Router();
 
@@ -40,5 +41,6 @@ router.use('/', scheduleRequestsRouter);
 router.use('/alerts', alertsRouter);
 router.use('/dashboard', dashboardRouter);
 router.use('/interview-surveys', interviewSurveysRouter);
+router.use('/hr-surveys', hrSurveysRouter);
 
 export default router;

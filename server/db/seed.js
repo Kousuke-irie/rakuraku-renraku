@@ -12,7 +12,11 @@ import db from './index.js';
 import { classifyTopicTag, clearTagRuleCache } from '../services/tagClassifier.js';
 import { clearComplianceRuleCache } from '../services/complianceChecker.js';
 import { calculateUrgency } from '../services/urgencyCalculator.js';
-import { notifySelectionAdvanced, notifyVisibleFeedbacks } from '../services/studentNotifier.js';
+import {
+  notifyHrSurveyRequested,
+  notifySelectionAdvanced,
+  notifyVisibleFeedbacks,
+} from '../services/studentNotifier.js';
 // 過去の監視イベント（P4-4 のダッシュボード用）を、本番と同じ文面・同じ宛先の決め方で作る
 import { buildDetail as buildSlaDetail, findManagerIds } from '../services/slaMonitor.js';
 import { ACK_NOTE } from '../services/complianceAlerts.js';
@@ -26,6 +30,7 @@ import {
   COMPLIANCE_SOURCE,
   DASHBOARD_TREND_DAYS,
   HANDLING_STATUS,
+  HR_SURVEY_MIN_SAMPLE,
   INTERVIEW_FORMAT,
   MESSAGE_TYPE,
   ROLE,
@@ -35,6 +40,7 @@ import {
   SELECTION_STATUS,
   SELECTION_STATUS_META,
   URGENCY,
+  isHrSurveyAnswerable,
 } from '../../shared/constants.js';
 
 const BCRYPT_COST = 10;
@@ -59,6 +65,38 @@ const RANDOM_SEED = 20260806;
  *   「[日程確定] 過去の日付」がカードに並んでメイン画面の見た目が変わる。
  */
 const SURVEY_DEMO_LOGIN_IDS = Object.freeze(['student2', 'student4', 'student5', 'student9']);
+
+/**
+ * 人事FBアンケート（S-12）を**その場で回答して見せる**ためのデモ用アカウント。
+ *
+ * 手書きシナリオのうち選考が終わっている2名（student5＝内定・student6＝辞退）。
+ * シード側の回答は入れないので、ログインするとアンケートカードが出て、送信すると
+ * 監視ダッシュボードの数字が動く、という流れを見せられる。
+ * ★内定と辞退を1名ずつ選ぶこと。カードの文面が結果で変わるため、
+ *   両方見せられないと「辞退者にも聞いている」という要点が伝わらない。
+ * ★SHOWCASE_STUDENTS の選考ステータスを変えたらここも直すこと。
+ */
+const HR_SURVEY_DEMO_LOGIN_IDS = Object.freeze(['student5', 'student6']);
+
+/**
+ * 生成分のうち「選考が終わった学生」に割り当てる結果（S-12 アンケートの母数）。
+ *
+ * ★担当者ごとに同じ人数を配る。**シナリオの乱数に任せないこと。**
+ *   偏ると匿名化の下限（HR_SURVEY_MIN_SAMPLE）に届かない担当者が出て、
+ *   ダッシュボードの担当者別が丸ごと伏せ字になり、デモが成立しない。
+ *
+ * ★内定と辞退を混ぜる。内定者だけにすると「満足した人だけが答えたアンケート」に
+ *   なり、この機能でいちばん読みたい辞退者の声が入らない。
+ *
+ * 担当が付いていない（拾い上げ待ちの）ルームには配らない。あちらは
+ * 「誰も見ていない受信箱」を見せるための席で、選考が進んでいると筋が通らない。
+ */
+const SETTLED_OUTCOMES_PER_ASSIGNEE = Object.freeze([
+  SELECTION_STATUS.OFFER,
+  SELECTION_STATUS.DECLINED,
+  SELECTION_STATUS.OFFER,
+  SELECTION_STATUS.OFFER,
+]);
 
 function hoursAgoIso(hours) {
   return new Date(NOW - hours * 3_600_000).toISOString();
@@ -941,13 +979,44 @@ function buildDisplayName(index) {
   return `${surname} ${givenName}`;
 }
 
+/**
+ * 選考が終わった学生に差し替える（S-12）。
+ *
+ * 担当者ごとに先頭から SETTLED_OUTCOMES_PER_ASSIGNEE 件を確定・離脱へ倒す。
+ * ★次の面接や日程調整の状態も一緒に畳むこと。選考が終わっているのに
+ *   「来週の面接」が残っていると、受信箱のカードとマイページの両方で筋が通らない。
+ */
+function applySettledOutcomes(students) {
+  /** @type {Map<string|null, number>} 担当者 → すでに確定へ倒した人数 */
+  const assigned = new Map();
+
+  return students.map((student) => {
+    // 担当未割当のルームは「誰も見ていない受信箱」の席なので選考を進めない
+    if (student.assignee === null) return student;
+
+    const done = assigned.get(student.assignee) ?? 0;
+    if (done >= SETTLED_OUTCOMES_PER_ASSIGNEE.length) return student;
+    assigned.set(student.assignee, done + 1);
+
+    return {
+      ...student,
+      selectionStatus: SETTLED_OUTCOMES_PER_ASSIGNEE[done],
+      handlingStatus: HANDLING_STATUS.DONE,
+      scheduleState: SCHEDULE_STATE.NONE,
+      nextInterviewAt: null,
+      nextInterviewRoom: null,
+      interviewer: null,
+    };
+  });
+}
+
 /** SHOWCASE_STUDENTS と同じ形の学生オブジェクトを作る（挿入処理を分岐させないため） */
 function buildGeneratedStudents() {
   const random = createRandom(RANDOM_SEED);
   const plan = buildAssigneePlan();
   const offset = SHOWCASE_STUDENTS.length;
 
-  return plan.map((assignee, index) => {
+  const students = plan.map((assignee, index) => {
     const scenario = SCENARIOS[index % SCENARIOS.length];
     const school = pick(random, UNIVERSITIES);
     const latestHoursAgo = randomFloat(random, ...scenario.latestHoursAgo);
@@ -974,6 +1043,8 @@ function buildGeneratedStudents() {
       })),
     };
   });
+
+  return applySettledOutcomes(students);
 }
 
 /**
@@ -1000,7 +1071,7 @@ function clearExistingData() {
   const tables = [
     'alerts', 'read_receipts', 'memos', 'room_members', 'calendar_bookings', 'calendar_events',
     'messages', 'schedule_requests', 'selection_feedbacks', 'student_notes',
-    'interview_surveys', 'rooms', 'students',
+    'interview_surveys', 'hr_surveys', 'rooms', 'students',
     'calendar_interviewers', 'users', 'tag_rules', 'compliance_rules', 'snippets',
     'company_info', 'selection_steps',
   ];
@@ -1067,6 +1138,17 @@ function insertStudentAlerts(studentUserIds, actorUserId) {
     }
 
     notifyVisibleFeedbacks(db, { roomId, studentUserId, actorUserId });
+
+    // S-12：選考が終わった学生には、アンケート依頼のお知らせが届いている状態にする。
+    // 「進行中 → いまの結果」への遷移として本実装に通す（手書きで alerts に入れない）
+    const student = STUDENTS.find((candidate) => candidate.loginId === loginId);
+    notifyHrSurveyRequested(db, {
+      roomId,
+      studentUserId,
+      actorUserId,
+      previousStatus: SELECTION_STATUS.INTERVIEW_3,
+      nextStatus: student?.selectionStatus,
+    });
   }
 }
 
@@ -1750,6 +1832,152 @@ function insertInterviewSurveys(studentUserIds, interviewerIds) {
   return inserted;
 }
 
+/**
+ * 人事FBアンケートの回答（S-12）。
+ *
+ * ★選考結果で傾向を分ける。内定者と辞退者が同じ分布だと、ダッシュボードの
+ *   「選考結果別」が2本とも同じ長さになって、区分を分けた意味が消える。
+ * ★軸ごとにも差を付ける。3軸が横並びで同じ値だと「どこが弱いか」が読めず、
+ *   軸を3つにした意味が無くなる。連絡の速さ（C-1）を意図的に低めにしてある。
+ *
+ * ★自由記述には★を紐づける。文面と点数を別々に抽選すると
+ *   「★4.3／連絡が遅かった」のような食い違いが原文リストに並び、
+ *   デモで真っ先に突っ込まれる。
+ *
+ * @property {number[]} axisOffsets 基準★に足す軸ごとの補正（速さ／分かりやすさ／丁寧さ）
+ * @property {{base: number, body: string}[]} comments 基準★とセットの自由記述
+ */
+const HR_SURVEY_PROFILES = [
+  {
+    outcome: SELECTION_STATUS.OFFER,
+    // [★1, ★2, ★3, ★4, ★5] の重み（自由記述なしの回答で使う基準★の分布）
+    ratingWeights: [0, 0, 1, 4, 6],
+    axisOffsets: [-1, 0, 0],
+    comments: [
+      { base: 5, body: '合否のご連絡が早く、他社の選考と並行しても判断しやすかったです。' },
+      { base: 5, body: '面接ごとに次のステップを説明していただけたので、見通しが持てました。' },
+      { base: 5, body: 'こちらの都合を汲んで日程を調整してくださり、大変助かりました。' },
+      { base: 4, body: '質問への回答がいつも具体的で、安心して選考を受けられました。' },
+      { base: 4, body: '選考中の不安を都度拾っていただき、丁寧に対応いただきました。' },
+    ],
+  },
+  {
+    outcome: SELECTION_STATUS.OFFER,
+    ratingWeights: [0, 1, 3, 5, 2],
+    axisOffsets: [-1, -1, 0],
+    comments: [
+      { base: 3, body: '対応は丁寧でしたが、面接から結果連絡までに1週間ほどかかりました。' },
+      { base: 3, body: '日程の候補をいただくまでに時間がかかり、他社との調整が難しかったです。' },
+      { base: 4, body: '選考の全体像を最初に教えていただけると、もっと準備しやすかったです。' },
+      { base: 3, body: 'メールとチャットで連絡が分かれていて、どちらを見ればよいか迷いました。' },
+      { base: 4, body: '面接の持ち物や服装の案内が前日だったので、少し慌てました。' },
+    ],
+  },
+  {
+    outcome: SELECTION_STATUS.DECLINED,
+    ratingWeights: [0, 2, 4, 3, 1],
+    axisOffsets: [-1, -1, 1],
+    comments: [
+      { base: 2, body: '返信が遅く、他社の内定期限に間に合わせられませんでした。' },
+      { base: 2, body: '次の選考がいつになるか分からない期間が長く、判断できませんでした。' },
+      { base: 3, body: 'ご対応自体は丁寧でしたが、選考のスピードが合いませんでした。' },
+      { base: 4, body: '辞退の連絡にも丁寧に返信をいただき、印象は良かったです。' },
+      { base: 2, body: '選考の途中で担当の方が代わり、経緯を一から説明し直すことになりました。' },
+      { base: 3, body: '志望度を上げる情報をもっと早い段階でいただけると良かったです。' },
+    ],
+  },
+];
+
+/**
+ * 回答を作る（S-12）。
+ *
+ * ★担当者ごとに最低 HR_SURVEY_MIN_SAMPLE 件は必ず入れる。
+ *   下回るとダッシュボードの担当者別が丸ごと伏せ字になり、デモが成立しない。
+ *   下限を満たしたあとは1人おきに未回答を混ぜて、回答率が100%にならないようにする
+ *   （100%だと「回答率」という指標そのものが読めなくなる）。
+ */
+function insertHrSurveys(studentUserIds) {
+  // 学生生成・メッセージ時刻・面接アンケートとは別系列
+  const random = createRandom(RANDOM_SEED + 4);
+  const insert = db.prepare(
+    `INSERT INTO hr_surveys
+       (student_user_id, assignee_user_id, outcome_status,
+        rating_speed, rating_clarity, rating_courtesy, comment, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  const findAssignee = db.prepare(
+    'SELECT assignee_user_id AS assigneeUserId FROM rooms WHERE student_user_id = ?',
+  );
+
+  /** @type {Map<number|null, number>} 担当者 → すでに入れた回答数 */
+  const answeredPerAssignee = new Map();
+  /**
+   * プロフィール → 次に使う自由記述の添字。
+   * ★乱数で選ばない。回答が十数件しかないので、同じ文面が3回並んで
+   *   「原文」を読む価値が無くなる。プールを順に使い切る。
+   */
+  const commentCursor = new Map();
+  let inserted = 0;
+
+  for (const student of STUDENTS) {
+    const studentUserId = studentUserIds[student.loginId];
+    if (!studentUserId) continue;
+    // ★「選考が終わったか」の判定は本実装をそのまま使う。シードで数え直すと
+    //   ダッシュボードの回答率の分母と食い違って100%を超える
+    if (!isHrSurveyAnswerable(student.selectionStatus)) continue;
+    // デモ用の2名は未回答のまま残す。その場で回答して見せるための席
+    if (HR_SURVEY_DEMO_LOGIN_IDS.includes(student.loginId)) continue;
+
+    const assigneeUserId = findAssignee.get(studentUserId)?.assigneeUserId ?? null;
+    const done = answeredPerAssignee.get(assigneeUserId) ?? 0;
+    // 下限を満たしたあとだけ間引く
+    if (done >= HR_SURVEY_MIN_SAMPLE && random() > 0.7) continue;
+
+    const candidates = HR_SURVEY_PROFILES.filter(
+      (profile) => profile.outcome === student.selectionStatus,
+    );
+    const profile = pick(random, candidates);
+
+    // 全員が自由記述まで書くわけではない。★だけの回答も混ぜる。
+    // 自由記述を書く場合は、文面とセットの基準★を使う（食い違いを作らない）
+    let comment = null;
+    let base = null;
+    if (random() > 0.25) {
+      const cursor = commentCursor.get(profile) ?? 0;
+      const chosen = profile.comments[cursor % profile.comments.length];
+      commentCursor.set(profile, cursor + 1);
+      comment = chosen.body;
+      base = chosen.base;
+    } else {
+      base = pickWeighted(
+        random,
+        profile.ratingWeights.map((weight, index) => ({ weight, value: index + 1 })),
+        (item) => item.weight,
+      ).value;
+    }
+
+    // 軸ごとの補正を入れたうえで★の範囲に丸める
+    const [speed, clarity, courtesy] = profile.axisOffsets.map((offset) =>
+      Math.min(5, Math.max(1, base + offset)),
+    );
+
+    insert.run(
+      studentUserId,
+      assigneeUserId,
+      student.selectionStatus,
+      speed,
+      clarity,
+      courtesy,
+      comment,
+      hoursAgoIso(randomInt(random, 24, 24 * 45)),
+    );
+    answeredPerAssignee.set(assigneeUserId, done + 1);
+    inserted += 1;
+  }
+
+  return inserted;
+}
+
 function seed() {
   const passwordHash = bcrypt.hashSync('password123', BCRYPT_COST);
 
@@ -1777,6 +2005,7 @@ function seed() {
       Object.entries(studentRefs).map(([loginId, ref]) => [loginId, ref.studentUserId]),
     );
     insertInterviewSurveys(studentUserIds, interviewerIds);
+    insertHrSurveys(studentUserIds);
     insertSelectionFeedbacks(studentUserIds, hrUserIds.hr1);
     insertStudentAlerts(studentUserIds, hrUserIds.hr1);
     // 学生のお知らせより後。ルームとメッセージが揃っていないと起点が引けない
@@ -1794,6 +2023,7 @@ function seed() {
     snippets: db.prepare('SELECT COUNT(*) AS c FROM snippets').get().c,
     scheduleRequests: db.prepare('SELECT COUNT(*) AS c FROM schedule_requests').get().c,
     interviewSurveys: db.prepare('SELECT COUNT(*) AS c FROM interview_surveys').get().c,
+    hrSurveys: db.prepare('SELECT COUNT(*) AS c FROM hr_surveys').get().c,
     alerts: db.prepare('SELECT COUNT(*) AS c FROM alerts').get().c,
   };
   const perAssignee = db

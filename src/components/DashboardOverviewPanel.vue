@@ -35,6 +35,7 @@ import {
 } from "../plugins/charts.js"
 import { useUiStore } from "../stores/ui.js"
 import ChartPanel from "./ChartPanel.vue"
+import HrSurveyPanel from "./HrSurveyPanel.vue"
 
 // #region global state
 const ui = useUiStore()
@@ -406,6 +407,13 @@ const onOpenRoom = (roomId) => router.push(`/inbox/${roomId}`)
         </table>
       </div>
     </section>
+
+    <!--
+      人事対応の満足度（S-12）。**エスカレーション表より下に置く。**
+      上にあるのは「いま手を打つべき案件」で、こちらは「振り返って直すところ」。
+      受信箱と同じで、急ぐものから順に並べる。
+    -->
+    <HrSurveyPanel :data="data?.hrSurvey ?? null" />
   </div>
 </template>
 

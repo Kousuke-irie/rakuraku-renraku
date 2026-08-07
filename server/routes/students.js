@@ -5,6 +5,7 @@ import { assertRoomMember } from '../services/roomAuth.js';
 import { emitAlertsNew, emitAlertsResolved, emitRoomUpdated } from '../services/realtime.js';
 import { resolveStaleInterviewRoomAlerts } from '../services/interviewRoomMonitor.js';
 import {
+  notifyHrSurveyRequested,
   notifySelectionAdvanced,
   notifyVisibleFeedbacks,
 } from '../services/studentNotifier.js';
@@ -150,6 +151,14 @@ router.patch('/:userId', requireAuth, requireHr, async (req, res, next) => {
         roomId,
         studentUserId: userId,
         actorUserId: req.user.id,
+      }),
+      // S-12：選考が終わった（内定・辞退）なら、人事FBアンケートをお願いする
+      ...notifyHrSurveyRequested(db, {
+        roomId,
+        studentUserId: userId,
+        actorUserId: req.user.id,
+        previousStatus,
+        nextStatus: student.selectionStatus,
       }),
     ]);
 

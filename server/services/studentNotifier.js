@@ -15,6 +15,7 @@ import {
   ALERT_SEVERITY,
   SELECTION_FLOW_STEP_VALUES,
   SELECTION_STATUS,
+  isHrSurveyAnswerable,
 } from '../../shared/constants.js';
 import { buildStudentFlow, listSelectionSteps } from './selectionFlow.js';
 
@@ -141,4 +142,43 @@ export function notifyVisibleFeedbacks(
   }
 
   return created;
+}
+
+/**
+ * 選考が終わったので人事FBアンケートをお願いする（S-12）。
+ *
+ * ★配信の起点は「選考ステータスが確定／離脱へ変わったこと」だけ。
+ *   カードを出すかどうかの判定（buildHrSurveyState）とは別物であることに注意。
+ *   カードは選考が終わっている限りいつでも出るが、通知は**遷移した瞬間に1回**。
+ *   毎回の画面表示で通知を作ると、マイページを開くたびに増える。
+ *
+ * ★回答済みかは見ない。二重通知を防ぐのは idx_alerts_student_unique だけで、
+ *   rule_code に選考結果（offer / declined）が入る。内定のあとに辞退へ変われば
+ *   改めて1件立つ（結果が変われば聞きたいことも変わるので、これは正しい）。
+ *
+ * @returns {object[]} 新規に作られた通知（配信対象）
+ */
+export function notifyHrSurveyRequested(
+  db,
+  { roomId, studentUserId, actorUserId, previousStatus, nextStatus, now = Date.now() },
+) {
+  if (!roomId) return [];
+  if (previousStatus === nextStatus) return [];
+  // 「終わった」への遷移だけを拾う。終わったあとの付け替え（内定→内定）は対象外
+  if (!isHrSurveyAnswerable(nextStatus)) return [];
+
+  const created = insertStudentAlert(db, {
+    kind: ALERT_KIND.STUDENT_HR_SURVEY_REQUESTED,
+    roomId,
+    studentUserId,
+    actorUserId,
+    // ★冪等キー。選考結果ごとに1件
+    ruleCode: nextStatus,
+    detail:
+      '選考を終えられた方へアンケートのお願いです。' +
+      '今後の選考体験の改善に活かしますので、マイページからご協力ください。',
+    now,
+  });
+
+  return created ? [created] : [];
 }

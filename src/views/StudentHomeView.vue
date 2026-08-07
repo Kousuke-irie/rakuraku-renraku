@@ -20,6 +20,7 @@ import { useRoomsStore } from "../stores/rooms.js"
 import { useUiStore } from "../stores/ui.js"
 import BookedInterviewCard from "../components/BookedInterviewCard.vue"
 import CompanyPanel from "../components/CompanyPanel.vue"
+import HrSurveyCard from "../components/HrSurveyCard.vue"
 import SelectionFlow from "../components/SelectionFlow.vue"
 import SelectionStepDetail from "../components/SelectionStepDetail.vue"
 import StudentChatCard from "../components/StudentChatCard.vue"
@@ -110,6 +111,14 @@ const pendingSurveyKeys = computed(() =>
 )
 
 const selectedStepSurveyAnswered = computed(() => Boolean(selectedStep.value?.surveyAnswered))
+
+/**
+ * 人事FBアンケート（S-12）。選考が終わった学生にだけ出す。
+ * ★出すかどうかの判定はサーバ（`hrSurvey.answerable`）が持つ。
+ *   ここで selectionStatus から組み立て直さないこと（判定が2箇所に散る）。
+ */
+const hrSurvey = computed(() => flow.value?.hrSurvey ?? null)
+const showHrSurvey = computed(() => Boolean(hrSurvey.value?.answerable))
 
 /**
  * 確定済みの面接（P3-4）。開始が早い順にサーバが並べて返す。
@@ -258,6 +267,19 @@ const onSelect = (statusKey) => {
         選考フローの公開をお待ちください。
       </p>
     </section>
+
+    <!--
+      人事FBアンケート（S-12）。選考が終わった学生にだけ出す。
+      ★フロー図の**外**に置く。辞退した学生はフロー図ごと消えるが、
+        アンケートは出す必要がある（辞退者の声こそ改善の材料）。
+      ★面接アンケート（ステップ詳細の中）と違い、選考状況の直後に独立して置く。
+        選考が終わった学生にとって、この画面で次に取る行動はこれしかない。
+    -->
+    <HrSurveyCard
+      v-if="showHrSurvey"
+      :outcome="hrSurvey.outcome"
+      :answered="hrSurvey.answered"
+    />
 
     <!-- 下段：自分が書くもの（左）と、担当者とのやり取り（右） -->
     <div

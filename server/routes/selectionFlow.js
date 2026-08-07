@@ -7,6 +7,7 @@ import {
   saveSelectionSteps,
 } from '../services/selectionFlow.js';
 import { findAnsweredStatusKeys, saveSurvey } from '../services/interviewSurveys.js';
+import { buildHrSurveyState, saveHrSurvey } from '../services/hrSurveys.js';
 import { listUpcomingInterviewsForStudent } from '../services/scheduleRequests.js';
 import {
   ROLE,
@@ -20,12 +21,14 @@ import {
  *
  * - GET  /selection-flow            … ステップ設定（全ロール）
  * - PUT  /selection-flow            … 一括更新（人事のみ）
- * - GET  /selection-flow/me         … 学生本人の進捗＋見せてよいFB（学生のみ）
- * - POST /selection-flow/me/surveys … 面接アンケートの回答（S-11・学生のみ）
+ * - GET  /selection-flow/me           … 学生本人の進捗＋見せてよいFB（学生のみ）
+ * - POST /selection-flow/me/surveys   … 面接アンケートの回答（S-11・学生のみ）
+ * - POST /selection-flow/me/hr-survey … 人事FBアンケートの回答（S-12・学生のみ）
  *
- * アンケートの回答をここに置くのは、回答してよいステップかの判定が
- * 「本人の進捗が done か」そのものだから。人事向けの参照は
- * routes/interviewSurveys.js に分ける（読者が違い、匿名化の責務も別）。
+ * アンケートの回答をここに置くのは、回答してよいかの判定が本人の進捗
+ * （面接ステップが done か／選考が終わっているか）そのものだから。人事向けの参照は
+ * routes/interviewSurveys.js・routes/hrSurveys.js に分ける
+ * （読者が違い、匿名化の責務も別）。
  *
  * 学生ごとのフィードバックは routes/students.js に置く。
  * あちらは「人事ロール」＋「その学生のルームの room_members」の二段構えの認可を
@@ -147,6 +150,10 @@ router.get('/me', requireAuth, (req, res, next) => {
       // 「いまどこにいて、次に何があるか」を1回の往復で出す画面なので、
       // 日程だけ別のAPIに取りに行かせない（frontend.md §7-3「データ」）
       upcomingInterviews: listUpcomingInterviewsForStudent(db, req.user.id),
+      // 人事FBアンケート（S-12）の状態も同じレスポンスに載せる。
+      // ★辞退した学生にも返す。マイページはフロー図を出さないが、
+      //   アンケートカードは独立したブロックとして出す（frontend.md §7-3）
+      hrSurvey: buildHrSurveyState(db, req.user.id),
       steps: flow.steps.map((step) => ({
         ...step,
         surveyAnswered: answered.has(step.statusKey),
@@ -172,6 +179,30 @@ router.post('/me/surveys', requireAuth, (req, res, next) => {
       studentUserId: req.user.id,
       statusKey: req.body?.statusKey,
       rating: Number(req.body?.rating),
+      comment: req.body?.comment,
+    });
+    if (result.error) return invalidRequest(res, result.error);
+
+    return res.status(201).json(result);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+/**
+ * 人事FBアンケートの回答（S-12）。
+ * 対象は req.user から引き、クライアントの userId は受け取らない。
+ * 回答してよいかの判定はサービス側（選考が終わっている学生のみ）。
+ */
+router.post('/me/hr-survey', requireAuth, (req, res, next) => {
+  try {
+    if (req.user.role !== ROLE.STUDENT) {
+      return res.status(403).json({ error: 'forbidden', message: '学生のみ回答できます' });
+    }
+
+    const result = saveHrSurvey(db, {
+      studentUserId: req.user.id,
+      ratings: req.body?.ratings,
       comment: req.body?.comment,
     });
     if (result.error) return invalidRequest(res, result.error);

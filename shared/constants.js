@@ -435,6 +435,88 @@ export const INTERVIEW_SURVEY_UNKNOWN_INTERVIEWER_LABEL = '面接官不明';
 export const INTERVIEW_SURVEY_SCOPE_ALL = 'all';
 
 // ---------------------------------------------------------------------------
+// 人事FBアンケート（S-12）
+// 選考が終わった学生が、担当人事の**対応**を3軸★5段階＋自由記述で答える。
+// 人事は監視ダッシュボード（/dashboard）の全社・個人タブで読む。
+//
+// ★面接アンケート（S-11）と主語が違う。
+//   S-11 … 面接官の**面接**が学生にどう受け取られたか。母数は完了した面接ステップ。
+//   S-12 … 担当人事の**やり取り**が学生にどう受け取られたか。母数は選考を終えた学生。
+//   定数を共用しない。軸も母数も違うものが、片方の都合で動くのを避ける。
+// ---------------------------------------------------------------------------
+
+/**
+ * 評価軸。**この3つで固定する。**
+ * 増やすと学生の回答負荷が上がって回答率が落ち、減らすと「どこが悪かったのか」が
+ * 自由記述からしか読めなくなる。schema.sql の rating_* 列と1対1で対応させること。
+ */
+export const HR_SURVEY_AXIS = Object.freeze({
+  /** C-1「合否連絡が1日遅れる」が学生からどう見えていたか */
+  SPEED: 'speed',
+  /** C-5「日程調整の進捗が不透明」に対応する軸 */
+  CLARITY: 'clarity',
+  /** 文面そのものの印象。コンプライアンス検知（P4-2）が拾えない体感が出る */
+  COURTESY: 'courtesy',
+});
+
+export const HR_SURVEY_AXIS_META = Object.freeze({
+  [HR_SURVEY_AXIS.SPEED]: {
+    label: '連絡の速さ',
+    question: 'ご連絡の早さ・返信までの待ち時間はいかがでしたか',
+  },
+  [HR_SURVEY_AXIS.CLARITY]: {
+    label: '説明の分かりやすさ',
+    question: '選考の進み方や日程の案内は分かりやすかったですか',
+  },
+  [HR_SURVEY_AXIS.COURTESY]: {
+    label: '対応の丁寧さ',
+    question: 'やり取りの丁寧さ・安心して相談できたかはいかがでしたか',
+  },
+});
+
+export const HR_SURVEY_AXIS_VALUES = Object.values(HR_SURVEY_AXIS);
+
+/** ★の下限・上限。サーバの検証と学生カードのボタン数を必ず揃える */
+export const HR_SURVEY_RATING_MIN = 1;
+export const HR_SURVEY_RATING_MAX = 5;
+
+/** 自由記述の上限。サーバの検証と textarea の maxlength を必ず揃える */
+export const HR_SURVEY_COMMENT_MAX_LENGTH = 1000;
+
+/**
+ * ★匿名性の下限。回答がこの件数に満たない担当者は、評価もコメントも人事に出さない。
+ *
+ * 面接官（S-11）以上に危うい。担当学生は固定で、選考を終えた学生はさらに少ないため、
+ * 1〜2件だと「先週内定を出したあの子だ」と担当者本人がまず特定できてしまう。
+ * **この閾値を下げないこと。** 判定は必ずサーバで行う（クライアントで隠さない）。
+ */
+export const HR_SURVEY_MIN_SAMPLE = 3;
+
+/** 担当者が付いていないルームの回答をまとめる先。実在のユーザーIDと衝突しない値にする */
+export const HR_SURVEY_UNKNOWN_ASSIGNEE_ID = 'unknown';
+export const HR_SURVEY_UNKNOWN_ASSIGNEE_LABEL = '担当者未割当';
+
+/** 自由記述の要約スコープ。ダッシュボードのドロップダウンの「全体」に対応する */
+export const HR_SURVEY_SCOPE_ALL = 'all';
+
+/**
+ * アンケートを配る「選考終了」の区分（＝ SELECTION_PHASE）。
+ *
+ * ★内定だけにしないこと。**辞退した学生の声こそ改善の材料**であり、
+ *   そこを取らないと「満足した人だけが答えたアンケート」になる。
+ * 判定は selectionPhaseOf() に通す。ステータス名で直接比較しないこと。
+ */
+export const HR_SURVEY_TRIGGER_PHASES = Object.freeze([
+  SELECTION_PHASE.SETTLED,
+  SELECTION_PHASE.EXITED,
+]);
+
+/** @param {string} selectionStatus @returns {boolean} 選考が終わっていて回答できるか */
+export function isHrSurveyAnswerable(selectionStatus) {
+  return HR_SURVEY_TRIGGER_PHASES.includes(selectionPhaseOf(selectionStatus));
+}
+
+// ---------------------------------------------------------------------------
 // 初期値
 // ---------------------------------------------------------------------------
 
@@ -597,6 +679,8 @@ export const ALERT_KIND = Object.freeze({
   STUDENT_SELECTION_ADVANCED: 'student_selection_advanced',
   /** P4-7。学生本人へ：選考フィードバックが本人に見える状態になった */
   STUDENT_FEEDBACK_PUBLISHED: 'student_feedback_published',
+  /** S-12。学生本人へ：選考が終わったので人事対応アンケートをお願いする */
+  STUDENT_HR_SURVEY_REQUESTED: 'student_hr_survey_requested',
 });
 
 export const ALERT_KIND_META = Object.freeze({
@@ -606,6 +690,7 @@ export const ALERT_KIND_META = Object.freeze({
   [ALERT_KIND.INTERVIEW_ROOM_MISSING]: { label: '会議室未設定' },
   [ALERT_KIND.STUDENT_SELECTION_ADVANCED]: { label: '選考が進みました' },
   [ALERT_KIND.STUDENT_FEEDBACK_PUBLISHED]: { label: 'フィードバック公開' },
+  [ALERT_KIND.STUDENT_HR_SURVEY_REQUESTED]: { label: 'アンケートのお願い' },
 });
 
 export const ALERT_KIND_VALUES = Object.values(ALERT_KIND);
@@ -638,6 +723,7 @@ export const ALERT_KIND_AUDIENCE = Object.freeze({
   [ALERT_KIND.INTERVIEW_ROOM_MISSING]: ALERT_AUDIENCE.HR,
   [ALERT_KIND.STUDENT_SELECTION_ADVANCED]: ALERT_AUDIENCE.STUDENT,
   [ALERT_KIND.STUDENT_FEEDBACK_PUBLISHED]: ALERT_AUDIENCE.STUDENT,
+  [ALERT_KIND.STUDENT_HR_SURVEY_REQUESTED]: ALERT_AUDIENCE.STUDENT,
 });
 
 /** @param {string} audience ALERT_AUDIENCE のいずれか */

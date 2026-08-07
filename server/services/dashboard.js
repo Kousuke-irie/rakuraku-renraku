@@ -13,6 +13,7 @@ import {
 } from '../../shared/constants.js';
 import { COMPLIANCE_SOURCE } from '../../shared/constants.js';
 import { ACK_NOTE } from './complianceAlerts.js';
+import { buildHrSurveyView } from './hrSurveys.js';
 import { listDashboardSelectionSteps } from './selectionFlow.js';
 import { SLA_ESCALATE_HOURS, SLA_NOTIFY_HOURS } from './slaMonitor.js';
 
@@ -241,6 +242,10 @@ export function getDashboard(db, now = Date.now()) {
     complianceBreakdown: buildComplianceBreakdown(db),
     complianceIgnored: countComplianceIgnored(db),
     escalations: buildEscalations(db, now),
+    // S-12：選考を終えた学生から見た、人事の対応品質。
+    // ★この画面の主語（人事の対応品質）と一致するのでここに載せる。面接官の
+    //   面接品質（S-11）は主語が違うので /interviews に分けたまま。
+    hrSurvey: buildHrSurveyView(db),
     thresholds: { notifyHours: SLA_NOTIFY_HOURS, escalateHours: SLA_ESCALATE_HOURS },
   };
 }

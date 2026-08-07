@@ -174,8 +174,17 @@ SLA 通知もコンプライアンス警告も `alerts` 1テーブルに集約�
 | `sla_notify` | 未返信24時間 | 担当者。未アサインなら上長全員 |
 | `sla_escalate` | 上長エスカレーション | `role='admin'` の全員 |
 | `compliance` | コンプライアンス警告 | NULL（本人へは送信前ダイアログで伝える） |
+| `interview_room_missing` | 会議室未設定 | 担当者。未アサインなら上長全員（P4-5） |
+| `student_selection_advanced` | 選考が進みました | 学生本人（P4-7） |
+| `student_feedback_published` | フィードバック公開 | 学生本人（P4-7） |
+| `student_hr_survey_requested` | アンケートのお願い | 学生本人（S-12。選考が終わった時点で1回） |
 
 `SLA_ALERT_KINDS` に SLA 系の2つをまとめてある。返信時の解消処理はこれを使う。
+
+読者の振り分けは `ALERT_KIND_AUDIENCE`（`HR_ALERT_KINDS` / `STUDENT_ALERT_KINDS`）が単一の
+情報源。**この対応表に無い kind はどちらのロールにも返らない**（安全側）。詳細は
+`monitoring.md` §3c。`kind` を足したら `server/db/schema.sql` の CHECK と
+部分UNIQUEインデックスも必ず更新すること（`migrate.js` が `alerts` を作り直す条件になっている）。
 
 ### `ALERT_SEVERITY`
 
@@ -223,7 +232,42 @@ LLM による上乗せ検証が効いたか。**辞書判定は常に動く**の
 
 ---
 
-## 12. `shared/constants.js` 実装方針
+## 12. 人事FBアンケート `HR_SURVEY_*`（S-12）
+
+選考が終わった学生が、担当人事の対応を答える。**面接アンケート（S-11 `INTERVIEW_SURVEY_*`）
+とは別物。定数を共用しないこと。** 主語（面接官の面接／担当人事のやり取り）も母数も違う。
+
+### `HR_SURVEY_AXIS`
+
+| 値 | 表示名 | 対応する課題 | DB の列 |
+| --- | --- | --- | --- |
+| `speed` | 連絡の速さ | C-1 合否連絡が1日遅れる | `rating_speed` |
+| `clarity` | 説明の分かりやすさ | C-5 日程調整の進捗が不透明 | `rating_clarity` |
+| `courtesy` | 対応の丁寧さ | — | `rating_courtesy` |
+
+**この3つで固定する。** 増やすと回答負荷が上がって回答率が落ち、減らすと
+「どこが悪かったのか」が自由記述からしか読めなくなる。総合満足度は3軸の平均で表し、
+独立した設問を持たない（設問を1つ増やすより軽く、総合と各軸が食い違わない）。
+
+### その他
+
+| 定数 | 値 | 用途 |
+| --- | --- | --- |
+| `HR_SURVEY_RATING_MIN` / `MAX` | 1 / 5 | サーバの検証と★ボタン数を必ず揃える |
+| `HR_SURVEY_COMMENT_MAX_LENGTH` | 1000 | サーバの検証と `textarea` の `maxlength` を揃える |
+| `HR_SURVEY_MIN_SAMPLE` | 3 | **匿名性の下限。下げないこと** |
+| `HR_SURVEY_UNKNOWN_ASSIGNEE_ID` | `'unknown'` | 担当未割当の回答をまとめる先 |
+| `HR_SURVEY_SCOPE_ALL` | `'all'` | 自由記述のスコープ「全体」 |
+| `HR_SURVEY_TRIGGER_PHASES` | `[settled, exited]` | 配信条件（＝選考が終わった区分） |
+
+`isHrSurveyAnswerable(selectionStatus)` が「選考が終わっているか」の**唯一の判定**。
+`selectionPhaseOf()` に通しているので、ステータス名で直接比較しないこと。
+**内定だけにしない。** 辞退した学生の声こそ改善の材料で、そこを取らないと
+「満足した人だけが答えたアンケート」になる。
+
+---
+
+## 13. `shared/constants.js` 実装方針
 
 ```js
 // 値の配列と表示名マップをセットでエクスポートする
