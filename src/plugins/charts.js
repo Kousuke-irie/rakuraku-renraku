@@ -148,6 +148,34 @@ export function horizontalBarOptions(extra = {}) {
   }
 }
 
+/**
+ * 横棒・満足度（S-11 面接官別の平均★）。
+ *
+ * ★x軸は必ず 0〜max で固定する。件数のグラフと違い、平均★は 2.3 と 4.4 のような
+ *   狭い範囲に収まる。軸をデータに合わせて自動で伸縮させると、0.2 の差が
+ *   バー2倍の長さに見えて「この面接官は倍ひどい」と読めてしまう。
+ *
+ * @param {number} max ★の最大値（INTERVIEW_SURVEY_RATING_MAX）
+ */
+export function ratingBarOptions(max, extra = {}) {
+  return {
+    ...BASE_OPTIONS,
+    indexAxis: 'y',
+    scales: {
+      x: { ...AXIS, beginAtZero: true, max, ticks: { ...AXIS.ticks, stepSize: 1 } },
+      y: CATEGORY_AXIS,
+    },
+    plugins: {
+      ...BASE_OPTIONS.plugins,
+      tooltip: {
+        ...BASE_OPTIONS.plugins.tooltip,
+        callbacks: { label: (context) => `平均 ${context.parsed.x} / ${max}` },
+      },
+    },
+    ...extra,
+  }
+}
+
 /** 縦棒（推移） */
 export function verticalBarOptions(extra = {}) {
   return {

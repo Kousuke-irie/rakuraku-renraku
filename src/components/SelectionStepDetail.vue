@@ -23,8 +23,6 @@ const props = defineProps({
   surveyAnswered: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(["survey-answered"])
-
 // #region computed
 const stateLabel = computed(() => FLOW_STEP_STATE_META[props.step?.state]?.label ?? "")
 
@@ -162,13 +160,13 @@ const formatUpdatedAt = (isoString) =>
           フィードバックが届くとここに表示されます。
         </p>
 
-        <!-- 面接アンケート（S-09・frontend.md §7-3）。フロントエンドのみのモック。
-             会社から受け取ったもの（FB）と自分が書くもの（メモ）の間に置く -->
+        <!-- 面接アンケート（S-09 / S-11・frontend.md §7-3）。
+             会社から受け取ったもの（FB）と自分が書くもの（メモ）の間に置く。
+             送信はカード自身が行い、回答済みの状態はサーバ由来で降りてくる -->
         <InterviewSurveyCard
           v-if="showSurveyCard"
           :status-key="step.statusKey"
           :answered="surveyAnswered"
-          @answered="emit('survey-answered', $event)"
         />
 
         <!-- 自分用のメモ（S-10）。人事には見えない -->

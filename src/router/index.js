@@ -126,6 +126,18 @@ const routes = [
     meta: { requiresAuth: true, roles: [ROLE.HR, ROLE.ADMIN] },
   },
   {
+    // S-11 面接アンケート。**監視ダッシュボードとは別ページ**にしている。
+    // あちらの主語は人事の対応品質、こちらは面接官の面接品質で、母数も
+    // 次に取る行動も違う。学生は roles 不一致で /mypage へ戻され、
+    // サーバ側（requireHr）でも弾かれる。
+    path: "/interviews",
+    name: "interview-surveys",
+    // /dashboard と同じく chart.js を初期バンドルに載せない。
+    // 両者が共有する src/plugins/charts.js は Vite が共通チャンクに切り出す
+    component: () => import("../views/InterviewSurveysView.vue"),
+    meta: { requiresAuth: true, roles: [ROLE.HR, ROLE.ADMIN] },
+  },
+  {
     path: "/:pathMatch(.*)*",
     redirect: "/home",
   },

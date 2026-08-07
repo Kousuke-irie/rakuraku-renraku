@@ -56,6 +56,11 @@ const PATHS = Object.freeze({
     "M12 19.5 v-9",
     "M16.5 19.5 v-6.5",
   ],
+  // 星（S-11 面接アンケート）。塗りなしの線だけで、他のアイコンと同じ 24 グリッドに収める。
+  // ダッシュボードの棒グラフと隣り合うので、輪郭が明確に違う形を選ぶ
+  star: [
+    "M12 4 l2.45 5.2 5.55 0.8 -4 4.05 0.95 5.7 -4.95-2.7 -4.95 2.7 0.95-5.7 -4-4.05 5.55-0.8 z",
+  ],
   // ドア＋外向き矢印（ログアウト）
   logout: [
     "M13.5 4.5 H6.5 a2 2 0 0 0-2 2 v11 a2 2 0 0 0 2 2 h7",
@@ -68,12 +73,14 @@ const PATHS = Object.freeze({
 // defineProps の既定値・validator はコンパイル時に巻き上げられるため、
 // setup スコープの PATHS を参照できない。ここだけ名前をリテラルで書く。
 const props = defineProps({
-  /** "home" | "inbox" | "students" | "chat" | "bell" | "chart" | "settings" | "logout" */
+  /** "home" | "inbox" | "students" | "chat" | "bell" | "chart" | "star" | "settings" | "logout" */
   name: {
     type: String,
     required: true,
     validator: (value) =>
-      ["home", "inbox", "students", "chat", "bell", "chart", "settings", "logout"].includes(value),
+      ["home", "inbox", "students", "chat", "bell", "chart", "star", "settings", "logout"].includes(
+        value
+      ),
   },
 })
 

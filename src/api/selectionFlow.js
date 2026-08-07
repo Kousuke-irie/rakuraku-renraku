@@ -16,11 +16,23 @@ export const selectionFlowApi = {
   save: (steps) => http.put("/selection-flow", { steps }),
 
   /**
-   * GET /api/selection-flow/me → `{ steps, selectionStatus, isDeclined }`（学生のみ）
+   * GET /api/selection-flow/me
+   *   → `{ steps, selectionStatus, isDeclined }`（学生のみ）
+   *
    * 学生のマイページ（S-09）用。ステップ・自分の現在位置・見せてよいFB を1回で受け取る。
    * ★FB は**完了済みステップのぶんだけ**サーバが返す。クライアントで隠す作りにしない。
+   * 各ステップの `surveyAnswered` に面接アンケート（S-11）の回答済みフラグが入る。
    */
   me: () => http.get("/selection-flow/me"),
+
+  /**
+   * POST /api/selection-flow/me/surveys → `{ statusKey, answeredAt }`（学生のみ）
+   *
+   * 面接アンケートの回答（S-11）。回答できるのは完了済みの面接ステップだけで、
+   * 判定はサーバが持つ。1ステップにつき1回で、あとから上書きはできない。
+   */
+  submitSurvey: (statusKey, rating, comment) =>
+    http.post("/selection-flow/me/surveys", { statusKey, rating, comment }),
 
   /**
    * GET /api/students/:userId/feedbacks

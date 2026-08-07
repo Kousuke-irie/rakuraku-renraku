@@ -33,6 +33,7 @@ import {
   SCHEDULE_STATE,
   SCHEDULE_REQUEST_STATUS,
   SELECTION_STATUS,
+  SELECTION_STATUS_META,
   URGENCY,
 } from '../../shared/constants.js';
 
@@ -45,6 +46,19 @@ const STUDENTS_PER_HR = 12;
 const UNASSIGNED_COUNT = 4;
 /** 生成分を毎回同じ内容にするための乱数シード（デモの再現性のため固定する） */
 const RANDOM_SEED = 20260806;
+
+/**
+ * 面接アンケート（S-11）を**その場で回答して見せる**ためのデモ用アカウント。
+ *
+ * この4名には完了済みの面接ぶんの予約実績（面接官）を入れ、シード側の回答は入れない。
+ * ログインするとアンケート未回答のバッジが立ち、送信すると人事の画面で
+ * 「その面接官の平均」が動く、という一連の流れを見せられる。
+ *
+ * ★もともとデモ用の日程依頼を持つ4名に限る。受信箱のカードは
+ *   schedule_requests の最新1件を出すので、全学生に過去の予約を入れると
+ *   「[日程確定] 過去の日付」がカードに並んでメイン画面の見た目が変わる。
+ */
+const SURVEY_DEMO_LOGIN_IDS = Object.freeze(['student2', 'student4', 'student5', 'student9']);
 
 function hoursAgoIso(hours) {
   return new Date(NOW - hours * 3_600_000).toISOString();
@@ -1364,7 +1378,13 @@ function insertStudentRoom(student, { hrUserIds, allHrIds, passwordHash }) {
     `UPDATE rooms SET last_message_id = ?, last_message_at = ?, last_student_message_at = ?, urgency = ? WHERE id = ?`,
   ).run(lastMessageId, lastMessageAt, lastStudentMessageAt, urgency, roomId);
 
-  return { roomId: Number(roomId), studentUserId: Number(studentUserId), assigneeUserId };
+  return {
+    roomId: Number(roomId),
+    studentUserId: Number(studentUserId),
+    assigneeUserId,
+    // 面接アンケート（S-11）の予約実績を作るのに使う。students を引き直さずに済ませる
+    selectionStatus: student.selectionStatus,
+  };
 }
 
 function localDateTimeIso(daysFromNow, hours, minutes = 0) {
@@ -1514,6 +1534,63 @@ function seedInterviewScheduling({ hrUserIds, studentRefs }) {
     }
   };
 
+  // ★面接アンケート（S-11）のライブデモ用。
+  //   学生が「その場で回答 → 人事の画面で面接官別に反映される」を見せるには、
+  //   完了済みの面接に**予約実績**が要る（無いと「面接官不明」に落ちる）。
+  //
+  //   対象を SURVEY_DEMO_LOGIN_IDS に絞るのは、受信箱のカードを壊さないため。
+  //   ルームのカードは schedule_requests の**最新1件**を出すので、全学生に過去の
+  //   予約を入れると「[日程確定] 過去の日付」が30枚以上並ぶ。ここに挙げたのは
+  //   もともとデモ用の日程依頼を持つ学生だけで、その依頼のほうが id が大きく
+  //   （このあと作られる）、カードの見た目は変わらない。
+  const allSteps = listSelectionSteps(db);
+  for (const [index, loginId] of SURVEY_DEMO_LOGIN_IDS.entries()) {
+    const student = studentRefs[loginId];
+    if (!student) continue;
+
+    const statusKeys = listAnswerableStatusKeys(allSteps, student.selectionStatus);
+    for (const [stepIndex, statusKey] of statusKeys.entries()) {
+      // 面接官は学生・段階ごとに散らす。全員が同じ面接官だと面接官別に見る意味が消える
+      const external = interviewers[(index + stepIndex) % interviewers.length].externalId;
+      // 過去の面接。段階が古いほど遠い日付になるよう1週間ずつずらす
+      const start = hoursAgoIso(24 * (statusKeys.length - stepIndex) * 7);
+      const end = new Date(new Date(start).getTime() + 60 * 60_000).toISOString();
+      // 受付期間は形だけ。CHECK(available_from < available_until) を満たす必要がある
+      const availableUntil = new Date(new Date(start).getTime() + 86_400_000).toISOString();
+
+      db.prepare(
+        `INSERT INTO schedule_requests (
+           room_id, student_user_id, interviewer_id, created_by_user_id,
+           selection_stage, selection_status_key, duration_minutes,
+           available_from, available_until, daily_start_time, daily_end_time,
+           response_deadline, interview_format, location_text, status,
+           booked_starts_at, booked_ends_at, booked_at, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        student.roomId,
+        student.studentUserId,
+        interviewerIds[external],
+        hrUserIds.hr1,
+        SELECTION_STATUS_META[statusKey].label,
+        statusKey,
+        60,
+        start,
+        availableUntil,
+        '10:00',
+        '18:00',
+        availableUntil,
+        INTERVIEW_FORMAT.ONLINE,
+        null,
+        SCHEDULE_REQUEST_STATUS.BOOKED,
+        start,
+        end,
+        start,
+        start,
+        now,
+      );
+    }
+  }
+
   const futureDeadline = localDateTimeIso(1, 18);
   createDemoRequest({
     studentLoginId: 'student2',
@@ -1640,7 +1717,8 @@ function insertInterviewSurveys(studentUserIds, interviewerIds) {
   let inserted = 0;
   for (const student of STUDENTS) {
     const studentUserId = studentUserIds[student.loginId];
-    if (!studentUserId) continue;
+    // デモ用の4名は未回答のまま残す。その場で回答して見せるための席
+    if (!studentUserId || SURVEY_DEMO_LOGIN_IDS.includes(student.loginId)) continue;
 
     for (const statusKey of listAnswerableStatusKeys(allSteps, student.selectionStatus)) {
       // 実際の回答率に寄せる。全ステップに回答が揃うと分母が意味を持たなくなる

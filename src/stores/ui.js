@@ -115,6 +115,12 @@ const STUDENT_NOTE_ERROR = Object.freeze({
   SAVE: 'メモの保存に失敗しました',
 })
 
+/** 面接アンケート（S-11）の送信結果の文言 */
+const INTERVIEW_SURVEY_MESSAGE = Object.freeze({
+  SAVED: 'アンケートを送信しました。ご協力ありがとうございました。',
+  ERROR: 'アンケートの送信に失敗しました',
+})
+
 /**
  * 受信箱3ペインの幅（px）。既定値とドラッグで動かせる範囲。
  * 列挙値ではなく画面レイアウトの寸法なので shared/constants.js には置かない。
@@ -495,6 +501,39 @@ export const useUiStore = defineStore('ui', {
         this.myFlow = data
       } catch (error) {
         this.pushToast({ type: 'error', message: toErrorMessage(error, SELECTION_FLOW_ERROR.FETCH) })
+      }
+    },
+
+    /**
+     * POST /api/selection-flow/me/surveys（面接アンケート・S-11）。
+     *
+     * 回答済みの状態は myFlow のステップに持たせる。**コンポーネントのローカル状態に
+     * しないこと。** リロードで「未回答」に戻り、同じ学生に何度も答えさせてしまう
+     * （サーバは1回しか受け付けないので、2回目以降は静かに捨てられる）。
+     *
+     * @returns {boolean} 保存できたか
+     */
+    async submitInterviewSurvey(statusKey, rating, comment) {
+      try {
+        await selectionFlowApi.submitSurvey(statusKey, rating, comment)
+
+        if (this.myFlow) {
+          this.myFlow = {
+            ...this.myFlow,
+            steps: this.myFlow.steps.map((step) =>
+              step.statusKey === statusKey ? { ...step, surveyAnswered: true } : step
+            ),
+          }
+        }
+
+        this.pushToast({ type: 'success', message: INTERVIEW_SURVEY_MESSAGE.SAVED })
+        return true
+      } catch (error) {
+        this.pushToast({
+          type: 'error',
+          message: toErrorMessage(error, INTERVIEW_SURVEY_MESSAGE.ERROR),
+        })
+        return false
       }
     },
 

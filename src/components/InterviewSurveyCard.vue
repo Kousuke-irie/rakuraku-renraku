@@ -1,9 +1,18 @@
 <script setup>
-// 面接アンケートの回答カード（S-09・frontend.md §7-3「面接アンケート」）
+// 面接アンケートの回答カード（S-09 / S-11・frontend.md §7-3「面接アンケート」）
 //
-// ★現時点ではフロントエンドのみのモック。実際の送信・永続化は行わない。
-//   回答済みかどうかの状態は親（StudentHomeView）が持ち、ここでは answered を emit するだけ。
-import { ref } from "vue"
+// 回答済みかどうかはサーバが持つ（GET /selection-flow/me の surveyAnswered）。
+// ★ここでローカルに「送信した」を覚えないこと。リロードで未回答に戻り、
+//   同じ学生に何度も答えさせることになる。
+//
+// ★回答は1回きりで、あとから直せない。だから送信ボタンは押した瞬間に
+//   無効化し、二度押しでの取り違えを防ぐ。
+import { computed, ref } from "vue"
+import {
+  INTERVIEW_SURVEY_COMMENT_MAX_LENGTH,
+  INTERVIEW_SURVEY_RATING_MAX,
+} from "../constants/index.js"
+import { useUiStore } from "../stores/ui.js"
 
 const props = defineProps({
   /** アンケート対象の選考ステップ（SELECTION_STATUS の interview_* のいずれか） */
@@ -12,25 +21,33 @@ const props = defineProps({
   answered: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(["answered"])
+// #region global state
+const ui = useUiStore()
+// #endregion
 
 // #region local state
 /** 5段階のスター評価。0は未選択 */
 const rating = ref(0)
 const comment = ref("")
+const submitting = ref(false)
+// #endregion
+
+// #region computed
+const canSubmit = computed(() => rating.value > 0 && !submitting.value)
 // #endregion
 
 // #region browser event handler
-const onSubmit = () => {
-  if (rating.value === 0) return
+const onSubmit = async () => {
+  if (!canSubmit.value) return
 
-  // バックエンド未実装。送信内容はコンソールに残すだけの見た目・入力動作のモック
-  console.info("[InterviewSurveyCard] submit (mock)", {
-    statusKey: props.statusKey,
-    rating: rating.value,
-    comment: comment.value,
-  })
-  emit("answered", props.statusKey)
+  submitting.value = true
+  try {
+    // 成功すれば myFlow の surveyAnswered が立ち、props.answered 経由で
+    // お礼メッセージに切り替わる。失敗時は入力を残して再送できるようにする
+    await ui.submitInterviewSurvey(props.statusKey, rating.value, comment.value)
+  } finally {
+    submitting.value = false
+  }
 }
 // #endregion
 </script>
@@ -61,7 +78,7 @@ const onSubmit = () => {
         aria-label="満足度（5段階）"
       >
         <button
-          v-for="n in 5"
+          v-for="n in INTERVIEW_SURVEY_RATING_MAX"
           :key="n"
           type="button"
           class="survey__star"
@@ -80,15 +97,16 @@ const onSubmit = () => {
         v-model="comment"
         class="survey__textarea"
         rows="3"
+        :maxlength="INTERVIEW_SURVEY_COMMENT_MAX_LENGTH"
         placeholder="ご自由にお書きください（任意）"
       />
 
       <button
         type="submit"
         class="button-primary survey__submit"
-        :disabled="rating === 0"
+        :disabled="!canSubmit"
       >
-        送信する
+        {{ submitting ? "送信中…" : "送信する" }}
       </button>
     </form>
   </div>

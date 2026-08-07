@@ -9,7 +9,11 @@
 // データは1回の GET /selection-flow/me でまとめて取る（往復を増やさない）。
 // ★見せてよいフィードバックの判断はサーバが持つ。ここでは受け取ったものを描くだけ。
 import { computed, nextTick, onMounted, ref, watch } from "vue"
-import { FLOW_STEP_STATE, STUDENT_NOTE_OVERALL_KEY } from "../constants/index.js"
+import {
+  FLOW_STEP_STATE,
+  INTERVIEW_SURVEY_STATUS_KEYS,
+  STUDENT_NOTE_OVERALL_KEY,
+} from "../constants/index.js"
 import { useFeedbackReads } from "../composables/useFeedbackReads.js"
 import { useAuthStore } from "../stores/auth.js"
 import { useRoomsStore } from "../stores/rooms.js"
@@ -35,12 +39,6 @@ const { isUnread, markRead } = useFeedbackReads(auth.currentUserId)
 /** @type {import('vue').Ref<string|null>} 詳細を開いているステップ */
 const selectedKey = ref(null)
 
-/**
- * 面接アンケート（frontend.md §7-3）の回答済み statusKey 集合。
- * ★フロントエンドのみのモック。バックエンド未実装のためここに置き、リロードで消える。
- * @type {import('vue').Ref<Set<string>>}
- */
-const answeredSurveyKeys = ref(new Set())
 // #endregion
 
 // #region computed
@@ -95,23 +93,22 @@ const showOverallNote = computed(() => Boolean(flow.value) && !isDeclined.value)
 const showBottom = computed(() => Boolean(flow.value))
 
 /**
- * 面接アンケート未回答の statusKey（frontend.md §7-3）。
- * 完了済みの面接ステップ（statusKey が interview_ で始まる）のうち、まだ回答していないもの。
+ * 面接アンケート未回答の statusKey（frontend.md §7-3 / S-11）。
+ * 完了済みの面接ステップのうち、まだ回答していないもの。
+ * ★回答済みかどうかはサーバ（`surveyAnswered`）が持つ。ここで覚えないこと。
  */
 const pendingSurveyKeys = computed(() =>
   steps.value
     .filter(
       (step) =>
         step.state === FLOW_STEP_STATE.DONE &&
-        step.statusKey.startsWith("interview_") &&
-        !answeredSurveyKeys.value.has(step.statusKey)
+        INTERVIEW_SURVEY_STATUS_KEYS.includes(step.statusKey) &&
+        !step.surveyAnswered
     )
     .map((step) => step.statusKey)
 )
 
-const selectedStepSurveyAnswered = computed(
-  () => selectedStep.value !== null && answeredSurveyKeys.value.has(selectedStep.value.statusKey)
-)
+const selectedStepSurveyAnswered = computed(() => Boolean(selectedStep.value?.surveyAnswered))
 
 // 「いまは○○の段階です」という一文は置かない。
 // 現在地はフロー図（持ち上がった山の頂上＋オレンジ）が示すので、同じことを
@@ -169,9 +166,6 @@ const onSelect = (statusKey) => {
   })
 }
 
-const onSurveyAnswered = (statusKey) => {
-  answeredSurveyKeys.value.add(statusKey)
-}
 // #endregion
 </script>
 
@@ -228,7 +222,6 @@ const onSurveyAnswered = (statusKey) => {
         <SelectionStepDetail
           :step="selectedStep"
           :survey-answered="selectedStepSurveyAnswered"
-          @survey-answered="onSurveyAnswered"
         />
       </template>
 

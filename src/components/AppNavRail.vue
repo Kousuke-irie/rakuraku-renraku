@@ -28,6 +28,7 @@ const CHAT_PATH = "/chat"
 const STUDENTS_PATH = "/students"
 const NOTIFICATIONS_PATH = "/notifications"
 const DASHBOARD_PATH = "/dashboard"
+const INTERVIEW_SURVEYS_PATH = "/interviews"
 const SETTINGS_PATH = "/settings/profile"
 // #endregion
 
@@ -63,6 +64,10 @@ const navItems = computed(() =>
         { to: INBOX_PATH, icon: "inbox", label: "受信箱" },
         { to: STUDENTS_PATH, icon: "students", label: "全学生" },
         { to: DASHBOARD_PATH, icon: "chart", label: "ダッシュボード" },
+        // ★ダッシュボードと別項目にする（S-11）。あちらは「人事の対応に取りこぼしが
+        //   ないか」を見る画面で、こちらは「面接官の面接がどう受け取られたか」。
+        //   主語も母数も次の行動も違うので、同じ画面に混ぜると問いが二重になる
+        { to: INTERVIEW_SURVEYS_PATH, icon: "star", label: "面接アンケート" },
       ]
 )
 
