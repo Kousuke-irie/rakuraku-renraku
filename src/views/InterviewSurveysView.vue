@@ -434,7 +434,12 @@ watch(scopeId, () => {
   display: flex;
   flex-direction: column;
   gap: var(--space-lg);
-  padding: var(--space-xl);
+  /* ★height を明示する。AppShell のセルは overflow:hidden なので、
+     高さが確定しないと overflow-y:auto がスクロールバーを出さず、
+     はみ出したぶん（回答の原文）が切り取られて読めなくなる */
+  height: 100%;
+  /* 最後の1件が画面の底に貼り付かないよう、下だけ深めに取る */
+  padding: var(--space-xl) var(--space-xl) var(--space-xxl);
   overflow-y: auto;
 }
 
@@ -611,14 +616,14 @@ watch(scopeId, () => {
   font-weight: 700;
 }
 
+/* ページ自体がスクロールするので、ここに2つ目のスクロール領域を作らない。
+   入れ子のスクロールは、外側を動かしたつもりで内側が動いて迷子になる */
 .raw__list {
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
   margin: 0;
   padding: 0;
-  max-height: 420px;
-  overflow-y: auto;
   list-style: none;
 }
 
