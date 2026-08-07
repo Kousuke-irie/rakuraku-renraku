@@ -18,6 +18,7 @@ import { useFeedbackReads } from "../composables/useFeedbackReads.js"
 import { useAuthStore } from "../stores/auth.js"
 import { useRoomsStore } from "../stores/rooms.js"
 import { useUiStore } from "../stores/ui.js"
+import BookedInterviewCard from "../components/BookedInterviewCard.vue"
 import CompanyPanel from "../components/CompanyPanel.vue"
 import SelectionFlow from "../components/SelectionFlow.vue"
 import SelectionStepDetail from "../components/SelectionStepDetail.vue"
@@ -110,6 +111,13 @@ const pendingSurveyKeys = computed(() =>
 
 const selectedStepSurveyAnswered = computed(() => Boolean(selectedStep.value?.surveyAnswered))
 
+/**
+ * 確定済みの面接（P3-4）。開始が早い順にサーバが並べて返す。
+ * ★終わった面接はサーバが落としている。ここで期限の判定をやり直さないこと
+ *   （画面を開いたまま日をまたいだ場合の扱いが二重になる）。
+ */
+const upcomingInterviews = computed(() => flow.value?.upcomingInterviews ?? [])
+
 // 「いまは○○の段階です」という一文は置かない。
 // 現在地はフロー図（持ち上がった山の頂上＋オレンジ）が示すので、同じことを
 // 文章でも言うと視線が二重になる。読み上げ用には各ノードの状態ラベルが残る。
@@ -173,6 +181,24 @@ const onSelect = (statusKey) => {
   <div class="mypage">
     <!-- 上：会社情報（P2-10 のパネルを横長レイアウトで使い回す） -->
     <CompanyPanel layout="banner" />
+
+    <!--
+      確定した面接（P3-4）。フロー図より先に置く。
+      フロー図が示すのは「いまどこにいるか」で、こちらは「次に何があるか」。
+      日付は当日が近いほど価値が上がるので、着地して最初に目に入る位置に出す。
+      確定した面接が無いときは何も出さない（空のカードは画面の情報量を下げるだけ）
+    -->
+    <section
+      v-if="upcomingInterviews.length > 0"
+      class="interviews"
+      aria-label="確定した面接"
+    >
+      <BookedInterviewCard
+        v-for="interview in upcomingInterviews"
+        :key="interview.id"
+        :interview="interview"
+      />
+    </section>
 
     <!-- 下：選考フロー -->
     <section
@@ -266,6 +292,15 @@ const onSelect = (statusKey) => {
   min-height: 0;
   overflow-y: auto;
   padding: var(--space-xs) 0 var(--space-sm);
+}
+
+/* 面接が複数確定していることは普通は無いが、あるなら縦に積む。
+   横に並べると1件のときだけ幅が余り、カードの寸法が日によって変わる */
+.interviews {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--space-sm);
 }
 
 /* トークカード・会社情報パネルと同じ「白カード」の作りに揃える */

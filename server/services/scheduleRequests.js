@@ -92,6 +92,50 @@ export function listScheduleRequestsForRoom(db, roomId) {
     .map(toScheduleRequest);
 }
 
+/**
+ * 学生に返す「確定した面接」の形（S-09 マイページ）。
+ *
+ * 日程調整カード（ScheduleRequestCard）と同じ形にはしない。あちらは「まだ選んでいない」
+ * 学生に候補期間と回答期限を見せるためのもので、確定後の読者が要るのは
+ * **いつ・誰と・どこで**だけ。候補期間・回答期限・面接官の外部IDは載せない。
+ */
+function toBookedInterview(row) {
+  return {
+    id: row.id,
+    selectionStage: row.selectionStage,
+    startsAt: row.bookedStartsAt,
+    endsAt: row.bookedEndsAt,
+    interviewerName: row.interviewerDisplayName,
+    interviewFormat: row.interviewFormat,
+    locationText: row.locationText,
+  };
+}
+
+/**
+ * 学生本人の「これから行われる確定済みの面接」。マイページ（S-09）に出す。
+ *
+ * ★終わった面接は返さない（`booked_ends_at` が過去のもの）。
+ *   マイページで過去の面接を引き受けるのは選考フローの丸と面接アンケート（S-11）で、
+ *   ここに残すと「次に何があるか」がひと目で読み取れなくなる。
+ *
+ * ★対象は認証済みの本人。クライアントから受け取った userId を渡さないこと。
+ */
+export function listUpcomingInterviewsForStudent(db, studentUserId) {
+  const now = new Date().toISOString();
+
+  return db
+    .prepare(
+      `${SCHEDULE_SELECT_SQL}
+       WHERE sr.student_user_id = ?
+         AND sr.status = ?
+         AND sr.booked_ends_at IS NOT NULL
+         AND sr.booked_ends_at > ?
+       ORDER BY sr.booked_starts_at ASC`,
+    )
+    .all(studentUserId, SCHEDULE_REQUEST_STATUS.BOOKED, now)
+    .map(toBookedInterview);
+}
+
 export function scheduleOptionsFromRecord(record) {
   return {
     from: record.availableFrom,

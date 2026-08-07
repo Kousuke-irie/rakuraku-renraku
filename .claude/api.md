@@ -166,7 +166,18 @@
   ],
   "selectionStatus": "interview_2",
   "isDeclined": false,
-  "overallNote": { "noteKey": "overall", "body": "志望動機の軸…", "updatedAt": "…" }
+  "overallNote": { "noteKey": "overall", "body": "志望動機の軸…", "updatedAt": "…" },
+  "upcomingInterviews": [
+    {
+      "id": 12,
+      "selectionStage": "二次面接",
+      "startsAt": "2026-08-10T05:00:00Z",
+      "endsAt": "2026-08-10T06:00:00Z",
+      "interviewerName": "佐藤 花子",
+      "interviewFormat": "online",
+      "locationText": null
+    }
+  ]
 }
 ```
 
@@ -178,6 +189,12 @@
 - 有効なステップが0件になる指定も **400**（学生の画面が空になるため）
 - 更新頻度が低いので Socket.IO では配信しない
 - `note` / `overallNote` は**本人のメモ**（S-10）。読み取りの往復を増やさないためここに載せる
+- `upcomingInterviews` は**確定済み（`booked`）で、まだ終わっていない面接**（P3-4）。
+  マイページに「次に何があるか」を出すために載せる。開始が早い順。
+  - **終了済みのものはサーバが落とす。** クライアントで絞り直さないこと
+  - 候補期間・回答期限・面接官の外部IDは載せない（確定後の学生に必要なのは
+    いつ・誰と・どこで だけ）。詳細な調整の経緯はチャットの日程調整カードが持つ
+  - `locationText` は `null` がありうる（会議室・URLは人事があとから決める：P4-5）
 
 ```json
 // GET /students/:userId/feedbacks（人事のプロフィールパネル用）

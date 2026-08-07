@@ -7,6 +7,7 @@ import {
   saveSelectionSteps,
 } from '../services/selectionFlow.js';
 import { findAnsweredStatusKeys, saveSurvey } from '../services/interviewSurveys.js';
+import { listUpcomingInterviewsForStudent } from '../services/scheduleRequests.js';
 import {
   ROLE,
   SELECTION_FLOW_STEP_VALUES,
@@ -142,6 +143,10 @@ router.get('/me', requireAuth, (req, res, next) => {
 
     return res.json({
       ...flow,
+      // 確定済みの面接（P3-4）も同じレスポンスに載せる。マイページは
+      // 「いまどこにいて、次に何があるか」を1回の往復で出す画面なので、
+      // 日程だけ別のAPIに取りに行かせない（frontend.md §7-3「データ」）
+      upcomingInterviews: listUpcomingInterviewsForStudent(db, req.user.id),
       steps: flow.steps.map((step) => ({
         ...step,
         surveyAnswered: answered.has(step.statusKey),
