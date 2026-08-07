@@ -45,13 +45,16 @@ export function clampToViewport(position, size, viewport) {
 }
 
 /**
- * 初回の立ち位置。右下だがナビや画面端の真上には乗せない。
+ * 初回の立ち位置。画面の右下端（余白ぶんだけ内側）に揃える。
+ * しまっている間は丸ボタンの寸法で計算しないと右端から離れて浮いてしまうため、
+ * 現在の当たり判定を渡せるようにしている。
  * @param {{width: number, height: number}} viewport
+ * @param {{width: number, height: number}} [size] 現在の当たり判定（既定は展開時）
  * @returns {{x: number, y: number}}
  */
-export function defaultPetPosition(viewport) {
+export function defaultPetPosition(viewport, size = petBoxSize(false)) {
   return {
-    x: viewport.width - PET_SIZE.width - 92,
-    y: viewport.height - PET_SIZE.height - VIEWPORT_MARGIN,
+    x: viewport.width - size.width - VIEWPORT_MARGIN,
+    y: viewport.height - size.height - VIEWPORT_MARGIN,
   }
 }

@@ -111,6 +111,20 @@ const viewportSize = () => ({ width: window.innerWidth, height: window.innerHeig
 const clampPosition = (target) => clampToViewport(target, currentSize.value, viewportSize())
 
 /**
+ * 今いるべき位置。ドラッグで動かしていなければ**常に右下端へ**戻す。
+ * 保存位置をそのまま clamp するだけだと、ウィンドウを縮めてから広げたときに
+ * 縮んだときの座標へ取り残されて、右下から浮いた中途半端な位置に見える。
+ */
+const anchoredPosition = () => {
+  const view = viewportSize()
+  return clampToViewport(
+    ui.petPosition ?? defaultPetPosition(view, currentSize.value),
+    currentSize.value,
+    view
+  )
+}
+
+/**
  * 立ち位置を決める。画面の寸法が取れるまでは置かない（positioned のまま隠しておく）。
  * レイアウト前は innerWidth/innerHeight が 0 になることがあり、そのまま既定位置を
  * 計算すると画面の外へ出てしまう。
@@ -126,7 +140,7 @@ const placePet = () => {
     return
   }
   placeRetryHandle = null
-  position.value = clampToViewport(ui.petPosition ?? defaultPetPosition(view), currentSize.value, view)
+  position.value = anchoredPosition()
   positioned.value = true
 }
 
@@ -146,7 +160,7 @@ const resetExpressionLater = () => {
 
 const reactToNotice = () => {
   ui.setPetMinimized(false)
-  position.value = clampPosition(position.value)
+  position.value = anchoredPosition()
   greetingOpen.value = false
   expression.value = EXPRESSION.SURPRISED
   bubbleOpen.value = true
@@ -170,12 +184,12 @@ const closeBubble = () => {
 const minimize = () => {
   closeBubble()
   ui.setPetMinimized(true)
-  position.value = clampPosition(position.value)
+  position.value = anchoredPosition()
 }
 
 const restore = () => {
   ui.setPetMinimized(false)
-  position.value = clampPosition(position.value)
+  position.value = anchoredPosition()
 }
 
 const consumeDraggedClick = () => {
@@ -252,7 +266,7 @@ const startDrag = (event) => {
 
 const onResize = () => {
   if (!positioned.value) placePet()
-  else position.value = clampPosition(position.value)
+  else position.value = anchoredPosition()
 }
 
 const openNotification = async () => {
@@ -453,7 +467,10 @@ onBeforeUnmount(() => {
   display: block;
   width: 100%;
   height: 100%;
+  /* 切り抜き画像は表情ごとに縦横比が違う。contain のまま中央に置くと当たり判定の
+     右と下に余白が残り、右下端に置いても浮いて見えるので隅へ寄せる */
   object-fit: contain;
+  object-position: right bottom;
   filter: drop-shadow(0 6px 8px rgb(0 0 0 / 18%));
   user-select: none;
   animation: pet-arrive 260ms ease-out;

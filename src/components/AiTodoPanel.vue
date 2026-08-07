@@ -53,7 +53,7 @@ const anchorBox = computed(() => {
     }
   }
   const size = petBoxSize(ui.petMinimized)
-  const position = clampToViewport(ui.petPosition ?? defaultPetPosition(view), size, view)
+  const position = clampToViewport(ui.petPosition ?? defaultPetPosition(view, size), size, view)
   return { ...position, ...size }
 })
 
