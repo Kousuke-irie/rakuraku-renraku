@@ -105,6 +105,8 @@ project/
 npm install                 # ルートで workspaces を一括インストール
 npm run db:migrate          # schema.sql を適用
 npm run db:seed             # デモ用シードデータ投入（学生40名・メッセージ約330件。人事1人あたり12名担当）
+                            # 人事の送信は営業時間9〜21時内・学生は生活リズム別・監視イベントの履歴つき
+                            # （ダッシュボードのグラフが成立する条件。詳細は .claude/monitoring.md §6-2「デモデータ」）
 
 # 開発
 npm run dev:server          # Express + Socket.IO (localhost:3000)

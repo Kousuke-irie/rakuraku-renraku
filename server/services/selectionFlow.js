@@ -90,6 +90,42 @@ function listVisibleSteps(db, { selectionStatus, feedbacks }) {
 }
 
 /**
+ * ダッシュボードの「選考ステータス別」グラフに出す段階と、その並び（P4-8）。
+ * **会社の選考フロー設定（`selection_steps`）に従う。**
+ * 使っていない段階（例：四次・五次面接）を出さないため、また人事が付けた
+ * 表示名（例：三次面接→「最終面接」）をグラフにも反映するため。
+ *
+ * ★無効な段階でも、そこに学生が**実在するなら出す**。
+ *   `listVisibleSteps()` が学生の現在地を必ず含めるのと同じ理由で、
+ *   「人事があとからフロー設定を変えただけで進行中の学生が消える」状態を作らない。
+ *   消すとグラフの合計が担当学生数と合わなくなり、数字が信用されなくなる。
+ *   出したぶんは `isEnabled: false` を添えて、標準フロー外だと分かるようにする。
+ *
+ * ★辞退はフロー上の一段階ではない（`selection_steps` にも無い）が、
+ *   離脱の実数なので必ず最後に置く。
+ *
+ * @param {(statusKey: string) => number} countOf その段階にいる学生数
+ */
+export function listDashboardSelectionSteps(db, countOf) {
+  const steps = listSelectionSteps(db)
+    .filter((step) => step.isEnabled || countOf(step.statusKey) > 0)
+    .map((step) => ({
+      statusKey: step.statusKey,
+      label: step.label,
+      isEnabled: step.isEnabled,
+    }));
+
+  return [
+    ...steps,
+    {
+      statusKey: SELECTION_STATUS.DECLINED,
+      label: SELECTION_STATUS_META[SELECTION_STATUS.DECLINED].label,
+      isEnabled: true,
+    },
+  ];
+}
+
+/**
  * 設定の一括保存（人事のみ）。全ステップを受け取る全置換。
  * 部分更新にすると「説明を空にする」が表現できないため。
  *

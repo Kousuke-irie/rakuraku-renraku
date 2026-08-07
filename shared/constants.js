@@ -460,6 +460,84 @@ export const INTERVIEW_ROOM_ALERT_LEAD_HOURS = 72;
 /** 発生推移グラフの日数。件数0の日もサーバ側で埋めて返す */
 export const DASHBOARD_TREND_DAYS = 14;
 
+// ---------------------------------------------------------------------------
+// 個人ダッシュボード（P4-8 / monitoring.md §6-2）
+// 全社版と同じ /dashboard の中でタブ切り替えする。母数は担当者1人ぶん。
+// ---------------------------------------------------------------------------
+
+/** ダッシュボードの母数の切り替え。URL の ?scope= に出る */
+export const DASHBOARD_SCOPE = Object.freeze({
+  /** 全社（P4-4） */
+  COMPANY: 'company',
+  /** 担当者1人（P4-8） */
+  PERSONAL: 'personal',
+});
+
+export const DASHBOARD_SCOPE_META = Object.freeze({
+  [DASHBOARD_SCOPE.COMPANY]: { label: '全社' },
+  [DASHBOARD_SCOPE.PERSONAL]: { label: '個人' },
+});
+
+export const DASHBOARD_SCOPE_VALUES = Object.values(DASHBOARD_SCOPE);
+
+export const DEFAULT_DASHBOARD_SCOPE = DASHBOARD_SCOPE.COMPANY;
+
+/**
+ * 返信状況（P4-8）。**対応ステータスとは別の軸。**
+ * 対応ステータスが「人事がどう処理したか（人が付ける）」なのに対し、
+ * こちらは「学生を実際に何時間待たせているか（時刻から機械的に決まる）」を見る。
+ *
+ * 3段の閾値は SLA と同じ（SLA_NOTIFY_HOURS / SLA_ESCALATE_HOURS）。
+ * 数字がずれると受信箱のバッジと食い違うため、サーバが閾値ごと返す。
+ */
+export const REPLY_STATE = Object.freeze({
+  /** 学生の最後の発言に返信済み（＝待たせていない） */
+  REPLIED: 'replied',
+  /** 未返信だが通知の閾値内 */
+  WAITING: 'waiting',
+  /** 未返信で通知の閾値超え */
+  OVERDUE: 'overdue',
+});
+
+export const REPLY_STATE_VALUES = Object.values(REPLY_STATE);
+
+/**
+ * 返信所要時間の分布バケット（P4-8）。
+ *
+ * 学生の連続発言の**先頭**から、次の人事の発言までの経過時間で分類する
+ * （学生が実際に待った時間そのものを測るため）。
+ * `maxHours: null` が最後のバケット＝上限なし。**順序に意味がある**ので並べ替えないこと。
+ */
+export const REPLY_LATENCY_BUCKET = Object.freeze([
+  { key: 'under_1h', label: '1時間未満', maxHours: 1 },
+  { key: 'h1_3', label: '1〜3時間', maxHours: 3 },
+  { key: 'h3_6', label: '3〜6時間', maxHours: 6 },
+  { key: 'h6_12', label: '6〜12時間', maxHours: 12 },
+  { key: 'h12_24', label: '12〜24時間', maxHours: 24 },
+  { key: 'over_24h', label: '24時間超', maxHours: null },
+]);
+
+export const REPLY_LATENCY_BUCKET_KEYS = Object.freeze(
+  REPLY_LATENCY_BUCKET.map((bucket) => bucket.key),
+);
+
+/** 経過時間（時間）をバケットの key に落とす。境界は「以上〜未満」 */
+export function replyLatencyBucketOf(hours) {
+  const bucket = REPLY_LATENCY_BUCKET.find(
+    (candidate) => candidate.maxHours !== null && hours < candidate.maxHours,
+  );
+
+  return bucket?.key ?? REPLY_LATENCY_BUCKET[REPLY_LATENCY_BUCKET.length - 1].key;
+}
+
+/**
+ * 時間帯別グラフの刻み。0〜23時の24点。
+ *
+ * ★サーバは **UTC の時刻**でカウントして返し、クライアントが表示時にローカルへ回す
+ *   （CLAUDE.md §6-2）。JST は整数時間オフセットなので、配列の回転で無損失に変換できる。
+ */
+export const HOURS_IN_DAY = 24;
+
 // 経過時間バッジを表示しない対応ステータス（返信済み・完了は SLA の対象外）
 export const ELAPSED_BADGE_HIDDEN_STATUSES = Object.freeze([
   HANDLING_STATUS.WAITING_STUDENT,
