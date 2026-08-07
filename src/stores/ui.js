@@ -27,6 +27,30 @@ let toastSeq = 0
  */
 const MAX_TOASTS = 3
 
+/** らくす君へ渡す通知の連番。同じ内容が続いても必ずアニメーションを再生する */
+let mascotNoticeSeq = 0
+
+const PET_VISIBLE_STORAGE_KEY = 'rakuraku:notification-pet-visible'
+const PET_POSITION_STORAGE_KEY = 'rakuraku:notification-pet-position'
+
+const readPetVisible = () => {
+  try {
+    return globalThis.localStorage?.getItem(PET_VISIBLE_STORAGE_KEY) !== 'false'
+  } catch {
+    return true
+  }
+}
+
+const readPetPosition = () => {
+  try {
+    const value = JSON.parse(globalThis.localStorage?.getItem(PET_POSITION_STORAGE_KEY) ?? 'null')
+    if (Number.isFinite(value?.x) && Number.isFinite(value?.y)) return value
+  } catch {
+    // 保存値が壊れていれば既定位置へ戻す
+  }
+  return null
+}
+
 /** 定型文の設定画面（P2-1 拡張）での失敗時の既定文言 */
 const SNIPPET_ERROR = Object.freeze({
   FETCH: '定型文の取得に失敗しました',
@@ -221,6 +245,18 @@ export const useUiStore = defineStore('ui', {
      * 既定は「未対応のみ」。片付いたものを残すと「上から処理すれば終わる」が崩れる。
      */
     alertsIncludeResolved: false,
+
+    /**
+     * 右下の通知ペット「らくす君」が直近に受け取った通知。
+     * 永続データではなく、リアルタイム通知を表示へ橋渡しするための一時的なUI状態。
+     * @type {{id:number, title:string, message:string, destination:string}|null}
+     */
+    mascotNotice: null,
+
+    /** 通知ペットの表示設定と、ドラッグ後の viewport 座標 */
+    petVisible: readPetVisible(),
+    /** @type {{x:number, y:number}|null} */
+    petPosition: readPetPosition(),
 
     /**
      * ログイン → ホームの円形トランジションの状態（描画は CircleRevealOverlay）。
@@ -577,6 +613,12 @@ export const useUiStore = defineStore('ui', {
       try {
         const { data } = await alertsApi.list({ unread: true, limit: 1 })
         this.alertsUnreadCount = data.unreadCount
+        if (data.unreadCount > 0) {
+          this.notifyMascot({
+            title: '未読の通知があるよ！',
+            message: `${data.unreadCount}件の通知を確認してね。`,
+          })
+        }
       } catch {
         // バッジが出ないだけなので黙って諦める。トーストを出すほどではない
       }
@@ -651,6 +693,11 @@ export const useUiStore = defineStore('ui', {
         emphasis: IMPORTANT_ALERT_KINDS.includes(alert.kind),
         to: alertDestination(alert),
       })
+
+      this.notifyMascot({
+        title: '新しい通知が届いたよ！',
+        message: [alert.studentName, alert.detail].filter(Boolean).join('：'),
+      })
     },
 
     /**
@@ -677,6 +724,35 @@ export const useUiStore = defineStore('ui', {
       }
 
       this.alerts = this.alerts.filter((alert) => !resolvedIds.has(alert.id))
+    },
+
+    /** 通知ペットへ新しいメッセージを渡す */
+    notifyMascot({ title, message, destination = '/notifications' }) {
+      this.mascotNotice = {
+        id: ++mascotNoticeSeq,
+        title,
+        message,
+        destination,
+      }
+    },
+
+    setPetVisible(visible) {
+      this.petVisible = Boolean(visible)
+      try {
+        globalThis.localStorage?.setItem(PET_VISIBLE_STORAGE_KEY, String(this.petVisible))
+      } catch {
+        // ストレージが使えなくても、このセッション中の設定は有効
+      }
+    },
+
+    setPetPosition({ x, y }) {
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return
+      this.petPosition = { x: Math.round(x), y: Math.round(y) }
+      try {
+        globalThis.localStorage?.setItem(PET_POSITION_STORAGE_KEY, JSON.stringify(this.petPosition))
+      } catch {
+        // ストレージが使えなくても、このセッション中の位置は保持
+      }
     },
 
     /** 行クリック時。既読化して一覧からは消さない（誤クリックで見失わないため） */
@@ -778,6 +854,7 @@ export const useUiStore = defineStore('ui', {
       this.alertsLoaded = false
       this.alertsIncludeResolved = false
       this.alertsSyncedOnce = false
+      this.mascotNotice = null
       this.circleReveal = emptyCircleReveal()
       this.connectionState = 'connecting'
       this.toasts = []

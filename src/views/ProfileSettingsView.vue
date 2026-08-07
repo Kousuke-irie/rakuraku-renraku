@@ -31,6 +31,7 @@ import UserAvatar from "../components/UserAvatar.vue"
 /** 全ロールに出すセクション。key は下の v-if と対応する */
 const BASE_SECTIONS = Object.freeze([
   { key: "profile", label: "プロフィール", note: "表示名・ステータス" },
+  { key: "pet", label: "通知ペット", note: "らくす君の表示" },
 ])
 
 /**
@@ -188,6 +189,32 @@ const onLogout = async () => {
         <!-- 選考フロー（P2-11）。学生のマイページのフロー図になる -->
         <template v-else-if="activeSection.key === 'selection-flow'">
           <SelectionFlowSettingsPanel />
+        </template>
+
+        <!-- 通知ペット。表示設定は端末内に保存し、次回アクセス時も引き継ぐ -->
+        <template v-else-if="activeSection.key === 'pet'">
+          <div class="pet-setting">
+            <div class="pet-setting__copy">
+              <p class="pet-setting__title">
+                らくす君を表示する
+              </p>
+              <p class="pet-setting__note">
+                新着通知を表情と吹き出しでお知らせします。画面上のらくす君はドラッグして移動できます。
+              </p>
+            </div>
+            <label class="switch">
+              <input
+                type="checkbox"
+                :checked="ui.petVisible"
+                @change="ui.setPetVisible($event.target.checked)"
+              >
+              <span
+                class="switch__track"
+                aria-hidden="true"
+              />
+              <span class="sr-only">らくす君を表示する</span>
+            </label>
+          </div>
         </template>
 
         <!-- アカウント -->
@@ -365,6 +392,84 @@ const onLogout = async () => {
 .row__value {
   margin: 0;
   font-size: 14px;
+}
+
+.pet-setting {
+  display: flex;
+  gap: var(--space-xl);
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-lg) 0;
+  border-bottom: 1px solid var(--color-hairline);
+}
+
+.pet-setting__copy {
+  min-width: 0;
+}
+
+.pet-setting__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.pet-setting__note {
+  max-width: 520px;
+  margin: var(--space-xs) 0 0;
+  color: var(--color-ink-mute);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.switch {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+.switch input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.switch__track {
+  position: relative;
+  display: block;
+  width: 44px;
+  height: 24px;
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-pill);
+  background: var(--color-hairline);
+  transition: background-color 140ms ease;
+}
+
+.switch__track::after {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-pill);
+  background: var(--color-canvas);
+  box-shadow: var(--shadow-1);
+  content: "";
+  transition: transform 140ms ease;
+}
+
+.switch input:checked + .switch__track {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+}
+
+.switch input:checked + .switch__track::after {
+  transform: translateX(20px);
+}
+
+.switch input:focus-visible + .switch__track {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
 
 </style>

@@ -175,3 +175,7 @@ npm run db:seed      # デモデータ投入
 - AI対応推奨度が高い未対応案件を受信箱で強調する
 - トーク画面に、学生が求めていることと判断時に注意する背景を表示する
 - ホームのGemini AI現況サマリー（設定手順は [docs/GEMINI_AI_SUMMARY.md](docs/GEMINI_AI_SUMMARY.md)）
+- 画面右下に常駐し、新着通知を表情と吹き出しで知らせる通知ペット「らくす君」
+  - ドラッグによる移動と、設定画面からの表示・非表示に対応
+  - 表示・通知連動の編集箇所：`src/components/RakusuKunPet.vue`
+  - 表情画像の差し替え先：`src/images/rakusukun/`（表示には台座なしの `*-cutout.png` を使用）

@@ -12,7 +12,11 @@
 // トーストも同様に、どの画面からでも出せるようにここへ1つだけ置く。
 import AppNavRail from "./AppNavRail.vue"
 import ProfileDialog from "./ProfileDialog.vue"
+import RakusuKunPet from "./RakusuKunPet.vue"
 import ToastStack from "./ToastStack.vue"
+import { useUiStore } from "../stores/ui.js"
+
+const ui = useUiStore()
 </script>
 
 <template>
@@ -27,6 +31,7 @@ import ToastStack from "./ToastStack.vue"
 
     <ProfileDialog />
     <ToastStack />
+    <RakusuKunPet v-if="ui.petVisible" />
   </div>
 </template>
 
